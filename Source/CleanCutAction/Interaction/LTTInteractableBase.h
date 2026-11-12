@@ -9,6 +9,8 @@
 #include "LTTInteractableBase.generated.h"
 
 class UStaticMeshComponent;
+class UMaterialInterface;
+class UMaterialInstanceDynamic;
 
 UCLASS(Blueprintable)
 class CLEANCUTACTION_API ALTTInteractableBase : public AActor, public ILTTInteractable
@@ -70,6 +72,75 @@ public:
 	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Interactable|Hold", meta = (EditCondition = "bAutoTwoHanded"))
 	float TwoHandedRadius = 22.f;
 
+	// ---- Cleanup: put the prop back where it was in the clean level ----
+
+	/** The set isn't clean until this prop is back home. Off for props that don't matter (trash, extras). */
+	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Interactable|Cleanup")
+	bool bIsCleanupTask = true;
+
+	/** Skip the earthquake: the prop starts placed and locked. */
+	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Interactable|Cleanup")
+	bool bStartsAtHome = false;
+
+	/** How close the aim (or the held prop) must be to the home silhouette to place it. 0 = automatic from size. */
+	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Interactable|Cleanup", meta = (ClampMin = "0"))
+	float SnapRadius = 0.f;
+
+	/** Translucent material for the home silhouette (needs a vector parameter "Color"). */
+	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Interactable|Cleanup")
+	TSoftObjectPtr<UMaterialInterface> GhostMaterial;
+
+	/** Clean-level transform, recorded at BeginPlay before the mess. */
+	UPROPERTY(VisibleInstanceOnly, BlueprintReadOnly, Transient, Category = "Interactable|Cleanup")
+	FTransform HomeTransform;
+
+	/** Prop this one rests on at home (e.g. the table under a cup). It has to be placed first. */
+	UPROPERTY(VisibleInstanceOnly, BlueprintReadOnly, Transient, Category = "Interactable|Cleanup")
+	TObjectPtr<ALTTInteractableBase> HomeSupport;
+
+	UFUNCTION(BlueprintPure, Category = "Interactable|Cleanup")
+	bool IsPlaced() const { return bPlaced; }
+
+	UFUNCTION(BlueprintPure, Category = "Interactable|Cleanup")
+	bool HasHome() const { return bHasHome; }
+
+	/** True if nothing has to be placed before this prop (its home support is placed or static). */
+	UFUNCTION(BlueprintPure, Category = "Interactable|Cleanup")
+	bool IsHomeSupportReady() const;
+
+	/** World centre of the prop's bounds at home. */
+	UFUNCTION(BlueprintPure, Category = "Interactable|Cleanup")
+	FVector GetHomeCenter() const;
+
+	UFUNCTION(BlueprintPure, Category = "Interactable|Cleanup")
+	float GetSnapRadius() const;
+
+	/** True if the view ray passes through the home silhouette, or the prop's centre is already inside it. */
+	UFUNCTION(BlueprintPure, Category = "Interactable|Cleanup")
+	bool IsTargetingHome(const FVector& ViewLocation, const FVector& ViewDirection, float MaxDistance) const;
+
+	/** Readable prop name for the HUD, e.g. "Coffee Cup". */
+	UFUNCTION(BlueprintPure, Category = "Interactable")
+	FText GetPropName() const;
+
+	/** Records the current transform as home. Called at BeginPlay. */
+	void RecordHome();
+
+	/** Finds the prop under the home position. Called by the mess director once every home is recorded. */
+	void FindHomeSupport();
+
+	/** Slides from the hand to home and locks there. Called by ULTTCarryComponent::PlaceHeld. */
+	void PlaceAtHome();
+
+	/** Locks at home immediately (bStartsAtHome). */
+	void SnapToHome();
+
+	/** Shows the home silhouette while carried. bTargeted = aiming at it, bReady = its support is placed. */
+	void UpdateGhost(bool bVisible, bool bTargeted, bool bReady);
+
+	UFUNCTION(BlueprintImplementableEvent, Category = "Interactable|Cleanup", meta = (DisplayName = "On Placed"))
+	void ReceivePlaced();
+
 	/** True while a carry component holds this prop. */
 	UFUNCTION(BlueprintPure, Category = "Interactable")
 	bool IsHeld() const { return Holder != nullptr; }
@@ -117,6 +188,22 @@ public:
 
 protected:
 	virtual void BeginPlay() override;
+	virtual void Tick(float DeltaSeconds) override;
+	virtual void FellOutOfWorld(const UDamageType& DmgType) override;
+
+	void FinishPlacing();
+
+	bool bHasHome = false;
+	bool bPlaced = false;
+	bool bPlacing = false;
+	float PlaceElapsed = 0.f;
+	FTransform PlaceFrom;
+
+	UPROPERTY(Transient)
+	TObjectPtr<UStaticMeshComponent> Ghost;
+
+	UPROPERTY(Transient)
+	TObjectPtr<UMaterialInstanceDynamic> GhostMID;
 
 	void ApplyPhysicsSettings();
 

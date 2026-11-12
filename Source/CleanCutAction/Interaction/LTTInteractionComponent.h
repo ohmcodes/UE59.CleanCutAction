@@ -11,6 +11,16 @@ class ULTTCarryComponent;
 
 DECLARE_DYNAMIC_MULTICAST_DELEGATE_TwoParams(FLTTOnFocusChanged, AActor*, NewFocus, FText, PromptText);
 
+/** What pressing Interact does with the held prop. */
+UENUM(BlueprintType)
+enum class ELTTPlaceHint : uint8
+{
+	None,          // not holding anything
+	Drop,          // not aiming at its home: drops it
+	Place,         // aiming at its home: puts it back and locks it
+	NeedsSupport   // aiming at its home, but the prop under it (e.g. the table) isn't back yet: drops it
+};
+
 UCLASS(ClassGroup = (LTT), meta = (BlueprintSpawnableComponent))
 class CLEANCUTACTION_API ULTTInteractionComponent : public UActorComponent
 {
@@ -42,7 +52,18 @@ public:
 	UFUNCTION(BlueprintPure, Category = "Interaction")
 	AActor* GetFocusedActor() const { return FocusedActor.Get(); }
 
-	/** Pick up the focused prop, drop the held one, or use the focused interactable. */
+	/** Max distance from the eye to a home silhouette for placing. */
+	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Interaction")
+	float PlaceDistance = 400.f;
+
+	UFUNCTION(BlueprintPure, Category = "Interaction")
+	ELTTPlaceHint GetPlaceHint() const { return PlaceHint; }
+
+	/** HUD text for the held prop: "Place", "Drop", or "Put the Table back first". */
+	UFUNCTION(BlueprintPure, Category = "Interaction")
+	FText GetPlaceHintText() const;
+
+	/** Pick up the focused prop, place/drop the held one, or use the focused interactable. */
 	UFUNCTION(BlueprintCallable, Category = "Interaction")
 	void Interact();
 
@@ -56,6 +77,9 @@ protected:
 
 	void TryBindInput();
 	void UpdateFocus();
+	void UpdatePlaceHint();
+
+	ELTTPlaceHint PlaceHint = ELTTPlaceHint::None;
 	void SetFocus(AActor* NewFocus);
 	ULTTCarryComponent* GetCarry() const;
 

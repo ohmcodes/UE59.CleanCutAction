@@ -67,6 +67,20 @@ void ULTTCarryComponent::Throw()
 	Release(true);
 }
 
+bool ULTTCarryComponent::PlaceHeld()
+{
+	ALTTInteractableBase* Item = HeldItem;
+	if (!IsValid(Item) || !Item->HasHome() || Item->IsPlaced())
+	{
+		return false;
+	}
+	Item->DetachFromActor(FDetachmentTransformRules::KeepWorldTransform);
+	HeldItem = nullptr;
+	Item->PlaceAtHome();
+	OnReleased.Broadcast(Item, false);
+	return true;
+}
+
 void ULTTCarryComponent::Release(bool bThrow)
 {
 	ALTTInteractableBase* Item = HeldItem;

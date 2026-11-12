@@ -5,10 +5,24 @@
 #include "Engine/StaticMesh.h"
 #include "Engine/OverlapResult.h"
 #include "Engine/World.h"
+#include "Materials/MaterialInterface.h"
+#include "Materials/MaterialInstanceDynamic.h"
+#include "Interaction/LTTMessDirector.h"
+
+namespace
+{
+	constexpr float PlaceTweenTime = 0.2f;
+	const FLinearColor GhostColorIdle(0.25f, 0.75f, 1.f);      // carried: "it goes here"
+	const FLinearColor GhostColorTargeted(1.f, 0.8f, 0.15f);    // aiming at it: place now
+	const FLinearColor GhostColorBlocked(1.f, 0.2f, 0.15f);     // its table/shelf isn't back yet
+}
 
 ALTTInteractableBase::ALTTInteractableBase()
 {
-	PrimaryActorTick.bCanEverTick = false;
+	// Ticks only while sliding into its home spot.
+	PrimaryActorTick.bCanEverTick = true;
+	PrimaryActorTick.bStartWithTickEnabled = false;
+	GhostMaterial = TSoftObjectPtr<UMaterialInterface>(FSoftObjectPath(TEXT("/Game/_CleanCutAction/Materials/M_GhostSilhouette.M_GhostSilhouette")));
 	// The mesh component lives in BP_MasterInteractables (Blueprint SCS) so content can be built before code.
 }
 
@@ -32,6 +46,9 @@ void ALTTInteractableBase::BeginPlay()
 		bCanBePickedUp = false;
 		return;
 	}
+	// The level is authored clean, so where the prop starts is where it belongs.
+	RecordHome();
+
 	Mesh->SetMobility(EComponentMobility::Movable);
 	Mesh->BodyInstance.bUseCCD = true;
 	ApplyPhysicsSettings();
@@ -71,7 +88,7 @@ void ALTTInteractableBase::WakeTouchingProps()
 	for (const FOverlapResult& O : Overlaps)
 	{
 		ALTTInteractableBase* Other = Cast<ALTTInteractableBase>(O.GetActor());
-		if (Other && Other != this && !Other->IsHeld() && Other->Mesh)
+		if (Other && Other != this && !Other->IsHeld() && !Other->IsPlaced() && Other->Mesh)
 		{
 			if (!Other->Mesh->IsSimulatingPhysics())
 			{
@@ -138,6 +155,8 @@ void ALTTInteractableBase::BeginHold(AActor* InHolder)
 	Mesh->SetFirstPersonPrimitiveType(EFirstPersonPrimitiveType::FirstPerson);
 	Mesh->SetRenderCustomDepth(false);
 
+	UpdateGhost(true, false, IsHomeSupportReady());
+
 	ReceivePickedUp(InHolder);
 }
 
@@ -145,6 +164,7 @@ void ALTTInteractableBase::EndHold(const FVector& LinearVelocity, const FVector&
 {
 	AActor* OldHolder = Holder;
 	Holder = nullptr;
+	UpdateGhost(false, false, false);
 
 	Mesh->SetFirstPersonPrimitiveType(EFirstPersonPrimitiveType::None);
 	Mesh->SetCollisionProfileName(SavedCollisionProfile.IsNone() ? UCollisionProfile::PhysicsActor_ProfileName : SavedCollisionProfile);
@@ -160,10 +180,16 @@ void ALTTInteractableBase::EndHold(const FVector& LinearVelocity, const FVector&
 
 bool ALTTInteractableBase::CanInteract_Implementation(AActor* InstigatorActor) const
 {
-	return bCanBePickedUp && !IsHeld();
+	// Placed props are locked: no pickup, no outline.
+	return bCanBePickedUp && !IsHeld() && !bPlaced && !bPlacing;
 }
 
 FText ALTTInteractableBase::GetPromptText_Implementation(AActor* InstigatorActor) const
+{
+	return FText::Format(NSLOCTEXT("LTT", "PromptFmt", "{0} {1}"), PromptVerb, GetPropName());
+}
+
+FText ALTTInteractableBase::GetPropName() const
 {
 	FText Name = DisplayName;
 	if (Name.IsEmpty())
@@ -195,7 +221,229 @@ FText ALTTInteractableBase::GetPromptText_Implementation(AActor* InstigatorActor
 		while (Pretty.ReplaceInline(TEXT("  "), TEXT(" ")) > 0) {}
 		Name = FText::FromString(Pretty.IsEmpty() ? GetActorNameOrLabel() : Pretty);
 	}
-	return FText::Format(NSLOCTEXT("LTT", "PromptFmt", "{0} {1}"), PromptVerb, Name);
+	return Name;
+}
+
+// ---------------------------------------------------------------------------------------------
+// Cleanup: home, silhouette, placing
+// ---------------------------------------------------------------------------------------------
+
+void ALTTInteractableBase::RecordHome()
+{
+	if (Mesh && !bHasHome)
+	{
+		HomeTransform = Mesh->GetComponentTransform();
+		bHasHome = true;
+	}
+}
+
+void ALTTInteractableBase::FindHomeSupport()
+{
+	HomeSupport = nullptr;
+	if (!Mesh || !bHasHome)
+	{
+		return;
+	}
+	// Must run while the prop is still at home (before the earthquake).
+	const FBoxSphereBounds& B = Mesh->Bounds;
+	const FVector Start = B.Origin;
+	const FVector End = B.Origin - FVector(0.f, 0.f, B.BoxExtent.Z + 8.f);
+	FCollisionQueryParams Params(SCENE_QUERY_STAT(LTTHomeSupport), false, this);
+	FHitResult Hit;
+	if (GetWorld()->LineTraceSingleByChannel(Hit, Start, End, ECC_Visibility, Params))
+	{
+		ALTTInteractableBase* Under = Cast<ALTTInteractableBase>(Hit.GetActor());
+		if (Under && Under != this && Under->bIsCleanupTask && Under->HomeSupport != this)
+		{
+			HomeSupport = Under;
+		}
+	}
+}
+
+bool ALTTInteractableBase::IsHomeSupportReady() const
+{
+	// A support that was broken/destroyed no longer blocks anything.
+	return !IsValid(HomeSupport) || HomeSupport->IsPlaced();
+}
+
+FVector ALTTInteractableBase::GetHomeCenter() const
+{
+	FVector LocalCenter = FVector::ZeroVector;
+	if (Mesh && Mesh->GetStaticMesh())
+	{
+		LocalCenter = Mesh->GetStaticMesh()->GetBounds().Origin;
+	}
+	return HomeTransform.TransformPosition(LocalCenter);
+}
+
+float ALTTInteractableBase::GetSnapRadius() const
+{
+	return SnapRadius > 0.f ? SnapRadius : FMath::Clamp(GetPropRadius() * 0.75f, 18.f, 70.f);
+}
+
+bool ALTTInteractableBase::IsTargetingHome(const FVector& ViewLocation, const FVector& ViewDirection, float MaxDistance) const
+{
+	if (!bHasHome || bPlaced || !Mesh)
+	{
+		return false;
+	}
+	const FVector Home = GetHomeCenter();
+	const float Radius = GetSnapRadius();
+
+	// Walking the carried prop into its silhouette counts too.
+	if (FVector::DistSquared(Mesh->Bounds.Origin, Home) <= FMath::Square(Radius))
+	{
+		return true;
+	}
+
+	const FVector Dir = ViewDirection.GetSafeNormal();
+	const FVector ToHome = Home - ViewLocation;
+	const float Along = FVector::DotProduct(ToHome, Dir);
+	if (Along <= 0.f || Along > MaxDistance)
+	{
+		return false;
+	}
+	return (ToHome - Dir * Along).SizeSquared() <= FMath::Square(Radius);
+}
+
+void ALTTInteractableBase::UpdateGhost(bool bVisible, bool bTargeted, bool bReady)
+{
+	const bool bShow = bVisible && bHasHome && bIsCleanupTask && !bPlaced && Mesh && Mesh->GetStaticMesh();
+	if (!bShow)
+	{
+		if (Ghost)
+		{
+			Ghost->SetVisibility(false);
+		}
+		return;
+	}
+
+	if (!Ghost)
+	{
+		Ghost = NewObject<UStaticMeshComponent>(this, TEXT("HomeGhost"), RF_Transient);
+		Ghost->SetUsingAbsoluteLocation(true);
+		Ghost->SetUsingAbsoluteRotation(true);
+		Ghost->SetUsingAbsoluteScale(true);
+		Ghost->SetMobility(EComponentMobility::Movable);
+		Ghost->SetStaticMesh(Mesh->GetStaticMesh());
+		Ghost->SetCollisionEnabled(ECollisionEnabled::NoCollision);
+		Ghost->SetCastShadow(false);
+		Ghost->SetCanEverAffectNavigation(false);
+		if (UMaterialInterface* Base = GhostMaterial.LoadSynchronous())
+		{
+			GhostMID = UMaterialInstanceDynamic::Create(Base, this);
+			for (int32 i = 0; i < Ghost->GetNumMaterials(); ++i)
+			{
+				Ghost->SetMaterial(i, GhostMID);
+			}
+		}
+		Ghost->RegisterComponent();
+		Ghost->SetWorldTransform(HomeTransform);
+	}
+
+	if (GhostMID)
+	{
+		const FLinearColor C = !bReady ? GhostColorBlocked : (bTargeted ? GhostColorTargeted : GhostColorIdle);
+		GhostMID->SetVectorParameterValue(TEXT("Color"), C);
+	}
+	Ghost->SetVisibility(true);
+}
+
+void ALTTInteractableBase::PlaceAtHome()
+{
+	if (!Mesh || !bHasHome || bPlaced || bPlacing)
+	{
+		return;
+	}
+	Holder = nullptr;
+	UpdateGhost(false, false, false);
+
+	Mesh->SetFirstPersonPrimitiveType(EFirstPersonPrimitiveType::None);
+	Mesh->SetSimulatePhysics(false);
+
+	bPlacing = true;
+	PlaceElapsed = 0.f;
+	PlaceFrom = Mesh->GetComponentTransform();
+	SetActorTickEnabled(true);
+}
+
+void ALTTInteractableBase::SnapToHome()
+{
+	if (!Mesh || !bHasHome || bPlaced)
+	{
+		return;
+	}
+	Mesh->SetSimulatePhysics(false);
+	PlaceFrom = HomeTransform;
+	FinishPlacing();
+}
+
+void ALTTInteractableBase::Tick(float DeltaSeconds)
+{
+	Super::Tick(DeltaSeconds);
+
+	if (!bPlacing)
+	{
+		SetActorTickEnabled(false);
+		return;
+	}
+
+	PlaceElapsed += DeltaSeconds;
+	const float A = FMath::Clamp(PlaceElapsed / PlaceTweenTime, 0.f, 1.f);
+	const float Ease = 1.f - FMath::Pow(1.f - A, 3.f); // OutCubic
+
+	FTransform T;
+	T.SetLocation(FMath::Lerp(PlaceFrom.GetLocation(), HomeTransform.GetLocation(), Ease));
+	T.SetRotation(FQuat::Slerp(PlaceFrom.GetRotation(), HomeTransform.GetRotation(), Ease));
+	T.SetScale3D(FMath::Lerp(PlaceFrom.GetScale3D(), HomeTransform.GetScale3D(), Ease));
+	SetActorTransform(T, false, nullptr, ETeleportType::TeleportPhysics);
+
+	if (A >= 1.f)
+	{
+		FinishPlacing();
+	}
+}
+
+void ALTTInteractableBase::FinishPlacing()
+{
+	bPlacing = false;
+	bPlaced = true;
+	SetActorTickEnabled(false);
+
+	// Locked: kinematic, solid, never woken, picked up or broken again.
+	SetActorTransform(HomeTransform, false, nullptr, ETeleportType::TeleportPhysics);
+	Mesh->SetSimulatePhysics(false);
+	Mesh->SetCollisionProfileName(SavedCollisionProfile.IsNone() ? Mesh->GetCollisionProfileName() : SavedCollisionProfile);
+	Mesh->SetCollisionEnabled(ECollisionEnabled::QueryAndPhysics);
+	ApplyPhysicsSettings();
+	Mesh->SetRenderCustomDepth(false);
+	SetLifeSpan(0.f);
+
+	if (Ghost)
+	{
+		Ghost->DestroyComponent();
+		Ghost = nullptr;
+	}
+
+	ReceivePlaced();
+	if (ALTTMessDirector* Director = ALTTMessDirector::Get(this))
+	{
+		Director->NotifyPlaced(this);
+	}
+}
+
+void ALTTInteractableBase::FellOutOfWorld(const UDamageType& DmgType)
+{
+	// Never lose a cleanup prop: drop it back near home instead of destroying it.
+	if (!bHasHome || !Mesh)
+	{
+		Super::FellOutOfWorld(DmgType);
+		return;
+	}
+	const FVector Offset(FMath::FRandRange(-60.f, 60.f), FMath::FRandRange(-60.f, 60.f), GetPropRadius() + 40.f);
+	SetActorLocation(HomeTransform.GetLocation() + Offset, false, nullptr, ETeleportType::TeleportPhysics);
+	Mesh->SetPhysicsLinearVelocity(FVector::ZeroVector);
+	Mesh->SetPhysicsAngularVelocityInDegrees(FVector::ZeroVector);
 }
 
 void ALTTInteractableBase::OnFocusBegin_Implementation(AActor* InstigatorActor)

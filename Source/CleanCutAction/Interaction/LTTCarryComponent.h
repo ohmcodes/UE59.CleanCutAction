@@ -57,6 +57,10 @@ public:
 	UFUNCTION(BlueprintCallable, Category = "Carry")
 	void Throw();
 
+	/** Puts the held prop back on its home spot and locks it there. */
+	UFUNCTION(BlueprintCallable, Category = "Carry")
+	bool PlaceHeld();
+
 	UFUNCTION(BlueprintPure, Category = "Carry")
 	bool IsHolding() const { return HeldItem != nullptr; }
 

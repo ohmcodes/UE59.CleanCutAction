@@ -52,6 +52,60 @@ void ULTTInteractionComponent::TickComponent(float DeltaTime, ELevelTick TickTyp
 	// The pawn's input component is created on possession, which can come after BeginPlay.
 	TryBindInput();
 	UpdateFocus();
+	UpdatePlaceHint();
+}
+
+void ULTTInteractionComponent::UpdatePlaceHint()
+{
+	PlaceHint = ELTTPlaceHint::None;
+	const ULTTCarryComponent* Carry = GetCarry();
+	ALTTInteractableBase* Held = Carry ? Carry->GetHeldItem() : nullptr;
+	const APawn* Pawn = Cast<APawn>(GetOwner());
+	AController* Controller = Pawn ? Pawn->GetController() : nullptr;
+	if (!Held || !Controller)
+	{
+		return;
+	}
+
+	PlaceHint = ELTTPlaceHint::Drop;
+	if (!Held->bIsCleanupTask || !Held->HasHome())
+	{
+		return;
+	}
+
+	FVector ViewLoc;
+	FRotator ViewRot;
+	Controller->GetPlayerViewPoint(ViewLoc, ViewRot);
+	const bool bTargeted = Held->IsTargetingHome(ViewLoc, ViewRot.Vector(), PlaceDistance);
+	const bool bReady = Held->IsHomeSupportReady();
+	if (bTargeted)
+	{
+		PlaceHint = bReady ? ELTTPlaceHint::Place : ELTTPlaceHint::NeedsSupport;
+	}
+	Held->UpdateGhost(true, bTargeted, bReady);
+}
+
+FText ULTTInteractionComponent::GetPlaceHintText() const
+{
+	switch (PlaceHint)
+	{
+	case ELTTPlaceHint::Place:
+		return NSLOCTEXT("LTT", "HintPlace", "Place");
+	case ELTTPlaceHint::NeedsSupport:
+	{
+		const ULTTCarryComponent* Carry = GetCarry();
+		const ALTTInteractableBase* Held = Carry ? Carry->GetHeldItem() : nullptr;
+		if (Held && IsValid(Held->HomeSupport))
+		{
+			return FText::Format(NSLOCTEXT("LTT", "HintSupport", "Put the {0} back first"), Held->HomeSupport->GetPropName());
+		}
+		return NSLOCTEXT("LTT", "HintDrop", "Drop");
+	}
+	case ELTTPlaceHint::Drop:
+		return NSLOCTEXT("LTT", "HintDrop", "Drop");
+	default:
+		return FText::GetEmpty();
+	}
 }
 
 void ULTTInteractionComponent::UpdateFocus()
@@ -118,6 +172,12 @@ void ULTTInteractionComponent::Interact()
 	ULTTCarryComponent* Carry = GetCarry();
 	if (Carry && Carry->IsHolding())
 	{
+		UpdatePlaceHint();
+		if (PlaceHint == ELTTPlaceHint::Place && Carry->PlaceHeld())
+		{
+			PlaceHint = ELTTPlaceHint::None;
+			return;
+		}
 		Carry->Drop();
 		return;
 	}
