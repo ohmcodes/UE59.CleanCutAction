@@ -8,6 +8,7 @@
 
 class UInputAction;
 class ULTTCarryComponent;
+class ALTTInteractableBase;
 
 DECLARE_DYNAMIC_MULTICAST_DELEGATE_TwoParams(FLTTOnFocusChanged, AActor*, NewFocus, FText, PromptText);
 
@@ -45,6 +46,9 @@ public:
 
 	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Interaction")
 	TEnumAsByte<ECollisionChannel> TraceChannel = ECC_Visibility;
+
+	/** How many placed props in a row the focus trace may pass through. */
+	static constexpr int32 MaxPlacedPassThrough = 8;
 
 	UPROPERTY(BlueprintAssignable, Category = "Interaction")
 	FLTTOnFocusChanged OnFocusChanged;
@@ -84,5 +88,9 @@ protected:
 	ULTTCarryComponent* GetCarry() const;
 
 	TWeakObjectPtr<AActor> FocusedActor;
+
+	/** Support prop whose home ghost is shown (orange) because the held prop needs it first. */
+	TWeakObjectPtr<ALTTInteractableBase> ShownSupportGhost;
+	void SetSupportGhost(ALTTInteractableBase* Support);
 	TWeakObjectPtr<UInputComponent> BoundInputComponent;
 };

@@ -1,8 +1,8 @@
 // Clean! Cut! Action! - Phase 1 cleanup HUD: placed / destroyed counts, points, the countdown, and an
-// arrow toward the held prop's home when the player isn't looking at it.
+// arrow toward the held prop's home (or the hinted prop) when the player isn't looking at it.
 // Created by ALTTMessDirector (HUDClass). Works on its own: if no Widget Blueprint layout is given it
 // builds a default one. A Widget Blueprint child can restyle it by naming its Text Blocks PlacedText,
-// DestroyedText, PointsText and TimerText.
+// DestroyedText, PointsText, TimerText, HintKeyText and HintText.
 
 #pragma once
 
@@ -30,6 +30,14 @@ public:
 
 	UPROPERTY(BlueprintReadOnly, Category = "Cleanup HUD", meta = (BindWidgetOptional))
 	TObjectPtr<UTextBlock> TimerText;
+
+	/** "[F] Hint", greyed out with the seconds left while the hint is cooling down. */
+	UPROPERTY(BlueprintReadOnly, Category = "Cleanup HUD", meta = (BindWidgetOptional))
+	TObjectPtr<UTextBlock> HintKeyText;
+
+	/** Under the crosshair while a hint is up: prop name, distance, and floor. */
+	UPROPERTY(BlueprintReadOnly, Category = "Cleanup HUD", meta = (BindWidgetOptional))
+	TObjectPtr<UTextBlock> HintText;
 
 	// ---- Countdown look ----
 
@@ -66,6 +74,14 @@ public:
 	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Cleanup HUD|Home Arrow")
 	FLinearColor ArrowColor = FLinearColor(1.f, 0.78f, 0.1f);
 
+	/** Arrow colour when it points at the hinted prop (not holding anything). */
+	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Cleanup HUD|Home Arrow")
+	FLinearColor HintArrowColor = FLinearColor(0.2f, 0.85f, 1.f);
+
+	/** Height difference (cm) above which the hint says "upstairs" / "downstairs". */
+	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Cleanup HUD|Home Arrow")
+	float FloorHeight = 220.f;
+
 	/** True while the arrow is drawn. */
 	UFUNCTION(BlueprintPure, Category = "Cleanup HUD|Home Arrow")
 	bool IsHomeArrowVisible() const { return bArrowVisible; }
@@ -83,11 +99,14 @@ protected:
 
 	void UpdateTexts();
 	void UpdateArrow();
+	/** Points the arrow at Target unless it's within ArrowHideAngle of the view. */
+	void AimArrowAt(const FVector& Target, const FVector& CamLoc, const FRotator& CamRot, const FLinearColor& Color);
 
 	TWeakObjectPtr<ALTTMessDirector> Director;
 
 	bool bArrowVisible = false;
 	/** Screen-space direction to the home (X right, Y down), unit length. */
 	FVector2f ArrowDir = FVector2f(0.f, 1.f);
+	FLinearColor ArrowDrawColor = FLinearColor::White;
 	float ArrowPulse = 0.f;
 };

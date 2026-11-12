@@ -19,7 +19,12 @@ public class CleanCutAction : ModuleRules
 			"GameplayStateTreeModule",
 			"UMG",
 			"Slate",
-			"SlateCore"
+			"SlateCore",
+			"AssetRegistry",
+			"GeometryCollectionEngine",
+			"Chaos",
+			"LevelSequence",
+			"MovieScene"
 		});
 
 		PrivateDependencyModuleNames.AddRange(new string[] { });

@@ -10,6 +10,7 @@
 #include "Components/TextBlock.h"
 #include "Components/VerticalBox.h"
 #include "Components/VerticalBoxSlot.h"
+#include "Components/StaticMeshComponent.h"
 #include "Camera/PlayerCameraManager.h"
 #include "GameFramework/Pawn.h"
 #include "GameFramework/PlayerController.h"
@@ -64,9 +65,10 @@ void ULTTCleanupHUD::BuildDefaultLayout()
 	PlacedText = MakeText(TEXT("PlacedText"), 26);
 	DestroyedText = MakeText(TEXT("DestroyedText"), 20);
 	PointsText = MakeText(TEXT("PointsText"), 20);
+	HintKeyText = MakeText(TEXT("HintKeyText"), 18);
 	DestroyedText->SetColorAndOpacity(FSlateColor(FLinearColor(1.f, 0.55f, 0.45f)));
 	PointsText->SetColorAndOpacity(FSlateColor(FLinearColor(1.f, 0.85f, 0.3f)));
-	for (UTextBlock* Text : { PlacedText.Get(), DestroyedText.Get(), PointsText.Get() })
+	for (UTextBlock* Text : { PlacedText.Get(), DestroyedText.Get(), PointsText.Get(), HintKeyText.Get() })
 	{
 		if (UVerticalBoxSlot* TextSlot = Stats->AddChildToVerticalBox(Text))
 		{
@@ -83,6 +85,18 @@ void ULTTCleanupHUD::BuildDefaultLayout()
 		TimerSlot->SetAlignment(FVector2D(0.5f, 0.f));
 		TimerSlot->SetPosition(FVector2D(0.f, 24.f));
 		TimerSlot->SetAutoSize(true);
+	}
+
+	// Under the crosshair: what the hint points at.
+	HintText = MakeText(TEXT("HintText"), 20);
+	HintText->SetJustification(ETextJustify::Center);
+	HintText->SetColorAndOpacity(FSlateColor(HintArrowColor));
+	if (UCanvasPanelSlot* HintSlot = Root->AddChildToCanvas(HintText))
+	{
+		HintSlot->SetAnchors(FAnchors(0.5f, 0.5f));
+		HintSlot->SetAlignment(FVector2D(0.5f, 0.f));
+		HintSlot->SetPosition(FVector2D(0.f, 60.f));
+		HintSlot->SetAutoSize(true);
 	}
 }
 
@@ -115,6 +129,16 @@ void ULTTCleanupHUD::UpdateTexts()
 	{
 		PointsText->SetText(FText::Format(LOCTEXT("Points", "{0} points"), FText::AsNumber(D ? D->GetScore() : 0)));
 	}
+	if (HintKeyText)
+	{
+		const float Cooldown = D ? D->GetHintCooldownRemaining() : 0.f;
+		const FText Key = D ? D->HintKey.GetDisplayName() : FText::GetEmpty();
+		HintKeyText->SetText(Cooldown > 0.f
+			? FText::Format(LOCTEXT("HintCooldown", "[{0}] Hint ({1}s)"), Key, FText::AsNumber(FMath::CeilToInt(Cooldown)))
+			: FText::Format(LOCTEXT("HintReady", "[{0}] Hint"), Key));
+		HintKeyText->SetColorAndOpacity(FSlateColor(Cooldown > 0.f ? FLinearColor(1.f, 1.f, 1.f, 0.45f) : FLinearColor::White));
+		HintKeyText->SetVisibility(D && !D->IsSetClean() && !D->IsTimeUp() ? ESlateVisibility::HitTestInvisible : ESlateVisibility::Collapsed);
+	}
 	if (TimerText)
 	{
 		const bool bShow = D && (D->bUseTimer || D->IsTimeUp());
@@ -143,23 +167,55 @@ void ULTTCleanupHUD::UpdateTexts()
 void ULTTCleanupHUD::UpdateArrow()
 {
 	bArrowVisible = false;
-	if (!bShowHomeArrow)
-	{
-		return;
-	}
 
 	APlayerController* PC = GetOwningPlayer();
 	APawn* Pawn = PC ? PC->GetPawn() : nullptr;
 	const ULTTCarryComponent* Carry = Pawn ? Pawn->FindComponentByClass<ULTTCarryComponent>() : nullptr;
 	const ALTTInteractableBase* Held = Carry ? Carry->GetHeldItem() : nullptr;
-	if (!Held || !Held->HasHome() || Held->IsPlaced() || !PC->PlayerCameraManager)
+	const ALTTInteractableBase* Hinted = (Pawn && !Held && Director.IsValid()) ? Director->GetHintTarget() : nullptr;
+
+	if (HintText)
+	{
+		if (Hinted && Hinted->Mesh)
+		{
+			const FVector Target = Hinted->Mesh->Bounds.Origin;
+			const FVector PawnLoc = Pawn->GetActorLocation();
+			const int32 Meters = FMath::RoundToInt(static_cast<float>(FVector::Dist(PawnLoc, Target)) / 100.f);
+			const float Up = static_cast<float>(Target.Z - PawnLoc.Z);
+			const FText Floor = Up > FloorHeight ? LOCTEXT("Upstairs", " (upstairs)")
+				: Up < -FloorHeight ? LOCTEXT("Downstairs", " (downstairs)") : FText::GetEmpty();
+			HintText->SetText(FText::Format(LOCTEXT("HintTarget", "{0} - {1} m{2}"), Hinted->GetPropName(), FText::AsNumber(Meters), Floor));
+			HintText->SetVisibility(ESlateVisibility::HitTestInvisible);
+		}
+		else
+		{
+			HintText->SetVisibility(ESlateVisibility::Collapsed);
+		}
+	}
+
+	if (!bShowHomeArrow || !PC || !PC->PlayerCameraManager)
 	{
 		return;
 	}
-
 	const FVector CamLoc = PC->PlayerCameraManager->GetCameraLocation();
 	const FRotator CamRot = PC->PlayerCameraManager->GetCameraRotation();
-	const FVector Local = CamRot.UnrotateVector(Held->GetHomeCenter() - CamLoc); // X forward, Y right, Z up
+
+	if (Held)
+	{
+		if (Held->HasHome() && !Held->IsPlaced())
+		{
+			AimArrowAt(Held->GetHomeCenter(), CamLoc, CamRot, ArrowColor);
+		}
+	}
+	else if (Hinted && Hinted->Mesh)
+	{
+		AimArrowAt(Hinted->Mesh->Bounds.Origin, CamLoc, CamRot, HintArrowColor);
+	}
+}
+
+void ULTTCleanupHUD::AimArrowAt(const FVector& Target, const FVector& CamLoc, const FRotator& CamRot, const FLinearColor& Color)
+{
+	const FVector Local = CamRot.UnrotateVector(Target - CamLoc); // X forward, Y right, Z up
 	const float Dist = static_cast<float>(Local.Size());
 	if (Dist < KINDA_SMALL_NUMBER)
 	{
@@ -178,6 +234,7 @@ void ULTTCleanupHUD::UpdateArrow()
 		Dir = FVector2f(0.f, 1.f); // straight behind: point down ("turn around")
 	}
 	ArrowDir = Dir.GetSafeNormal();
+	ArrowDrawColor = Color;
 	bArrowVisible = true;
 }
 
@@ -205,8 +262,8 @@ int32 ULTTCleanupHUD::NativePaint(const FPaintArgs& Args, const FGeometry& Allot
 	TArray<FVector2f> Chevron2 = { Chevron[0] + Shift, Chevron[1] + Shift, Chevron[2] + Shift };
 
 	const FPaintGeometry Geo = AllottedGeometry.ToPaintGeometry();
-	const FLinearColor Outline(0.f, 0.f, 0.f, 0.7f * ArrowColor.A);
-	FLinearColor Faded = ArrowColor;
+	const FLinearColor Outline(0.f, 0.f, 0.f, 0.7f * ArrowDrawColor.A);
+	FLinearColor Faded = ArrowDrawColor;
 	Faded.A *= 0.6f;
 
 	++MaxLayer;
@@ -214,7 +271,7 @@ int32 ULTTCleanupHUD::NativePaint(const FPaintArgs& Args, const FGeometry& Allot
 	FSlateDrawElement::MakeLines(OutDrawElements, MaxLayer, Geo, Chevron, ESlateDrawEffect::None, Outline, true, ArrowThickness + 4.f);
 	++MaxLayer;
 	FSlateDrawElement::MakeLines(OutDrawElements, MaxLayer, Geo, Chevron2, ESlateDrawEffect::None, Faded, true, ArrowThickness);
-	FSlateDrawElement::MakeLines(OutDrawElements, MaxLayer, Geo, Chevron, ESlateDrawEffect::None, ArrowColor, true, ArrowThickness);
+	FSlateDrawElement::MakeLines(OutDrawElements, MaxLayer, Geo, Chevron, ESlateDrawEffect::None, ArrowDrawColor, true, ArrowThickness);
 	return MaxLayer;
 }
 

@@ -8,13 +8,17 @@
 #include "Materials/MaterialInterface.h"
 #include "Materials/MaterialInstanceDynamic.h"
 #include "Interaction/LTTMessDirector.h"
+#include "GeometryCollection/GeometryCollectionActor.h"
+#include "GeometryCollection/GeometryCollectionComponent.h"
+#include "GeometryCollection/GeometryCollectionObject.h"
 
 namespace
 {
 	constexpr float PlaceTweenTime = 0.2f;
 	const FLinearColor GhostColorIdle(0.25f, 0.75f, 1.f);      // carried: "it goes here"
 	const FLinearColor GhostColorTargeted(1.f, 0.8f, 0.15f);    // aiming at it: place now
-	const FLinearColor GhostColorBlocked(1.f, 0.2f, 0.15f);     // its table/shelf isn't back yet
+	const FLinearColor GhostColorBlocked(1.f, 0.38f, 0.f);      // orange: its table/plate isn't back yet
+	const FLinearColor GhostColorSupport(1.f, 0.38f, 0.f);      // orange: the table/plate the held prop needs first
 }
 
 ALTTInteractableBase::ALTTInteractableBase()
@@ -23,6 +27,9 @@ ALTTInteractableBase::ALTTInteractableBase()
 	PrimaryActorTick.bCanEverTick = true;
 	PrimaryActorTick.bStartWithTickEnabled = false;
 	GhostMaterial = TSoftObjectPtr<UMaterialInterface>(FSoftObjectPath(TEXT("/Game/_CleanCutAction/Materials/M_GhostSilhouette.M_GhostSilhouette")));
+	// Cooked through the "BreakFX" AlwaysCook entry in Config/DefaultGame.ini (nothing in content references it).
+	// Lives outside /Game/_CleanCutAction/Destruction: that folder (the old per-prop GCs) is never cooked.
+	GenericBreakCollection = TSoftObjectPtr<UGeometryCollection>(FSoftObjectPath(TEXT("/Game/_CleanCutAction/BreakFX/GC_Generic_Shatter.GC_Generic_Shatter")));
 	// The mesh component lives in BP_MasterInteractables (Blueprint SCS) so content can be built before code.
 }
 
@@ -245,16 +252,47 @@ void ALTTInteractableBase::FindHomeSupport()
 		return;
 	}
 	// Must run while the prop is still at home (before the earthquake).
+	// A thin box just under the prop's bottom. An overlap (not a line trace from the centre) so thin props
+	// like plates still find the table even when their centre sits inside the table's collision box.
 	const FBoxSphereBounds& B = Mesh->Bounds;
-	const FVector Start = B.Origin;
-	const FVector End = B.Origin - FVector(0.f, 0.f, B.BoxExtent.Z + 8.f);
+	const float Bottom = static_cast<float>(B.Origin.Z - B.BoxExtent.Z);
+	const FVector ProbeExtent(FMath::Max(B.BoxExtent.X * 0.5f, 1.f), FMath::Max(B.BoxExtent.Y * 0.5f, 1.f), 4.f);
+	const FVector ProbeCenter(B.Origin.X, B.Origin.Y, Bottom - 2.f);
+
 	FCollisionQueryParams Params(SCENE_QUERY_STAT(LTTHomeSupport), false, this);
-	FHitResult Hit;
-	if (GetWorld()->LineTraceSingleByChannel(Hit, Start, End, ECC_Visibility, Params))
+	TArray<FOverlapResult> Overlaps;
+	GetWorld()->OverlapMultiByObjectType(Overlaps, ProbeCenter, FQuat::Identity,
+		FCollisionObjectQueryParams(FCollisionObjectQueryParams::AllObjects), FCollisionShape::MakeBox(ProbeExtent), Params);
+
+	// The support is the cleanup prop with the highest top surface that is still below this prop's centre
+	// (cup -> saucer, not the table under the saucer).
+	float BestTop = -UE_BIG_NUMBER;
+	for (const FOverlapResult& O : Overlaps)
 	{
-		ALTTInteractableBase* Under = Cast<ALTTInteractableBase>(Hit.GetActor());
-		if (Under && Under != this && Under->bIsCleanupTask && Under->HomeSupport != this)
+		ALTTInteractableBase* Under = Cast<ALTTInteractableBase>(O.GetActor());
+		if (!Under || Under == this || !Under->Mesh || !Under->bIsCleanupTask)
 		{
+			continue;
+		}
+		const FBoxSphereBounds& UB = Under->Mesh->Bounds;
+		const float UnderTop = static_cast<float>(UB.Origin.Z + UB.BoxExtent.Z);
+		if (UB.Origin.Z >= B.Origin.Z || UnderTop <= BestTop)
+		{
+			continue;
+		}
+		// No loops (two props that each think the other is under them).
+		bool bLoop = false;
+		for (const ALTTInteractableBase* S = Under; IsValid(S); S = S->HomeSupport)
+		{
+			if (S == this)
+			{
+				bLoop = true;
+				break;
+			}
+		}
+		if (!bLoop)
+		{
+			BestTop = UnderTop;
 			HomeSupport = Under;
 		}
 	}
@@ -262,8 +300,23 @@ void ALTTInteractableBase::FindHomeSupport()
 
 bool ALTTInteractableBase::IsHomeSupportReady() const
 {
-	// A support that was broken/destroyed no longer blocks anything.
-	return !IsValid(HomeSupport) || HomeSupport->IsPlaced();
+	return GetBlockingSupport() == nullptr;
+}
+
+ALTTInteractableBase* ALTTInteractableBase::GetBlockingSupport() const
+{
+	// Walk the whole stack (croissant -> plate -> table). The lowest prop that isn't back yet is the one
+	// to put back next. Broken/destroyed supports no longer block anything.
+	ALTTInteractableBase* Lowest = nullptr;
+	int32 Depth = 0;
+	for (ALTTInteractableBase* S = HomeSupport; IsValid(S) && Depth < 16; S = S->HomeSupport, ++Depth)
+	{
+		if (!S->IsPlaced())
+		{
+			Lowest = S;
+		}
+	}
+	return Lowest;
 }
 
 FVector ALTTInteractableBase::GetHomeCenter() const
@@ -306,7 +359,7 @@ bool ALTTInteractableBase::IsTargetingHome(const FVector& ViewLocation, const FV
 	return (ToHome - Dir * Along).SizeSquared() <= FMath::Square(Radius);
 }
 
-void ALTTInteractableBase::UpdateGhost(bool bVisible, bool bTargeted, bool bReady)
+void ALTTInteractableBase::UpdateGhost(bool bVisible, bool bTargeted, bool bReady, bool bAsRequiredSupport)
 {
 	const bool bShow = bVisible && bHasHome && bIsCleanupTask && !bPlaced && Mesh && Mesh->GetStaticMesh();
 	if (!bShow)
@@ -343,7 +396,8 @@ void ALTTInteractableBase::UpdateGhost(bool bVisible, bool bTargeted, bool bRead
 
 	if (GhostMID)
 	{
-		const FLinearColor C = !bReady ? GhostColorBlocked : (bTargeted ? GhostColorTargeted : GhostColorIdle);
+		const FLinearColor C = bAsRequiredSupport ? GhostColorSupport
+			: !bReady ? GhostColorBlocked : (bTargeted ? GhostColorTargeted : GhostColorIdle);
 		GhostMID->SetVectorParameterValue(TEXT("Color"), C);
 	}
 	Ghost->SetVisibility(true);
@@ -458,4 +512,60 @@ void ALTTInteractableBase::OnFocusEnd_Implementation(AActor* InstigatorActor)
 {
 	Mesh->SetRenderCustomDepth(false);
 	ReceiveFocusChanged(false);
+}
+
+AActor* ALTTInteractableBase::ShatterGeneric(FVector ImpactPoint, bool bDestroyProp)
+{
+	UGeometryCollection* Collection = GenericBreakCollection.LoadSynchronous();
+	UWorld* World = GetWorld();
+	if (!Collection || !World || !Mesh || !Mesh->GetStaticMesh())
+	{
+		return nullptr;
+	}
+
+	const FTransform MeshXf = Mesh->GetComponentTransform();
+	const FBoxSphereBounds PropLocal = Mesh->GetStaticMesh()->GetBounds();
+
+	AGeometryCollectionActor* Debris = World->SpawnActorDeferred<AGeometryCollectionActor>(
+		AGeometryCollectionActor::StaticClass(), MeshXf, nullptr, nullptr, ESpawnActorCollisionHandlingMethod::AlwaysSpawn);
+	UGeometryCollectionComponent* Pieces = Debris ? Debris->GetGeometryCollectionComponent() : nullptr;
+	if (!Pieces)
+	{
+		return nullptr;
+	}
+	Pieces->SetRestCollection(Collection);
+
+	// Stretch the cube to the prop's box (per axis), centred on the prop's bounds.
+	const FBoxSphereBounds CubeLocal = Pieces->CalcBounds(FTransform::Identity);
+	FVector Scale(
+		PropLocal.BoxExtent.X / FMath::Max(CubeLocal.BoxExtent.X, 0.1),
+		PropLocal.BoxExtent.Y / FMath::Max(CubeLocal.BoxExtent.Y, 0.1),
+		PropLocal.BoxExtent.Z / FMath::Max(CubeLocal.BoxExtent.Z, 0.1));
+	Scale = (Scale * MeshXf.GetScale3D()).ComponentMax(FVector(0.01));
+	const FQuat Rotation = MeshXf.GetRotation();
+	const FVector Center = MeshXf.TransformPosition(PropLocal.Origin);
+	const FVector Location = Center - Rotation.RotateVector(CubeLocal.Origin * Scale);
+
+	// Pieces shouldn't trip the player.
+	Pieces->SetCollisionResponseToChannel(ECC_Pawn, ECR_Ignore);
+	Debris->FinishSpawning(FTransform(Rotation, Location, Scale));
+
+	// The prop's look: every slot (outside and inside faces) uses its first material.
+	if (UMaterialInterface* PropMaterial = Mesh->GetMaterial(0))
+	{
+		for (int32 i = 0; i < Pieces->GetNumMaterials(); ++i)
+		{
+			Pieces->SetMaterial(i, PropMaterial);
+		}
+	}
+
+	Pieces->CrumbleActiveClusters();
+	Pieces->AddRadialImpulse(ImpactPoint, GetPropRadius() * 2.f + 50.f, ShatterImpulse, RIF_Linear, true);
+	Debris->SetLifeSpan(DebrisLifeSpan);
+
+	if (bDestroyProp)
+	{
+		Destroy(); // mess director counts it as broken (OnDestroyed)
+	}
+	return Debris;
 }

@@ -11,6 +11,7 @@
 class UStaticMeshComponent;
 class UMaterialInterface;
 class UMaterialInstanceDynamic;
+class UGeometryCollection;
 
 UCLASS(Blueprintable)
 class CLEANCUTACTION_API ALTTInteractableBase : public AActor, public ILTTInteractable
@@ -72,6 +73,25 @@ public:
 	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Interactable|Hold", meta = (EditCondition = "bAutoTwoHanded"))
 	float TwoHandedRadius = 22.f;
 
+	// ---- Breaking: one shared pre-fractured cube for every prop (keeps the web build small) ----
+
+	/** Shared fractured cube used by ShatterGeneric. It's scaled to this prop's bounds and given its material. */
+	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Interactable|Break")
+	TSoftObjectPtr<UGeometryCollection> GenericBreakCollection;
+
+	/** Seconds before the pieces are removed. */
+	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Interactable|Break", meta = (ClampMin = "0.5"))
+	float DebrisLifeSpan = 4.f;
+
+	/** Outward speed given to the pieces (cm/s). */
+	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Interactable|Break", meta = (ClampMin = "0"))
+	float ShatterImpulse = 250.f;
+
+	/** Breaks the prop into GenericBreakCollection pieces sized and coloured like it. Destroying the prop counts it as
+	 *  broken for the mess director. Returns the debris actor, or null if the generic collection is missing. */
+	UFUNCTION(BlueprintCallable, Category = "Interactable|Break")
+	AActor* ShatterGeneric(FVector ImpactPoint, bool bDestroyProp = true);
+
 	// ---- Cleanup: put the prop back where it was in the clean level ----
 
 	/** The set isn't clean until this prop is back home. Off for props that don't matter (trash, extras). */
@@ -108,6 +128,11 @@ public:
 	UFUNCTION(BlueprintPure, Category = "Interactable|Cleanup")
 	bool IsHomeSupportReady() const;
 
+	/** The lowest prop in this one's stack that isn't back yet (the table under the plate under this croissant),
+	 *  i.e. what has to be put back next. Null if nothing blocks this prop. */
+	UFUNCTION(BlueprintPure, Category = "Interactable|Cleanup")
+	ALTTInteractableBase* GetBlockingSupport() const;
+
 	/** World centre of the prop's bounds at home. */
 	UFUNCTION(BlueprintPure, Category = "Interactable|Cleanup")
 	FVector GetHomeCenter() const;
@@ -135,8 +160,9 @@ public:
 	/** Locks at home immediately (bStartsAtHome). */
 	void SnapToHome();
 
-	/** Shows the home silhouette while carried. bTargeted = aiming at it, bReady = its support is placed. */
-	void UpdateGhost(bool bVisible, bool bTargeted, bool bReady);
+	/** Shows the home silhouette while carried. bTargeted = aiming at it, bReady = its support is placed.
+	 *  bAsRequiredSupport = shown (orange) because a held prop needs this one put back first. */
+	void UpdateGhost(bool bVisible, bool bTargeted, bool bReady, bool bAsRequiredSupport = false);
 
 	UFUNCTION(BlueprintImplementableEvent, Category = "Interactable|Cleanup", meta = (DisplayName = "On Placed"))
 	void ReceivePlaced();

@@ -60,6 +60,19 @@ void ULTTInteractionComponent::UpdatePlaceHint()
 	PlaceHint = ELTTPlaceHint::None;
 	const ULTTCarryComponent* Carry = GetCarry();
 	ALTTInteractableBase* Held = Carry ? Carry->GetHeldItem() : nullptr;
+
+	// The prop under the held one's home (table under a cup) isn't back yet: show where it goes, in orange.
+	ALTTInteractableBase* NeededSupport = nullptr;
+	if (Held && Held->bIsCleanupTask && Held->HasHome())
+	{
+		ALTTInteractableBase* Blocking = Held->GetBlockingSupport();
+		if (Blocking && !Blocking->IsHeld())
+		{
+			NeededSupport = Blocking;
+		}
+	}
+	SetSupportGhost(NeededSupport);
+
 	const APawn* Pawn = Cast<APawn>(GetOwner());
 	AController* Controller = Pawn ? Pawn->GetController() : nullptr;
 	if (!Held || !Controller)
@@ -85,6 +98,20 @@ void ULTTInteractionComponent::UpdatePlaceHint()
 	Held->UpdateGhost(true, bTargeted, bReady);
 }
 
+void ULTTInteractionComponent::SetSupportGhost(ALTTInteractableBase* Support)
+{
+	ALTTInteractableBase* Old = ShownSupportGhost.Get();
+	if (Old != Support && IsValid(Old) && !Old->IsHeld())
+	{
+		Old->UpdateGhost(false, false, false);
+	}
+	ShownSupportGhost = Support;
+	if (Support)
+	{
+		Support->UpdateGhost(true, false, true, true);
+	}
+}
+
 FText ULTTInteractionComponent::GetPlaceHintText() const
 {
 	switch (PlaceHint)
@@ -95,9 +122,9 @@ FText ULTTInteractionComponent::GetPlaceHintText() const
 	{
 		const ULTTCarryComponent* Carry = GetCarry();
 		const ALTTInteractableBase* Held = Carry ? Carry->GetHeldItem() : nullptr;
-		if (Held && IsValid(Held->HomeSupport))
+		if (const ALTTInteractableBase* Blocking = Held ? Held->GetBlockingSupport() : nullptr)
 		{
-			return FText::Format(NSLOCTEXT("LTT", "HintSupport", "Put the {0} back first"), Held->HomeSupport->GetPropName());
+			return FText::Format(NSLOCTEXT("LTT", "HintSupport", "Put the {0} back first"), Blocking->GetPropName());
 		}
 		return NSLOCTEXT("LTT", "HintDrop", "Drop");
 	}
@@ -133,13 +160,26 @@ void ULTTInteractionComponent::UpdateFocus()
 	FCollisionQueryParams Params(SCENE_QUERY_STAT(LTTInteractTrace), false, GetOwner());
 	FHitResult Hit;
 	AActor* NewFocus = nullptr;
-	if (GetWorld()->SweepSingleByChannel(Hit, ViewLoc, End, FQuat::Identity, TraceChannel, FCollisionShape::MakeSphere(TraceRadius), Params))
+	// Placed props are see-through for the trace, so a cup already put back on a table doesn't block
+	// grabbing the plate behind it. Walls and static set pieces still block.
+	for (int32 Pass = 0; Pass < MaxPlacedPassThrough + 1; ++Pass)
 	{
+		if (!GetWorld()->SweepSingleByChannel(Hit, ViewLoc, End, FQuat::Identity, TraceChannel, FCollisionShape::MakeSphere(TraceRadius), Params))
+		{
+			break;
+		}
 		AActor* HitActor = Hit.GetActor();
+		const ALTTInteractableBase* HitProp = Cast<ALTTInteractableBase>(HitActor);
+		if (HitProp && (HitProp->IsPlaced() || HitProp->IsHeld()))
+		{
+			Params.AddIgnoredActor(HitActor);
+			continue;
+		}
 		if (HitActor && HitActor->Implements<ULTTInteractable>() && ILTTInteractable::Execute_CanInteract(HitActor, GetOwner()))
 		{
 			NewFocus = HitActor;
 		}
+		break;
 	}
 	SetFocus(NewFocus);
 }
