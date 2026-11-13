@@ -27,7 +27,7 @@ public class CleanCutAction : ModuleRules
 			"MovieScene"
 		});
 
-		PrivateDependencyModuleNames.AddRange(new string[] { });
+		PrivateDependencyModuleNames.AddRange(new string[] { "HTTP", "Json" });
 
 		// Editor-only: ULTTWidgetBaker copies the C++ widget layouts into WBP_ children.
 		if (Target.bBuildEditor)

@@ -23,4 +23,17 @@ public:
 	 */
 	UFUNCTION(BlueprintCallable, Category = "LTT|Editor", meta = (DevelopmentOnly))
 	static FString BakeLayoutIntoWidgetBlueprint(UObject* WidgetBlueprint);
+
+	/**
+	 * Copies ONE named widget (and its children) from the C++ layout into an existing Widget Blueprint, keeping
+	 * every other designer edit. Inserted right before InsertBefore (a widget in the Blueprint), or appended to
+	 * the panel ParentPanel when InsertBefore is None. Does nothing if the Blueprint already has WidgetName.
+	 * Returns a short report, or an error string starting with "ERROR".
+	 */
+	UFUNCTION(BlueprintCallable, Category = "LTT|Editor", meta = (DevelopmentOnly))
+	static FString BakeWidgetIntoWidgetBlueprint(UObject* WidgetBlueprint, FName WidgetName, FName InsertBefore, FName ParentPanel);
+
+private:
+	/** A transient instance of WBP's native parent with its code layout built, or nullptr (Error says why). */
+	static class UUserWidget* BuildTempLayout(UObject* WidgetBlueprint, UClass*& OutNative, FString& Error);
 };

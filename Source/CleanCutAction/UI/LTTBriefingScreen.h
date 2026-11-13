@@ -14,6 +14,7 @@ class UTextBlock;
 class UButton;
 class UWidget;
 class UVerticalBox;
+class UEditableTextBox;
 class ALTTMessDirector;
 
 UCLASS(Blueprintable)
@@ -59,6 +60,18 @@ public:
 	UPROPERTY(BlueprintReadOnly, Category = "Briefing", meta = (BindWidgetOptional))
 	TObjectPtr<UButton> NoTimerButton;
 
+	/** The player's name on the leaderboard (starts as a random name; the player can type their own). */
+	UPROPERTY(BlueprintReadOnly, Category = "Briefing", meta = (BindWidgetOptional))
+	TObjectPtr<UEditableTextBox> NameInput;
+
+	/** Rolls a new random name. */
+	UPROPERTY(BlueprintReadOnly, Category = "Briefing", meta = (BindWidgetOptional))
+	TObjectPtr<UButton> RandomNameButton;
+
+	/** Saves whatever is in NameInput as the leaderboard name (empty = a new random name). */
+	UFUNCTION(BlueprintCallable, Category = "Briefing")
+	void CommitName();
+
 	/** The briefing card with its corner decorations (fades and rises in). */
 	UPROPERTY(BlueprintReadOnly, Category = "Briefing", meta = (BindWidgetOptional))
 	TObjectPtr<UWidget> Card;
@@ -89,6 +102,18 @@ protected:
 
 	UFUNCTION()
 	void HandleNoTimerClicked();
+
+	UFUNCTION()
+	void HandleRandomNameClicked();
+
+	UFUNCTION()
+	void HandleNameChanged(const FText& Text);
+
+	UFUNCTION()
+	void HandleNameCommitted(const FText& Text, ETextCommit::Type CommitMethod);
+
+	/** Name row (label, text box, dice button) for the C++ layout. */
+	void AddNameRow(UVerticalBox* Box);
 
 	TWeakObjectPtr<ALTTMessDirector> Director;
 	float AnimTime = 0.f;
