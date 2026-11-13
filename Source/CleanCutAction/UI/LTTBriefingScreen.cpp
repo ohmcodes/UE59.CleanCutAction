@@ -38,6 +38,11 @@ namespace
 		const float U = 1.f - T;
 		return 1.f - U * U * U;
 	}
+
+	// Screen fit: room kept around the card (the corner props hang ~50 over its edges, plus phone notches),
+	// and the smallest the card may shrink to.
+	const float BriefingFitMargin = 56.f;
+	const float BriefingMinFitScale = 0.3f;
 }
 
 void ULTTBriefingScreen::NativeOnInitialized()
@@ -607,6 +612,19 @@ void ULTTBriefingScreen::NativeTick(const FGeometry& MyGeometry, float InDeltaTi
 		const float E = EaseOutCubic(FMath::Clamp(AnimTime / 0.4f, 0.f, 1.f));
 		Card->SetRenderOpacity(E);
 		Card->SetRenderTranslation(FVector2D(0.f, (1.f - E) * 40.f));
+
+		// Fit the screen: on a small or short screen (phone, landscape browser) the whole card shrinks around
+		// its centre until it fits, so the start buttons are always on screen and tappable (hit testing follows
+		// the render scale). Full size whenever there's room. Works for the C++ layout and the WBP_ child.
+		const FVector2D Avail = MyGeometry.GetLocalSize() - FVector2D(2.f * BriefingFitMargin);
+		const FVector2D Want = Card->GetDesiredSize();
+		float Fit = 1.f;
+		if (Want.X > 1.f && Want.Y > 1.f && Avail.X > 1.f && Avail.Y > 1.f)
+		{
+			Fit = FMath::Clamp(FMath::Min(Avail.X / Want.X, Avail.Y / Want.Y), BriefingMinFitScale, 1.f);
+		}
+		Card->SetRenderTransformPivot(FVector2D(0.5f, 0.5f));
+		Card->SetRenderScale(FVector2D(Fit, Fit));
 	}
 	// Start buttons breathe (out of step) so it's obvious what to do.
 	if (StartButton)
