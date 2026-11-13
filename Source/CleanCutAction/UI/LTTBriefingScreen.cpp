@@ -12,6 +12,8 @@
 #include "Components/Button.h"
 #include "Components/CanvasPanel.h"
 #include "Components/CanvasPanelSlot.h"
+#include "Components/Overlay.h"
+#include "Components/OverlaySlot.h"
 #include "Components/HorizontalBox.h"
 #include "Components/HorizontalBoxSlot.h"
 #include "Components/SizeBox.h"
@@ -48,6 +50,10 @@ void ULTTBriefingScreen::NativeOnInitialized()
 	{
 		StartButton->OnClicked.AddDynamic(this, &ULTTBriefingScreen::HandleStartClicked);
 	}
+	if (NoTimerButton)
+	{
+		NoTimerButton->OnClicked.AddDynamic(this, &ULTTBriefingScreen::HandleNoTimerClicked);
+	}
 }
 
 void ULTTBriefingScreen::NativeConstruct()
@@ -72,7 +78,8 @@ void ULTTBriefingScreen::ApplyInputVariant()
 	}
 	if (UTextBlock* StartHint = Cast<UTextBlock>(GetWidgetFromName(TEXT("StartHint"))))
 	{
-		StartHint->SetText(bTouch ? LOCTEXT("StartHintTouch", "Tap to start") : LOCTEXT("StartHint", "Click, or press Enter / gamepad A"));
+		StartHint->SetText(bTouch ? LOCTEXT("StartHintTouch", "Tap a button to start")
+			: LOCTEXT("StartHint", "Time trial: Enter / gamepad A     No timer: N / gamepad Y"));
 	}
 }
 
@@ -85,14 +92,45 @@ UTextBlock* ULTTBriefingScreen::MakeText(FName Name, int32 FontSize, const FLine
 	return Text;
 }
 
-void ULTTBriefingScreen::AddHeader(UVerticalBox* Box, const FText& Text, float TopPadding) const
+void ULTTBriefingScreen::AddHeader(UVerticalBox* Box, const FText& Text, float TopPadding, const TCHAR* IconName) const
 {
+	UHorizontalBox* Row = WidgetTree->ConstructWidget<UHorizontalBox>(UHorizontalBox::StaticClass());
+	if (UHorizontalBoxSlot* S = Row->AddChildToHorizontalBox(LTTTheme::MakeArtIcon(WidgetTree, NAME_None, IconName, 40.f)))
+	{
+		S->SetVerticalAlignment(VAlign_Center);
+		S->SetPadding(FMargin(0.f, 0.f, 10.f, 0.f));
+	}
 	UTextBlock* Header = MakeText(NAME_None, 20, TapeYellow);
-	Header->SetText(FText::Format(NSLOCTEXT("LTTBriefingScreen", "HeaderFlourish", "~ {0} ~"), Text));
-	if (UVerticalBoxSlot* S = Box->AddChildToVerticalBox(Header))
+	Header->SetText(Text);
+	if (UHorizontalBoxSlot* S = Row->AddChildToHorizontalBox(Header))
+	{
+		S->SetVerticalAlignment(VAlign_Center);
+	}
+	if (UVerticalBoxSlot* S = Box->AddChildToVerticalBox(Row))
 	{
 		S->SetPadding(FMargin(0.f, TopPadding, 0.f, 6.f));
 	}
+}
+
+UTextBlock* ULTTBriefingScreen::AddIconTextRow(UVerticalBox* Box, FName TextName, const TCHAR* IconName) const
+{
+	UHorizontalBox* Row = WidgetTree->ConstructWidget<UHorizontalBox>(UHorizontalBox::StaticClass());
+	if (UHorizontalBoxSlot* S = Row->AddChildToHorizontalBox(LTTTheme::MakeArtIcon(WidgetTree, NAME_None, IconName, 32.f)))
+	{
+		S->SetVerticalAlignment(VAlign_Center);
+		S->SetPadding(FMargin(4.f, 0.f, 12.f, 0.f));
+	}
+	UTextBlock* Text = MakeText(TextName, 15, SoftWhite, true);
+	if (UHorizontalBoxSlot* S = Row->AddChildToHorizontalBox(Text))
+	{
+		S->SetSize(FSlateChildSize(ESlateSizeRule::Fill));
+		S->SetVerticalAlignment(VAlign_Center);
+	}
+	if (UVerticalBoxSlot* S = Box->AddChildToVerticalBox(Row))
+	{
+		S->SetPadding(FMargin(0.f, 2.f));
+	}
+	return Text;
 }
 
 void ULTTBriefingScreen::AddControlRow(UVerticalBox* Box, const FText& Action, const FText& Keyboard, const FText& Gamepad) const
@@ -110,9 +148,9 @@ void ULTTBriefingScreen::AddControlRow(UVerticalBox* Box, const FText& Action, c
 			S->SetVerticalAlignment(VAlign_Center);
 		}
 	};
-	AddCell(Action, Muted, 1.1f);
+	AddCell(Action, Muted, 1.35f);
 	AddCell(Keyboard, SoftWhite, 1.f);
-	AddCell(Gamepad, SoftWhite, 0.8f);
+	AddCell(Gamepad, SoftWhite, 0.7f);
 	if (UVerticalBoxSlot* S = Box->AddChildToVerticalBox(Row))
 	{
 		S->SetPadding(FMargin(0.f, 2.f));
@@ -150,8 +188,10 @@ void ULTTBriefingScreen::AddTouchRow(UVerticalBox* Box, const TCHAR* IconName, c
 		if (UTexture2D* Tex = LoadObject<UTexture2D>(nullptr, *Path))
 		{
 			UImage* Icon = WidgetTree->ConstructWidget<UImage>(UImage::StaticClass());
-			Icon->SetBrushFromTexture(Tex);
-			Icon->SetDesiredSizeOverride(FVector2D(26.f, 26.f));
+			FSlateBrush Brush;
+			Brush.SetResourceObject(Tex);
+			Brush.ImageSize = FVector2D(26.f, 26.f); // on the brush so a WBP_ bake keeps it
+			Icon->SetBrush(Brush);
 			Icon->SetColorAndOpacity(LTTTheme::Ink()); // white icon art, tinted brown on the cream chip
 			Chip->SetContent(Icon);
 		}
@@ -204,16 +244,35 @@ void ULTTBriefingScreen::BuildDefaultLayout()
 		DimSlot->SetOffsets(FMargin(0.f));
 	}
 
-	UBorder* CardBorder = WidgetTree->ConstructWidget<UBorder>(UBorder::StaticClass(), TEXT("Card"));
-	LTTTheme::StylePanel(CardBorder);
-	CardBorder->SetPadding(FMargin(44.f, 30.f));
-	Card = CardBorder;
-	if (UCanvasPanelSlot* CardSlot = Root->AddChildToCanvas(CardBorder))
+	// The card (paper panel) inside an overlay that also holds the film-set props peeking over its corners.
+	UOverlay* CardFrame = WidgetTree->ConstructWidget<UOverlay>(UOverlay::StaticClass(), TEXT("Card"));
+	Card = CardFrame;
+	if (UCanvasPanelSlot* CardSlot = Root->AddChildToCanvas(CardFrame))
 	{
 		CardSlot->SetAnchors(FAnchors(0.5f, 0.5f));
 		CardSlot->SetAlignment(FVector2D(0.5f, 0.5f));
 		CardSlot->SetAutoSize(true);
 	}
+	UBorder* CardBorder = WidgetTree->ConstructWidget<UBorder>(UBorder::StaticClass(), TEXT("CardPanel"));
+	LTTTheme::StylePanel(CardBorder);
+	CardBorder->SetPadding(FMargin(44.f, 24.f, 44.f, 26.f));
+	CardFrame->AddChildToOverlay(CardBorder);
+	auto AddCornerArt = [this, CardFrame](FName Name, const TCHAR* Texture, float Size, EHorizontalAlignment H, EVerticalAlignment V, const FMargin& Offset, float Angle)
+	{
+		UImage* Art = LTTTheme::MakeArtIcon(WidgetTree, Name, Texture, Size);
+		Art->SetRenderTransformAngle(Angle);
+		Art->SetVisibility(ESlateVisibility::HitTestInvisible);
+		if (UOverlaySlot* S = CardFrame->AddChildToOverlay(Art))
+		{
+			S->SetHorizontalAlignment(H);
+			S->SetVerticalAlignment(V);
+			S->SetPadding(Offset); // negative = hangs over the card edge
+		}
+	};
+	AddCornerArt(TEXT("CornerLight"), TEXT("rig_light"), 120.f, HAlign_Left, VAlign_Top, FMargin(-54.f, -46.f, 0.f, 0.f), -12.f);
+	AddCornerArt(TEXT("CornerCamera"), TEXT("camera_rig"), 120.f, HAlign_Right, VAlign_Top, FMargin(0.f, -46.f, -54.f, 0.f), 8.f);
+	AddCornerArt(TEXT("CornerFilmRoll"), TEXT("film_roll"), 110.f, HAlign_Left, VAlign_Bottom, FMargin(-50.f, 0.f, 0.f, -40.f), 10.f);
+	AddCornerArt(TEXT("CornerChair"), TEXT("director_chair"), 120.f, HAlign_Right, VAlign_Bottom, FMargin(0.f, 0.f, -50.f, -44.f), -6.f);
 
 	USizeBox* Width = WidgetTree->ConstructWidget<USizeBox>(USizeBox::StaticClass());
 	Width->SetWidthOverride(1080.f);
@@ -222,27 +281,35 @@ void ULTTBriefingScreen::BuildDefaultLayout()
 	UVerticalBox* Column = WidgetTree->ConstructWidget<UVerticalBox>(UVerticalBox::StaticClass());
 	Width->SetContent(Column);
 
-	// ---- Title ----
-	// Title painted on a wooden banner.
+	// ---- Title: on the ribbon banner, clapperboard and megaphone either side ----
 	UBorder* Banner = WidgetTree->ConstructWidget<UBorder>(UBorder::StaticClass(), TEXT("TitleBanner"));
-	LTTTheme::StyleBanner(Banner);
 	TitleText = WidgetTree->ConstructWidget<UTextBlock>(UTextBlock::StaticClass(), TEXT("TitleText"));
-	LTTTheme::StyleTitle(TitleText, 50);
+	LTTTheme::StyleTitle(TitleText, 48);
 	TitleText->SetText(LOCTEXT("Title", "CLEAN! CUT! ACTION!"));
 	TitleText->SetJustification(ETextJustify::Center);
-	Banner->SetContent(TitleText);
+	LTTTheme::FillRibbonBanner(WidgetTree, Banner, TitleText, TEXT("clapperboard"), TEXT("megaphone"), 64.f);
 	if (UVerticalBoxSlot* S = Column->AddChildToVerticalBox(Banner))
 	{
 		S->SetHorizontalAlignment(HAlign_Center);
-		S->SetPadding(FMargin(0.f, 0.f, 0.f, 8.f));
+		S->SetPadding(FMargin(0.f, 0.f, 0.f, 2.f));
 	}
+	UHorizontalBox* SubtitleRow = WidgetTree->ConstructWidget<UHorizontalBox>(UHorizontalBox::StaticClass(), TEXT("SubtitleRow"));
 	UTextBlock* Subtitle = MakeText(TEXT("SubtitleText"), 16, Muted);
 	Subtitle->SetText(LOCTEXT("Subtitle", "CALL SHEET  -  Last day of shooting  -  Scene 42: The Cafe"));
 	Subtitle->SetJustification(ETextJustify::Center);
-	if (UVerticalBoxSlot* S = Column->AddChildToVerticalBox(Subtitle))
+	for (int32 i = 0; i < 3; ++i)
+	{
+		UWidget* Cell = i == 1 ? static_cast<UWidget*>(Subtitle) : LTTTheme::MakeArtIcon(WidgetTree, NAME_None, TEXT("film"), 34.f);
+		if (UHorizontalBoxSlot* S = SubtitleRow->AddChildToHorizontalBox(Cell))
+		{
+			S->SetVerticalAlignment(VAlign_Center);
+			S->SetPadding(FMargin(10.f, 0.f));
+		}
+	}
+	if (UVerticalBoxSlot* S = Column->AddChildToVerticalBox(SubtitleRow))
 	{
 		S->SetHorizontalAlignment(HAlign_Center);
-		S->SetPadding(FMargin(0.f, 0.f, 0.f, 18.f));
+		S->SetPadding(FMargin(0.f, 0.f, 0.f, 14.f));
 	}
 
 	// ---- Two columns: the story and rules | controls and scoring ----
@@ -267,7 +334,7 @@ void ULTTBriefingScreen::BuildDefaultLayout()
 	}
 
 	// Marlowe's note, on a cream "paper" panel.
-	AddHeader(Left, LOCTEXT("NoteHeader", "A NOTE FROM THE DIRECTOR"), 0.f);
+	AddHeader(Left, LOCTEXT("NoteHeader", "A NOTE FROM THE DIRECTOR"), 0.f, TEXT("megaphone"));
 	UBorder* Note = WidgetTree->ConstructWidget<UBorder>(UBorder::StaticClass(), TEXT("NotePaper"));
 	LTTTheme::StyleInset(Note);
 	Note->SetPadding(FMargin(14.f, 10.f));
@@ -275,11 +342,11 @@ void ULTTBriefingScreen::BuildDefaultLayout()
 	Note->SetContent(StoryText);
 	Left->AddChildToVerticalBox(Note);
 
-	AddHeader(Left, LOCTEXT("HowHeader", "HOW TO PLAY"), 16.f);
+	AddHeader(Left, LOCTEXT("HowHeader", "HOW TO PLAY"), 14.f, TEXT("checklist"));
 	HowToPlayText = MakeText(TEXT("HowToPlayText"), 15, SoftWhite, true);
 	Left->AddChildToVerticalBox(HowToPlayText);
 
-	AddHeader(Right, LOCTEXT("ControlsHeader", "CONTROLS"), 0.f);
+	AddHeader(Right, LOCTEXT("ControlsHeader", "CONTROLS"), 0.f, TEXT("card"));
 	// Both control lists are built (and named) so a WBP_ child can lay out each; ApplyInputVariant shows one.
 	UVerticalBox* ControlsDesktop = WidgetTree->ConstructWidget<UVerticalBox>(UVerticalBox::StaticClass(), TEXT("ControlsDesktop"));
 	UVerticalBox* ControlsTouch = WidgetTree->ConstructWidget<UVerticalBox>(UVerticalBox::StaticClass(), TEXT("ControlsTouch"));
@@ -295,7 +362,7 @@ void ULTTBriefingScreen::BuildDefaultLayout()
 	AddTouchRow(ControlsTouch, TEXT("T_Icon_Jump"), LOCTEXT("TouchJump", "Jump"), LOCTEXT("TouchJumpHow", "Jump button"));
 	AddTouchRow(ControlsTouch, TEXT("T_Icon_Hint"), LOCTEXT("TouchHint", "Hint"), LOCTEXT("TouchHintHow", "Light bulb button"));
 	AddTouchRow(ControlsTouch, TEXT("T_Icon_Pause"), LOCTEXT("TouchPause", "Pause"), LOCTEXT("TouchPauseHow", "Top right corner"));
-	AddControlRow(ControlsDesktop, FText::GetEmpty(), LOCTEXT("KbHeader", "Keyboard / Mouse"), LOCTEXT("PadHeader", "Gamepad"));
+	AddControlRow(ControlsDesktop, LOCTEXT("ActionHeader", "Action"), LOCTEXT("KbHeader", "Keyboard"), LOCTEXT("PadHeader", "Gamepad"));
 	AddControlRow(ControlsDesktop, LOCTEXT("Move", "Move"), LOCTEXT("MoveKb", "W A S D / Arrows"), LOCTEXT("MovePad", "Left stick"));
 	AddControlRow(ControlsDesktop, LOCTEXT("Look", "Look"), LOCTEXT("LookKb", "Mouse"), LOCTEXT("LookPad", "Right stick"));
 	AddControlRow(ControlsDesktop, LOCTEXT("Jump", "Jump"), LOCTEXT("JumpKb", "Space"), LOCTEXT("JumpPad", "A"));
@@ -304,23 +371,46 @@ void ULTTBriefingScreen::BuildDefaultLayout()
 	AddControlRow(ControlsDesktop, LOCTEXT("Hint", "Hint"), LOCTEXT("HintKb", "F"), LOCTEXT("HintPad", "Y"));
 	AddControlRow(ControlsDesktop, LOCTEXT("Pause", "Pause"), LOCTEXT("PauseKb", "P / Esc"), LOCTEXT("PausePad", "Start"));
 
-	AddHeader(Right, LOCTEXT("ScoringHeader", "SCORING"), 16.f);
-	ScoringText = MakeText(TEXT("ScoringText"), 15, SoftWhite, true);
-	Right->AddChildToVerticalBox(ScoringText);
+	AddHeader(Right, LOCTEXT("ScoringHeader", "SCORING"), 14.f, TEXT("coins"));
+	ScorePlacedText = AddIconTextRow(Right, TEXT("ScorePlacedText"), TEXT("coffee"));
+	ScoreBrokenText = AddIconTextRow(Right, TEXT("ScoreBrokenText"), TEXT("destroyed"));
+	ScoreBonusText = AddIconTextRow(Right, TEXT("ScoreBonusText"), TEXT("timer"));
 
-	// ---- Start ----
-	StartButton = WidgetTree->ConstructWidget<UButton>(UButton::StaticClass(), TEXT("StartButton"));
-	LTTTheme::StyleButton(StartButton, LTTTheme::ButtonGold());
-	UTextBlock* StartLabel = MakeText(TEXT("StartButton_Label"), 26, LTTTheme::Ink());
-	StartLabel->SetText(LOCTEXT("Start", "START CLEANING!"));
-	StartButton->SetContent(StartLabel);
-	if (UVerticalBoxSlot* S = Column->AddChildToVerticalBox(StartButton))
+	// ---- Start: time trial, or no clock ----
+	UHorizontalBox* StartRow = WidgetTree->ConstructWidget<UHorizontalBox>(UHorizontalBox::StaticClass(), TEXT("StartButtons"));
+	if (UVerticalBoxSlot* S = Column->AddChildToVerticalBox(StartRow))
 	{
 		S->SetHorizontalAlignment(HAlign_Center);
-		S->SetPadding(FMargin(0.f, 24.f, 0.f, 0.f));
+		S->SetPadding(FMargin(0.f, 18.f, 0.f, 0.f));
 	}
+	auto AddStartButton = [this, StartRow](FName Name, const FLinearColor& Fill, const TCHAR* Icon, float IconSize, const FText& Label, int32 FontSize, float LeftPad)
+	{
+		UButton* Button = WidgetTree->ConstructWidget<UButton>(UButton::StaticClass(), Name);
+		LTTTheme::StyleButton(Button, Fill);
+		UHorizontalBox* Content = WidgetTree->ConstructWidget<UHorizontalBox>(UHorizontalBox::StaticClass());
+		if (UHorizontalBoxSlot* S = Content->AddChildToHorizontalBox(LTTTheme::MakeArtIcon(WidgetTree, *(Name.ToString() + TEXT("_Icon")), Icon, IconSize)))
+		{
+			S->SetVerticalAlignment(VAlign_Center);
+			S->SetPadding(FMargin(0.f, 0.f, 10.f, 0.f));
+		}
+		UTextBlock* Text = MakeText(*(Name.ToString() + TEXT("_Label")), FontSize, LTTTheme::Ink());
+		Text->SetText(Label);
+		if (UHorizontalBoxSlot* S = Content->AddChildToHorizontalBox(Text))
+		{
+			S->SetVerticalAlignment(VAlign_Center);
+		}
+		Button->SetContent(Content);
+		if (UHorizontalBoxSlot* S = StartRow->AddChildToHorizontalBox(Button))
+		{
+			S->SetVerticalAlignment(VAlign_Center);
+			S->SetPadding(FMargin(LeftPad, 0.f, 0.f, 0.f));
+		}
+		return Button;
+	};
+	StartButton = AddStartButton(TEXT("StartButton"), LTTTheme::ButtonGold(), TEXT("timer"), 44.f, LOCTEXT("Start", "START TIME TRIAL!"), 26, 0.f);
+	NoTimerButton = AddStartButton(TEXT("NoTimerButton"), LTTTheme::ButtonCream(), TEXT("coffee"), 40.f, LOCTEXT("StartNoTimer", "JUST CLEAN (NO TIMER)"), 20, 28.f);
 	UTextBlock* StartHint = MakeText(TEXT("StartHint"), 13, Muted);
-	StartHint->SetText(LOCTEXT("StartHint", "Click, or press Enter / gamepad A"));
+	StartHint->SetText(LOCTEXT("StartHint", "Time trial: Enter / gamepad A     No timer: N / gamepad Y"));
 	if (UVerticalBoxSlot* S = Column->AddChildToVerticalBox(StartHint))
 	{
 		S->SetHorizontalAlignment(HAlign_Center);
@@ -338,15 +428,13 @@ void ULTTBriefingScreen::Setup(ALTTMessDirector* InDirector)
 void ULTTBriefingScreen::ApplyTexts()
 {
 	const ALTTMessDirector* D = Director.Get();
-	const bool bTimer = D ? D->bUseTimer : true;
+	// The player picks time trial or not with the start buttons, so the texts describe both.
 	const int32 Minutes = FMath::Max(FMath::RoundToInt((D ? D->TimeLimitSeconds : 1800.f) / 60.f), 1);
 	const FText HintKey = D ? D->HintKey.GetDisplayName() : LOCTEXT("F", "F");
 
 	if (StoryText)
 	{
-		const FText Deadline = bTimer
-			? FText::Format(LOCTEXT("Deadline", "You have {0} minutes."), FText::AsNumber(Minutes))
-			: LOCTEXT("NoDeadline", "Be quick about it.");
+		const FText Deadline = FText::Format(LOCTEXT("Deadline", "Racing the clock? You get {0} minutes. Otherwise, just get it done."), FText::AsNumber(Minutes));
 		StoryText->SetText(FText::Format(LOCTEXT("Story",
 			"Rookie!\n\n"
 			"Last night's wrap party got out of hand and the whole cafe set got knocked to pieces. "
@@ -378,21 +466,26 @@ void ULTTBriefingScreen::ApplyTexts()
 		}
 	}
 
-	if (ScoringText)
+	const int32 PerPlaced = D ? D->PointsPerPlaced : 10;
+	const int32 PerBroken = D ? D->PointsPerBroken : -15;
+	const float PerSecond = D ? D->PointsPerSecondLeft : 1.f;
+	FNumberFormattingOptions Signed;
+	Signed.AlwaysSign = true;
+	if (ScorePlacedText)
 	{
-		const int32 PerPlaced = D ? D->PointsPerPlaced : 10;
-		const int32 PerBroken = D ? D->PointsPerBroken : -15;
-		const float PerSecond = D ? D->PointsPerSecondLeft : 1.f;
-		FNumberFormattingOptions Signed;
-		Signed.AlwaysSign = true;
-		FText Scoring = FText::Format(LOCTEXT("ScorePlaced", "{0} for each prop back on its mark\n{1} for each prop you break"),
-			FText::AsNumber(PerPlaced, &Signed), FText::AsNumber(PerBroken, &Signed));
-		if (bTimer && PerSecond > 0.f)
+		ScorePlacedText->SetText(FText::Format(LOCTEXT("ScorePlaced", "{0} for each prop back on its mark"), FText::AsNumber(PerPlaced, &Signed)));
+	}
+	if (ScoreBrokenText)
+	{
+		ScoreBrokenText->SetText(FText::Format(LOCTEXT("ScoreBroken", "{0} for each prop you break"), FText::AsNumber(PerBroken, &Signed)));
+	}
+	if (ScoreBonusText)
+	{
+		ScoreBonusText->SetText(FText::Format(LOCTEXT("ScoreBonus", "Time trial: {0} for every second left on the clock"), FText::AsNumber(PerSecond, &Signed)));
+		if (UWidget* Row = ScoreBonusText->GetParent())
 		{
-			Scoring = FText::Format(LOCTEXT("ScoreBonus", "{0}\n{1} bonus for every second left on the clock when the set is clean"),
-				Scoring, FText::AsNumber(PerSecond, &Signed));
+			Row->SetVisibility(PerSecond > 0.f ? ESlateVisibility::SelfHitTestInvisible : ESlateVisibility::Collapsed);
 		}
-		ScoringText->SetText(Scoring);
 	}
 }
 
@@ -408,11 +501,16 @@ void ULTTBriefingScreen::NativeTick(const FGeometry& MyGeometry, float InDeltaTi
 		Card->SetRenderOpacity(E);
 		Card->SetRenderTranslation(FVector2D(0.f, (1.f - E) * 40.f));
 	}
-	// Start button breathes so it's obvious what to do.
+	// Start buttons breathe (out of step) so it's obvious what to do.
 	if (StartButton)
 	{
 		const float Pulse = 1.f + 0.04f * FMath::Sin(AnimTime * 4.f);
 		StartButton->SetRenderScale(FVector2D(Pulse, Pulse));
+	}
+	if (NoTimerButton)
+	{
+		const float Pulse = 1.f + 0.03f * FMath::Sin(AnimTime * 4.f + PI);
+		NoTimerButton->SetRenderScale(FVector2D(Pulse, Pulse));
 	}
 }
 
@@ -421,7 +519,12 @@ FReply ULTTBriefingScreen::NativeOnKeyDown(const FGeometry& InGeometry, const FK
 	const FKey Key = InKeyEvent.GetKey();
 	if (!InKeyEvent.IsRepeat() && (Key == EKeys::Enter || Key == EKeys::SpaceBar || Key == EKeys::Gamepad_FaceButton_Bottom || Key == EKeys::Gamepad_Special_Right))
 	{
-		StartGame();
+		StartGame(true);
+		return FReply::Handled();
+	}
+	if (!InKeyEvent.IsRepeat() && (Key == EKeys::N || Key == EKeys::Gamepad_FaceButton_Top))
+	{
+		StartGame(false);
 		return FReply::Handled();
 	}
 	return Super::NativeOnKeyDown(InGeometry, InKeyEvent);
@@ -429,13 +532,20 @@ FReply ULTTBriefingScreen::NativeOnKeyDown(const FGeometry& InGeometry, const FK
 
 void ULTTBriefingScreen::HandleStartClicked()
 {
-	StartGame();
+	StartGame(true);
 }
 
-void ULTTBriefingScreen::StartGame()
+void ULTTBriefingScreen::HandleNoTimerClicked()
+{
+	StartGame(false);
+}
+
+void ULTTBriefingScreen::StartGame(bool bTimeTrial)
 {
 	if (ALTTMessDirector* D = Director.Get())
 	{
+		// Before StartFromBriefing: the countdown starts there only if the timer is on.
+		D->SetTimerEnabled(bTimeTrial);
 		D->StartFromBriefing();
 	}
 	else

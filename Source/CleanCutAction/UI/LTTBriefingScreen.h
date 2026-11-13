@@ -1,6 +1,7 @@
 // Clean! Cut! Action! - Briefing shown over the black screen before the game starts: Marlowe's note (why the
 // Rookie is cleaning the cafe), how to play, controls, scoring, and a Start button. Opened by ALTTMessDirector
-// (BriefingClass); the mess is made behind it and the countdown starts when the player presses Start.
+// (BriefingClass); the mess is made behind it. Two start buttons: StartButton plays a time trial (the countdown
+// starts), NoTimerButton plays without a clock (the director's timer is switched off).
 // Builds its own layout in C++; a Widget Blueprint child can restyle it by naming widgets like the ones below.
 
 #pragma once
@@ -26,9 +27,9 @@ public:
 	UFUNCTION(BlueprintCallable, Category = "Briefing")
 	void Setup(ALTTMessDirector* InDirector);
 
-	/** Closes the briefing and starts the game. */
+	/** Closes the briefing and starts the game, with the countdown (time trial) or without it. */
 	UFUNCTION(BlueprintCallable, Category = "Briefing")
-	void StartGame();
+	void StartGame(bool bTimeTrial = true);
 
 	UPROPERTY(BlueprintReadOnly, Category = "Briefing", meta = (BindWidgetOptional))
 	TObjectPtr<UTextBlock> TitleText;
@@ -40,13 +41,25 @@ public:
 	UPROPERTY(BlueprintReadOnly, Category = "Briefing", meta = (BindWidgetOptional))
 	TObjectPtr<UTextBlock> HowToPlayText;
 
+	/** Scoring rules, one per row next to an icon (coffee / broken cup / stopwatch). */
 	UPROPERTY(BlueprintReadOnly, Category = "Briefing", meta = (BindWidgetOptional))
-	TObjectPtr<UTextBlock> ScoringText;
+	TObjectPtr<UTextBlock> ScorePlacedText;
 
+	UPROPERTY(BlueprintReadOnly, Category = "Briefing", meta = (BindWidgetOptional))
+	TObjectPtr<UTextBlock> ScoreBrokenText;
+
+	UPROPERTY(BlueprintReadOnly, Category = "Briefing", meta = (BindWidgetOptional))
+	TObjectPtr<UTextBlock> ScoreBonusText;
+
+	/** Starts a time trial (Enter / gamepad A). */
 	UPROPERTY(BlueprintReadOnly, Category = "Briefing", meta = (BindWidgetOptional))
 	TObjectPtr<UButton> StartButton;
 
-	/** The briefing card (fades and rises in). */
+	/** Starts without the countdown (gamepad Y / N key). */
+	UPROPERTY(BlueprintReadOnly, Category = "Briefing", meta = (BindWidgetOptional))
+	TObjectPtr<UButton> NoTimerButton;
+
+	/** The briefing card with its corner decorations (fades and rises in). */
 	UPROPERTY(BlueprintReadOnly, Category = "Briefing", meta = (BindWidgetOptional))
 	TObjectPtr<UWidget> Card;
 
@@ -58,7 +71,10 @@ protected:
 
 	void BuildDefaultLayout();
 	UTextBlock* MakeText(FName Name, int32 FontSize, const FLinearColor& Color, bool bWrap = false) const;
-	void AddHeader(UVerticalBox* Box, const FText& Text, float TopPadding) const;
+	/** Section header: a cartoon icon (/Game/_CleanCutAction/UI/Widget/<IconName>) and the title. */
+	void AddHeader(UVerticalBox* Box, const FText& Text, float TopPadding, const TCHAR* IconName) const;
+	/** Icon + wrapping text row (scoring rules). */
+	UTextBlock* AddIconTextRow(UVerticalBox* Box, FName TextName, const TCHAR* IconName) const;
 	void AddControlRow(UVerticalBox* Box, const FText& Action, const FText& Keyboard, const FText& Gamepad) const;
 	/** Touch version of a controls row: the on-screen button's icon (from /Game/_CleanCutAction/UI/Icons), the action, and where/how. */
 	void AddTouchRow(UVerticalBox* Box, const TCHAR* IconName, const FText& Action, const FText& How) const;
@@ -70,6 +86,9 @@ protected:
 
 	UFUNCTION()
 	void HandleStartClicked();
+
+	UFUNCTION()
+	void HandleNoTimerClicked();
 
 	TWeakObjectPtr<ALTTMessDirector> Director;
 	float AnimTime = 0.f;

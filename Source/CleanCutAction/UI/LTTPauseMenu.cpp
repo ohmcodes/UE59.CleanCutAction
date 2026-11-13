@@ -17,16 +17,16 @@
 
 #define LOCTEXT_NAMESPACE "LTTPauseMenu"
 
-namespace
+namespace // names prefixed: unity builds can put this file next to other widgets with the same helpers
 {
 	// Cafe theme (UI/LTTUITheme.h).
-	const FLinearColor TapeYellow = LTTTheme::ButtonGold();
-	const FLinearColor SoftWhite = LTTTheme::Ink();
-	const FLinearColor Muted = LTTTheme::InkMuted();
-	const FLinearColor ButtonGrey = LTTTheme::ButtonCream();
-	const FLinearColor QuitRed = LTTTheme::ButtonRed();
+	const FLinearColor PauseTapeYellow = LTTTheme::ButtonGold();
+	const FLinearColor PauseSoftWhite = LTTTheme::Ink();
+	const FLinearColor PauseMuted = LTTTheme::InkMuted();
+	const FLinearColor PauseButtonGrey = LTTTheme::ButtonCream();
+	const FLinearColor PauseQuitRed = LTTTheme::ButtonRed();
 
-	float EaseOutCubic(float T)
+	float PauseEaseOutCubic(float T)
 	{
 		const float U = 1.f - T;
 		return 1.f - U * U * U;
@@ -115,21 +115,20 @@ void ULTTPauseMenu::BuildDefaultLayout()
 	UVerticalBox* Column = WidgetTree->ConstructWidget<UVerticalBox>(UVerticalBox::StaticClass());
 	Width->SetContent(Column);
 
-	// Title painted on a wooden banner.
+	// "CUT!" on the ribbon banner, with Marlowe's megaphone.
 	UBorder* Banner = WidgetTree->ConstructWidget<UBorder>(UBorder::StaticClass(), TEXT("TitleBanner"));
-	LTTTheme::StyleBanner(Banner);
 	TitleText = WidgetTree->ConstructWidget<UTextBlock>(UTextBlock::StaticClass(), TEXT("TitleText"));
 	LTTTheme::StyleTitle(TitleText, 56);
 	TitleText->SetText(LOCTEXT("Title", "CUT!"));
 	TitleText->SetJustification(ETextJustify::Center);
-	Banner->SetContent(TitleText);
+	LTTTheme::FillRibbonBanner(WidgetTree, Banner, TitleText, TEXT("megaphone"), nullptr, 72.f);
 	if (UVerticalBoxSlot* S = Column->AddChildToVerticalBox(Banner))
 	{
 		S->SetHorizontalAlignment(HAlign_Center);
 		S->SetPadding(FMargin(0.f, 0.f, 0.f, 10.f));
 	}
 
-	UTextBlock* Subtitle = MakeText(TEXT("SubtitleText"), 18, Muted);
+	UTextBlock* Subtitle = MakeText(TEXT("SubtitleText"), 18, PauseMuted);
 	Subtitle->SetText(LOCTEXT("Subtitle", "Game paused"));
 	Subtitle->SetJustification(ETextJustify::Center);
 	if (UVerticalBoxSlot* S = Column->AddChildToVerticalBox(Subtitle))
@@ -138,12 +137,12 @@ void ULTTPauseMenu::BuildDefaultLayout()
 		S->SetPadding(FMargin(0.f, 0.f, 0.f, 24.f));
 	}
 
-	ResumeButton = MakeButton(TEXT("ResumeButton"), LOCTEXT("Resume", "Resume"), TapeYellow);
+	ResumeButton = MakeButton(TEXT("ResumeButton"), LOCTEXT("Resume", "Resume"), PauseTapeYellow);
 	UTextBlock* MusicText = nullptr;
-	MusicButton = MakeButton(TEXT("MusicButton"), FText::GetEmpty(), ButtonGrey, &MusicText);
+	MusicButton = MakeButton(TEXT("MusicButton"), FText::GetEmpty(), PauseButtonGrey, &MusicText);
 	MusicText->Rename(TEXT("MusicLabel")); // same name as the property, so a WBP_ child binds it
 	MusicLabel = MusicText;
-	QuitButton = MakeButton(TEXT("QuitButton"), LOCTEXT("Quit", "Quit"), QuitRed);
+	QuitButton = MakeButton(TEXT("QuitButton"), LOCTEXT("Quit", "Quit"), PauseQuitRed);
 	for (UButton* Button : { ResumeButton.Get(), MusicButton.Get(), QuitButton.Get() })
 	{
 		if (UVerticalBoxSlot* S = Column->AddChildToVerticalBox(Button))
@@ -153,7 +152,7 @@ void ULTTPauseMenu::BuildDefaultLayout()
 		}
 	}
 
-	UTextBlock* KeysHint = MakeText(TEXT("KeysHint"), 14, Muted);
+	UTextBlock* KeysHint = MakeText(TEXT("KeysHint"), 14, PauseMuted);
 	KeysHint->SetText(LOCTEXT("KeysHint", "P / Esc to resume"));
 	KeysHint->SetJustification(ETextJustify::Center);
 	if (UVerticalBoxSlot* S = Column->AddChildToVerticalBox(KeysHint))
@@ -179,7 +178,7 @@ void ULTTPauseMenu::NativeTick(const FGeometry& MyGeometry, float InDeltaTime)
 	// Card fades in and drops into place (0.25 s).
 	if (Card)
 	{
-		const float E = EaseOutCubic(FMath::Clamp(AnimTime / 0.25f, 0.f, 1.f));
+		const float E = PauseEaseOutCubic(FMath::Clamp(AnimTime / 0.25f, 0.f, 1.f));
 		Card->SetRenderOpacity(E);
 		Card->SetRenderTranslation(FVector2D(0.f, (1.f - E) * -40.f));
 	}

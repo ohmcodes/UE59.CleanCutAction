@@ -11,6 +11,10 @@
 #include "Components/CanvasPanel.h"
 #include "Components/CanvasPanelSlot.h"
 #include "Components/TextBlock.h"
+#include "Components/Image.h"
+#include "Components/HorizontalBox.h"
+#include "Components/HorizontalBoxSlot.h"
+#include "Engine/Texture2D.h"
 #include "Components/VerticalBox.h"
 #include "Components/VerticalBoxSlot.h"
 #include "Components/StaticMeshComponent.h"
@@ -44,6 +48,11 @@ UTextBlock* ULTTCleanupHUD::MakeText(FName Name, int32 FontSize) const
 	return Text;
 }
 
+UImage* ULTTCleanupHUD::MakeIcon(FName Name, const TCHAR* TextureName, float Size) const
+{
+	return LTTTheme::MakeArtIcon(WidgetTree, Name, TextureName, Size);
+}
+
 void ULTTCleanupHUD::BuildDefaultLayout()
 {
 	UCanvasPanel* Root = WidgetTree->ConstructWidget<UCanvasPanel>(UCanvasPanel::StaticClass(), TEXT("Root"));
@@ -69,21 +78,53 @@ void ULTTCleanupHUD::BuildDefaultLayout()
 	HintKeyText = MakeText(TEXT("HintKeyText"), 18);
 	DestroyedText->SetColorAndOpacity(FSlateColor(LTTTheme::Bad()));
 	PointsText->SetColorAndOpacity(FSlateColor(LTTTheme::Coin()));
-	for (UTextBlock* Text : { PlacedText.Get(), DestroyedText.Get(), PointsText.Get(), HintKeyText.Get() })
+	PlacedIcon = MakeIcon(TEXT("PlacedIcon"), TEXT("coffee"), 36.f);
+	DestroyedIcon = MakeIcon(TEXT("DestroyedIcon"), TEXT("destroyed"), 36.f);
+	PointsIcon = MakeIcon(TEXT("PointsIcon"), TEXT("diamond"), 36.f);
+	HintIcon = MakeIcon(TEXT("HintIcon"), TEXT("lightbulb"), 36.f);
+
+	// One row per stat: icon, then the count.
+	auto AddRow = [this, Stats](FName RowName, UImage* Icon, UTextBlock* Text)
 	{
-		if (UVerticalBoxSlot* TextSlot = Stats->AddChildToVerticalBox(Text))
+		UHorizontalBox* Row = WidgetTree->ConstructWidget<UHorizontalBox>(UHorizontalBox::StaticClass(), RowName);
+		if (UHorizontalBoxSlot* IconSlot = Row->AddChildToHorizontalBox(Icon))
 		{
-			TextSlot->SetPadding(FMargin(0.f, 0.f, 0.f, 4.f));
+			IconSlot->SetVerticalAlignment(VAlign_Center);
+			IconSlot->SetHorizontalAlignment(HAlign_Center);
+			IconSlot->SetPadding(FMargin(0.f, 0.f, 10.f, 0.f));
 		}
-	}
+		if (UHorizontalBoxSlot* TextSlot = Row->AddChildToHorizontalBox(Text))
+		{
+			TextSlot->SetVerticalAlignment(VAlign_Center);
+		}
+		if (UVerticalBoxSlot* RowSlot = Stats->AddChildToVerticalBox(Row))
+		{
+			RowSlot->SetPadding(FMargin(0.f, 0.f, 0.f, 4.f));
+		}
+	};
+	AddRow(TEXT("PlacedRow"), PlacedIcon, PlacedText);
+	AddRow(TEXT("DestroyedRow"), DestroyedIcon, DestroyedText);
+	AddRow(TEXT("PointsRow"), PointsIcon, PointsText);
+	AddRow(TEXT("HintRow"), HintIcon, HintKeyText);
 
 	// Top centre: countdown.
 	TimerText = MakeText(TEXT("TimerText"), 40);
 	TimerText->SetJustification(ETextJustify::Center);
 	UBorder* TimerPanel = WidgetTree->ConstructWidget<UBorder>(UBorder::StaticClass(), TEXT("TimerPanel"));
 	LTTTheme::ApplyBrush(TimerPanel, LTTTheme::Rounded(LTTTheme::Hex(0xFB, 0xF7, 0xEC, 0.93f), -1.f, LTTTheme::GoldTrim(), 3.f));
-	TimerPanel->SetPadding(FMargin(30.f, 2.f, 30.f, 4.f));
-	TimerPanel->SetContent(TimerText);
+	TimerPanel->SetPadding(FMargin(18.f, 4.f, 30.f, 4.f));
+	UHorizontalBox* TimerRow = WidgetTree->ConstructWidget<UHorizontalBox>(UHorizontalBox::StaticClass(), TEXT("TimerRow"));
+	TimerPanel->SetContent(TimerRow);
+	TimerIcon = MakeIcon(TEXT("TimerIcon"), TEXT("timer"), 48.f);
+	if (UHorizontalBoxSlot* IconSlot = TimerRow->AddChildToHorizontalBox(TimerIcon))
+	{
+		IconSlot->SetVerticalAlignment(VAlign_Center);
+		IconSlot->SetPadding(FMargin(0.f, 0.f, 12.f, 0.f));
+	}
+	if (UHorizontalBoxSlot* TextSlot = TimerRow->AddChildToHorizontalBox(TimerText))
+	{
+		TextSlot->SetVerticalAlignment(VAlign_Center);
+	}
 	if (UCanvasPanelSlot* TimerSlot = Root->AddChildToCanvas(TimerPanel))
 	{
 		TimerSlot->SetAnchors(FAnchors(0.5f, 0.f));
@@ -115,6 +156,7 @@ void ULTTCleanupHUD::NativeTick(const FGeometry& MyGeometry, float InDeltaTime)
 	}
 	ArrowPulse += InDeltaTime;
 	UpdateTexts();
+	UpdateTimerIcon();
 	UpdateArrow();
 }
 
@@ -145,13 +187,24 @@ void ULTTCleanupHUD::UpdateTexts()
 		// Touch has its own Hint button (UI_TouchSimple), so the "[F] Hint" key prompt is desktop only.
 		const ACleanCutActionPlayerController* CCPC = Cast<ACleanCutActionPlayerController>(GetOwningPlayer());
 		const bool bTouch = CCPC && CCPC->ShouldUseTouchControls();
-		HintKeyText->SetVisibility(D && !bTouch && !D->IsSetClean() && !D->IsTimeUp() ? ESlateVisibility::HitTestInvisible : ESlateVisibility::Collapsed);
+		const ESlateVisibility HintVis = D && !bTouch && !D->IsSetClean() && !D->IsTimeUp() ? ESlateVisibility::HitTestInvisible : ESlateVisibility::Collapsed;
+		HintKeyText->SetVisibility(HintVis);
+		if (HintIcon)
+		{
+			HintIcon->SetVisibility(HintVis);
+			HintIcon->SetRenderOpacity(Cooldown > 0.f ? 0.4f : 1.f);
+		}
 	}
 	if (TimerText)
 	{
 		const bool bShow = D && (D->bUseTimer || D->IsTimeUp());
 		TimerText->SetVisibility(bShow ? ESlateVisibility::HitTestInvisible : ESlateVisibility::Collapsed);
-		if (UWidget* TimerPanel = TimerText->GetParent())
+		UWidget* TimerPanel = GetWidgetFromName(TEXT("TimerPanel"));
+		if (!TimerPanel)
+		{
+			TimerPanel = TimerText->GetParent();
+		}
+		if (TimerPanel)
 		{
 			TimerPanel->SetVisibility(bShow ? ESlateVisibility::HitTestInvisible : ESlateVisibility::Collapsed);
 		}
@@ -174,6 +227,35 @@ void ULTTCleanupHUD::UpdateTexts()
 			}
 		}
 	}
+}
+
+void ULTTCleanupHUD::UpdateTimerIcon()
+{
+	if (!TimerIcon)
+	{
+		return;
+	}
+	const ALTTMessDirector* D = Director.Get();
+	float Scale = 1.f;
+	float Angle = 0.f;
+	if (D && D->IsTimerRunning() && !D->IsTimeUp())
+	{
+		// Beat in step with the clock: the icon swells and settles back each time a second ticks off,
+		// twice a second (bigger, with a little wobble) once time is low.
+		const float Remaining = D->GetTimeRemaining();
+		const bool bLow = Remaining <= LowTimeSeconds;
+		const float Beats = bLow ? 2.f : 1.f;
+		const float Phase = FMath::Frac(-Remaining * Beats); // 0 right on the tick, rising to 1 by the next
+		const float Swell = FMath::Sin(Phase * PI);
+		Scale = 1.f + (bLow ? LowTimePulseAmount : TimerPulseAmount) * Swell * Swell;
+		Angle = bLow ? 8.f * FMath::Sin(Phase * 2.f * PI) : 0.f;
+	}
+	TimerIcon->SetRenderTransformPivot(FVector2D(0.5f, 0.5f));
+	TimerIcon->SetRenderScale(FVector2D(Scale, Scale));
+	TimerIcon->SetRenderTransformAngle(Angle);
+	// Reddish tint (white is the icon's own colours) when time is low or up, matching the countdown text.
+	TimerIcon->SetColorAndOpacity(D && (D->IsTimeUp() || (D->IsTimerRunning() && D->GetTimeRemaining() <= LowTimeSeconds))
+		? FLinearColor(1.f, 0.6f, 0.55f) : FLinearColor::White);
 }
 
 void ULTTCleanupHUD::UpdateArrow()
