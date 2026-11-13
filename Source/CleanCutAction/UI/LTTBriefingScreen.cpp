@@ -24,12 +24,12 @@
 namespace
 {
 	// Cafe theme (UI/LTTUITheme.h).
-	const FLinearColor TapeYellow = LTTTheme::HeaderBrown(); // section headers
-	const FLinearColor SoftWhite = LTTTheme::Ink();
-	const FLinearColor Muted = LTTTheme::InkMuted();
+	const FLinearColor BriefTapeYellow = LTTTheme::HeaderBrown(); // section headers
+	const FLinearColor BriefSoftWhite = LTTTheme::Ink();
+	const FLinearColor BriefMuted = LTTTheme::InkMuted();
 	const FLinearColor NoteCream = LTTTheme::Ink();
 
-	float EaseOutCubic(float T)
+	float BriefEaseOutCubic(float T)
 	{
 		const float U = 1.f - T;
 		return 1.f - U * U * U;
@@ -80,14 +80,14 @@ UTextBlock* ULTTBriefingScreen::MakeText(FName Name, int32 FontSize, const FLine
 {
 	UTextBlock* Text = WidgetTree->ConstructWidget<UTextBlock>(UTextBlock::StaticClass(), Name);
 	// Headers bold, body text regular weight so the long paragraphs stay light.
-	LTTTheme::StyleText(Text, FontSize, Color, FontSize >= 18 || Color == TapeYellow || Color == Muted);
+	LTTTheme::StyleText(Text, FontSize, Color, FontSize >= 18 || Color == BriefTapeYellow || Color == BriefMuted);
 	Text->SetAutoWrapText(bWrap);
 	return Text;
 }
 
 void ULTTBriefingScreen::AddHeader(UVerticalBox* Box, const FText& Text, float TopPadding) const
 {
-	UTextBlock* Header = MakeText(NAME_None, 20, TapeYellow);
+	UTextBlock* Header = MakeText(NAME_None, 20, BriefTapeYellow);
 	Header->SetText(FText::Format(NSLOCTEXT("LTTBriefingScreen", "HeaderFlourish", "~ {0} ~"), Text));
 	if (UVerticalBoxSlot* S = Box->AddChildToVerticalBox(Header))
 	{
@@ -110,9 +110,9 @@ void ULTTBriefingScreen::AddControlRow(UVerticalBox* Box, const FText& Action, c
 			S->SetVerticalAlignment(VAlign_Center);
 		}
 	};
-	AddCell(Action, Muted, 1.1f);
-	AddCell(Keyboard, SoftWhite, 1.f);
-	AddCell(Gamepad, SoftWhite, 0.8f);
+	AddCell(Action, BriefMuted, 1.1f);
+	AddCell(Keyboard, BriefSoftWhite, 1.f);
+	AddCell(Gamepad, BriefSoftWhite, 0.8f);
 	if (UVerticalBoxSlot* S = Box->AddChildToVerticalBox(Row))
 	{
 		S->SetPadding(FMargin(0.f, 2.f));
@@ -182,8 +182,8 @@ void ULTTBriefingScreen::AddTouchRow(UVerticalBox* Box, const TCHAR* IconName, c
 			S->SetVerticalAlignment(VAlign_Center);
 		}
 	};
-	AddCell(Action, Muted, 0.8f);
-	AddCell(How, SoftWhite, 1.4f);
+	AddCell(Action, BriefMuted, 0.8f);
+	AddCell(How, BriefSoftWhite, 1.4f);
 	if (UVerticalBoxSlot* S = Box->AddChildToVerticalBox(Row))
 	{
 		S->SetPadding(FMargin(0.f, 3.f));
@@ -236,7 +236,7 @@ void ULTTBriefingScreen::BuildDefaultLayout()
 		S->SetHorizontalAlignment(HAlign_Center);
 		S->SetPadding(FMargin(0.f, 0.f, 0.f, 8.f));
 	}
-	UTextBlock* Subtitle = MakeText(TEXT("SubtitleText"), 16, Muted);
+	UTextBlock* Subtitle = MakeText(TEXT("SubtitleText"), 16, BriefMuted);
 	Subtitle->SetText(LOCTEXT("Subtitle", "CALL SHEET  -  Last day of shooting  -  Scene 42: The Cafe"));
 	Subtitle->SetJustification(ETextJustify::Center);
 	if (UVerticalBoxSlot* S = Column->AddChildToVerticalBox(Subtitle))
@@ -276,7 +276,7 @@ void ULTTBriefingScreen::BuildDefaultLayout()
 	Left->AddChildToVerticalBox(Note);
 
 	AddHeader(Left, LOCTEXT("HowHeader", "HOW TO PLAY"), 16.f);
-	HowToPlayText = MakeText(TEXT("HowToPlayText"), 15, SoftWhite, true);
+	HowToPlayText = MakeText(TEXT("HowToPlayText"), 15, BriefSoftWhite, true);
 	Left->AddChildToVerticalBox(HowToPlayText);
 
 	AddHeader(Right, LOCTEXT("ControlsHeader", "CONTROLS"), 0.f);
@@ -305,7 +305,7 @@ void ULTTBriefingScreen::BuildDefaultLayout()
 	AddControlRow(ControlsDesktop, LOCTEXT("Pause", "Pause"), LOCTEXT("PauseKb", "P / Esc"), LOCTEXT("PausePad", "Start"));
 
 	AddHeader(Right, LOCTEXT("ScoringHeader", "SCORING"), 16.f);
-	ScoringText = MakeText(TEXT("ScoringText"), 15, SoftWhite, true);
+	ScoringText = MakeText(TEXT("ScoringText"), 15, BriefSoftWhite, true);
 	Right->AddChildToVerticalBox(ScoringText);
 
 	// ---- Start ----
@@ -319,7 +319,7 @@ void ULTTBriefingScreen::BuildDefaultLayout()
 		S->SetHorizontalAlignment(HAlign_Center);
 		S->SetPadding(FMargin(0.f, 24.f, 0.f, 0.f));
 	}
-	UTextBlock* StartHint = MakeText(TEXT("StartHint"), 13, Muted);
+	UTextBlock* StartHint = MakeText(TEXT("StartHint"), 13, BriefMuted);
 	StartHint->SetText(LOCTEXT("StartHint", "Click, or press Enter / gamepad A"));
 	if (UVerticalBoxSlot* S = Column->AddChildToVerticalBox(StartHint))
 	{
@@ -404,7 +404,7 @@ void ULTTBriefingScreen::NativeTick(const FGeometry& MyGeometry, float InDeltaTi
 	// Card fades in and rises into place (0.4 s).
 	if (Card)
 	{
-		const float E = EaseOutCubic(FMath::Clamp(AnimTime / 0.4f, 0.f, 1.f));
+		const float E = BriefEaseOutCubic(FMath::Clamp(AnimTime / 0.4f, 0.f, 1.f));
 		Card->SetRenderOpacity(E);
 		Card->SetRenderTranslation(FVector2D(0.f, (1.f - E) * 40.f));
 	}

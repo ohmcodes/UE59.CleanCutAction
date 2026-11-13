@@ -20,13 +20,13 @@
 namespace
 {
 	// Cafe theme (UI/LTTUITheme.h).
-	const FLinearColor TapeYellow = LTTTheme::ButtonGold();
-	const FLinearColor SoftWhite = LTTTheme::Ink();
-	const FLinearColor Muted = LTTTheme::InkMuted();
+	const FLinearColor PauseTapeYellow = LTTTheme::ButtonGold();
+	const FLinearColor PauseSoftWhite = LTTTheme::Ink();
+	const FLinearColor PauseMuted = LTTTheme::InkMuted();
 	const FLinearColor ButtonGrey = LTTTheme::ButtonCream();
 	const FLinearColor QuitRed = LTTTheme::ButtonRed();
 
-	float EaseOutCubic(float T)
+	float PauseEaseOutCubic(float T)
 	{
 		const float U = 1.f - T;
 		return 1.f - U * U * U;
@@ -129,7 +129,7 @@ void ULTTPauseMenu::BuildDefaultLayout()
 		S->SetPadding(FMargin(0.f, 0.f, 0.f, 10.f));
 	}
 
-	UTextBlock* Subtitle = MakeText(TEXT("SubtitleText"), 18, Muted);
+	UTextBlock* Subtitle = MakeText(TEXT("SubtitleText"), 18, PauseMuted);
 	Subtitle->SetText(LOCTEXT("Subtitle", "Game paused"));
 	Subtitle->SetJustification(ETextJustify::Center);
 	if (UVerticalBoxSlot* S = Column->AddChildToVerticalBox(Subtitle))
@@ -138,7 +138,7 @@ void ULTTPauseMenu::BuildDefaultLayout()
 		S->SetPadding(FMargin(0.f, 0.f, 0.f, 24.f));
 	}
 
-	ResumeButton = MakeButton(TEXT("ResumeButton"), LOCTEXT("Resume", "Resume"), TapeYellow);
+	ResumeButton = MakeButton(TEXT("ResumeButton"), LOCTEXT("Resume", "Resume"), PauseTapeYellow);
 	UTextBlock* MusicText = nullptr;
 	MusicButton = MakeButton(TEXT("MusicButton"), FText::GetEmpty(), ButtonGrey, &MusicText);
 	MusicText->Rename(TEXT("MusicLabel")); // same name as the property, so a WBP_ child binds it
@@ -153,7 +153,7 @@ void ULTTPauseMenu::BuildDefaultLayout()
 		}
 	}
 
-	UTextBlock* KeysHint = MakeText(TEXT("KeysHint"), 14, Muted);
+	UTextBlock* KeysHint = MakeText(TEXT("KeysHint"), 14, PauseMuted);
 	KeysHint->SetText(LOCTEXT("KeysHint", "P / Esc to resume"));
 	KeysHint->SetJustification(ETextJustify::Center);
 	if (UVerticalBoxSlot* S = Column->AddChildToVerticalBox(KeysHint))
@@ -179,7 +179,7 @@ void ULTTPauseMenu::NativeTick(const FGeometry& MyGeometry, float InDeltaTime)
 	// Card fades in and drops into place (0.25 s).
 	if (Card)
 	{
-		const float E = EaseOutCubic(FMath::Clamp(AnimTime / 0.25f, 0.f, 1.f));
+		const float E = PauseEaseOutCubic(FMath::Clamp(AnimTime / 0.25f, 0.f, 1.f));
 		Card->SetRenderOpacity(E);
 		Card->SetRenderTranslation(FVector2D(0.f, (1.f - E) * -40.f));
 	}
