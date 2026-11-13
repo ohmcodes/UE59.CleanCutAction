@@ -4,11 +4,14 @@
 #include "UI/LTTUITheme.h"
 #include "CleanCutActionPlayerController.h"
 #include "Audio/LTTMusicPlayer.h"
+#include "Interaction/LTTMessDirector.h"
+#include "UI/LTTLeaderboardSubsystem.h"
 #include "Blueprint/WidgetTree.h"
 #include "Components/Border.h"
 #include "Components/Button.h"
 #include "Components/CanvasPanel.h"
 #include "Components/CanvasPanelSlot.h"
+#include "Components/Image.h"
 #include "Components/SizeBox.h"
 #include "Components/TextBlock.h"
 #include "Components/VerticalBox.h"
@@ -52,6 +55,39 @@ void ULTTPauseMenu::NativeOnInitialized()
 	if (QuitButton)
 	{
 		QuitButton->OnClicked.AddDynamic(this, &ULTTPauseMenu::HandleQuitClicked);
+	}
+	if (!CheatButton)
+	{
+		AddCheatButton(); // WBP_PauseMenu was baked before this existed
+	}
+	if (CheatButton)
+	{
+		CheatButton->OnClicked.AddDynamic(this, &ULTTPauseMenu::HandleCheatClicked);
+	}
+}
+
+void ULTTPauseMenu::AddCheatButton()
+{
+	UCanvasPanel* Root = WidgetTree ? Cast<UCanvasPanel>(WidgetTree->RootWidget) : nullptr;
+	if (!Root)
+	{
+		return;
+	}
+	CheatButton = WidgetTree->ConstructWidget<UButton>(UButton::StaticClass(), TEXT("CheatButton"));
+	FSlateBrush NoDraw;
+	NoDraw.DrawAs = ESlateBrushDrawType::NoDrawType;
+	FButtonStyle Style;
+	Style.SetNormal(NoDraw).SetHovered(NoDraw).SetPressed(NoDraw).SetDisabled(NoDraw);
+	Style.SetNormalPadding(FMargin(0.f)).SetPressedPadding(FMargin(0.f));
+	CheatButton->SetStyle(Style);
+	CheatButton->SetContent(LTTTheme::MakeArtIcon(WidgetTree, TEXT("CheatIcon"), TEXT("coffee"), 32.f));
+	CheatButton->SetRenderOpacity(0.55f);
+	if (UCanvasPanelSlot* S = Root->AddChildToCanvas(CheatButton))
+	{
+		S->SetAnchors(FAnchors(1.f, 1.f));
+		S->SetAlignment(FVector2D(1.f, 1.f));
+		S->SetPosition(FVector2D(-20.f, -20.f));
+		S->SetAutoSize(true);
 	}
 }
 
@@ -182,6 +218,10 @@ void ULTTPauseMenu::NativeTick(const FGeometry& MyGeometry, float InDeltaTime)
 		Card->SetRenderOpacity(E);
 		Card->SetRenderTranslation(FVector2D(0.f, (1.f - E) * -40.f));
 	}
+	if (CheatButton)
+	{
+		CheatButton->SetRenderOpacity(CheatButton->IsHovered() ? 1.f : 0.55f);
+	}
 }
 
 FReply ULTTPauseMenu::NativeOnKeyDown(const FGeometry& InGeometry, const FKeyEvent& InKeyEvent)
@@ -208,6 +248,20 @@ void ULTTPauseMenu::HandleMusicClicked()
 void ULTTPauseMenu::HandleQuitClicked()
 {
 	QuitGame();
+}
+
+void ULTTPauseMenu::HandleCheatClicked()
+{
+	const ULTTLeaderboardSubsystem* Board = ULTTLeaderboardSubsystem::Get(this);
+	if (!Board || !Board->GetPlayerName().Equals(TEXT("iPoNet"), ESearchCase::CaseSensitive))
+	{
+		return; // just a coffee cup for everyone else
+	}
+	if (ALTTMessDirector* Director = ALTTMessDirector::Get(GetWorld()))
+	{
+		Resume(); // unpause first so the end screen (if nothing is left) isn't stuck behind the menu
+		Director->CheatPlaceAll(5); // same as LTT.PlaceAll
+	}
 }
 
 void ULTTPauseMenu::Resume()

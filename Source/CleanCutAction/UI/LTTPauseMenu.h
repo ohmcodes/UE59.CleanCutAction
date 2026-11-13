@@ -47,6 +47,11 @@ public:
 	UPROPERTY(BlueprintReadOnly, Category = "Pause Menu", meta = (BindWidgetOptional))
 	TObjectPtr<UButton> QuitButton;
 
+	/** Small coffee icon in the corner: runs the LTT.PlaceAll cheat, but only for the player named "iPoNet" (case-sensitive).
+	 *  Added at runtime if the Widget Blueprint doesn't have one. */
+	UPROPERTY(BlueprintReadOnly, Category = "Pause Menu", meta = (BindWidgetOptional))
+	TObjectPtr<UButton> CheatButton;
+
 	/** The menu card (fades and drops in). */
 	UPROPERTY(BlueprintReadOnly, Category = "Pause Menu", meta = (BindWidgetOptional))
 	TObjectPtr<UWidget> Card;
@@ -61,6 +66,7 @@ protected:
 	UTextBlock* MakeText(FName Name, int32 FontSize, const FLinearColor& Color) const;
 	UButton* MakeButton(FName Name, const FText& Label, const FLinearColor& Color, UTextBlock** OutLabel = nullptr) const;
 	void RefreshMusicLabel();
+	void AddCheatButton();
 
 	UFUNCTION()
 	void HandleResumeClicked();
@@ -70,6 +76,9 @@ protected:
 
 	UFUNCTION()
 	void HandleQuitClicked();
+
+	UFUNCTION()
+	void HandleCheatClicked();
 
 	float AnimTime = 0.f;
 };
