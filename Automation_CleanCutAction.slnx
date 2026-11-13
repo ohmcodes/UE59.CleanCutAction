@@ -39,7 +39,6 @@
     <Project Path="../../UE5 Engines/UE_5.9/Engine/Source/Programs/Shared/EpicGames.Perforce.Tests/EpicGames.Perforce.Tests.csproj" />
     <Project Path="../../UE5 Engines/UE_5.9/Engine/Source/Programs/Shared/EpicGames.Serialization.Tests/EpicGames.Serialization.Tests.csproj" />
   </Folder>
-  <Project Path="../../UE5 Engines/UE_5.9/Engine/Platforms/VisionOS/Source/Programs/AutomationTool/VisionOS.Automation.csproj" />
   <Project Path="../../UE5 Engines/UE_5.9/Engine/Platforms/Wasm/Source/Programs/AutomationTool/Wasm.Automation.csproj" />
   <Project Path="../../UE5 Engines/UE_5.9/Engine/Source/Programs/AutomationTool/Android/Android.Automation.csproj" />
   <Project Path="../../UE5 Engines/UE_5.9/Engine/Source/Programs/AutomationTool/Apple/Apple.Automation.csproj" />

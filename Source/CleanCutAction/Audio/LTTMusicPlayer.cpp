@@ -10,6 +10,9 @@
 #include "Engine/StreamableManager.h"
 #include "Engine/World.h"
 #include "TimerManager.h"
+#include "EngineUtils.h"
+
+bool ALTTMusicPlayer::bMusicMuted = false;
 
 namespace
 {
@@ -31,13 +34,14 @@ ALTTMusicPlayer::ALTTMusicPlayer()
 		Audio->bAutoActivate = false;
 		Audio->bAllowSpatialization = false;
 		Audio->bIsMusic = true;
+		Audio->bIsUISound = true; // keeps playing while the game is paused (pause menu, end screen)
 		return Audio;
 	};
 	AudioA = MakeAudio(TEXT("MusicA"));
 	AudioB = MakeAudio(TEXT("MusicB"));
 
-	// Five calm cafe pieces: piano, music box, strings. Keep in sync with the "Music" AlwaysCook entry in
-	// Config/DefaultGame.ini [/Script/Engine.AssetManagerSettings], or the packaged game won't have them.
+	// Five calm cafe pieces: piano, music box, strings. Keep in sync with the +MapsToCook entries in
+	// Config/DefaultGame.ini [/Script/UnrealEd.ProjectPackagingSettings], or the packaged game won't have them.
 	// If the web build goes over itch.io's 200 MB, keep only the Debussy and the Bach Air (the two smallest).
 	static const TCHAR* DefaultTracks[] = {
 		TEXT("/Game/Classical_Collection/WAV/WAV_Liszt_Consolation_No_3_in_D_Flat_Major_S172.WAV_Liszt_Consolation_No_3_in_D_Flat_Major_S172"),
@@ -107,6 +111,11 @@ void ALTTMusicPlayer::Play()
 	{
 		return;
 	}
+	if (bMusicMuted)
+	{
+		bResumeOnUnmute = true; // starts when the player unmutes
+		return;
+	}
 	bPlaying = true;
 	bFirstTrack = true;
 	PlayNext();
@@ -151,6 +160,42 @@ void ALTTMusicPlayer::SetMusicVolume(float NewVolume)
 	if (Active && Active->IsPlaying())
 	{
 		Active->AdjustVolume(0.25f, Volume);
+	}
+}
+
+void ALTTMusicPlayer::SetMusicMuted(bool bMuted)
+{
+	bMusicMuted = bMuted;
+	if (!GEngine)
+	{
+		return;
+	}
+	for (const FWorldContext& Context : GEngine->GetWorldContexts())
+	{
+		if (UWorld* World = Context.World(); World && World->IsGameWorld())
+		{
+			for (TActorIterator<ALTTMusicPlayer> It(World); It; ++It)
+			{
+				It->ApplyMute();
+			}
+		}
+	}
+}
+
+void ALTTMusicPlayer::ApplyMute()
+{
+	if (bMusicMuted)
+	{
+		if (bPlaying || LoadHandle.IsValid())
+		{
+			bResumeOnUnmute = true;
+			Stop(0.4f);
+		}
+	}
+	else if (bResumeOnUnmute)
+	{
+		bResumeOnUnmute = false;
+		Play();
 	}
 }
 

@@ -1,7 +1,7 @@
 // Clean! Cut! Action! - Background music: plays a list of tracks in a shuffled loop with crossfades.
 // Place one in the level. Defaults to five calm cafe tracks from Classical_Musicbox / Classical_Collection, set in C++.
-// Nothing references them from content, so they are cooked by the "Music" AlwaysCook rule in Config/DefaultGame.ini
-// (AssetManagerSettings). Tracks added on the placed actor are cooked anyway (the level references them).
+// Nothing references them from content, so they are cooked by +MapsToCook entries in Config/DefaultGame.ini
+// (ProjectPackagingSettings). Tracks added on the placed actor are cooked anyway (the level references them).
 
 #pragma once
 
@@ -66,6 +66,13 @@ public:
 	UFUNCTION(BlueprintCallable, Category = "Music")
 	void SetMusicVolume(float NewVolume);
 
+	/** Mutes or unmutes all music (pause menu): muting fades the music out, unmuting starts the next track. Lasts for the session, so it survives Play Again / level loads. */
+	UFUNCTION(BlueprintCallable, Category = "Music")
+	static void SetMusicMuted(bool bMuted);
+
+	UFUNCTION(BlueprintPure, Category = "Music")
+	static bool IsMusicMuted() { return bMusicMuted; }
+
 	UFUNCTION(BlueprintPure, Category = "Music")
 	bool IsPlaying() const { return bPlaying; }
 
@@ -85,6 +92,11 @@ protected:
 	void RefillBag();
 	void PlayNext();
 	void StartTrack(USoundBase* Sound);
+	void ApplyMute();
+
+	static bool bMusicMuted;
+	/** Music was playing (or wanted to start) when muted; Play() again on unmute. */
+	bool bResumeOnUnmute = false;
 
 	UPROPERTY(VisibleAnywhere, Category = "Music")
 	TObjectPtr<UAudioComponent> AudioA;

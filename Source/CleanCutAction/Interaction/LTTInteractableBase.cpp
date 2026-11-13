@@ -390,6 +390,12 @@ void ALTTInteractableBase::UpdateGhost(bool bVisible, bool bTargeted, bool bRead
 				Ghost->SetMaterial(i, GhostMID);
 			}
 		}
+		else
+		{
+			// Without the ghost material the silhouette would render with the prop's own textures.
+			// Packaged builds only have it through the +MapsToCook entry in Config/DefaultGame.ini.
+			UE_LOG(LogTemp, Warning, TEXT("%s: ghost material %s didn't load (not cooked?)."), *GetName(), *GhostMaterial.ToString());
+		}
 		Ghost->RegisterComponent();
 		Ghost->SetWorldTransform(HomeTransform);
 	}
