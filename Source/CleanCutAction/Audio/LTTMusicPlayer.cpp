@@ -39,21 +39,7 @@ ALTTMusicPlayer::ALTTMusicPlayer()
 	};
 	AudioA = MakeAudio(TEXT("MusicA"));
 	AudioB = MakeAudio(TEXT("MusicB"));
-
-	// Five calm cafe pieces: piano, music box, strings. Keep in sync with the +MapsToCook entries in
-	// Config/DefaultGame.ini [/Script/UnrealEd.ProjectPackagingSettings], or the packaged game won't have them.
-	// If the web build goes over itch.io's 200 MB, keep only the Debussy and the Bach Air (the two smallest).
-	static const TCHAR* DefaultTracks[] = {
-		TEXT("/Game/Classical_Collection/WAV/WAV_Liszt_Consolation_No_3_in_D_Flat_Major_S172.WAV_Liszt_Consolation_No_3_in_D_Flat_Major_S172"),
-		TEXT("/Game/Classical_Musicbox/WAV/WAV_Debussy_Arabesque_No_1_L66_Arranged_for_Music_Box_wav.WAV_Debussy_Arabesque_No_1_L66_Arranged_for_Music_Box_wav"),
-		TEXT("/Game/Classical_Musicbox/WAV/WAV_Chopin_Nocturne_Op_9_No_2_Arranged_for_Music_Box_wav.WAV_Chopin_Nocturne_Op_9_No_2_Arranged_for_Music_Box_wav"),
-		TEXT("/Game/Classical_Collection/WAV/WAV_Bach_Air_on_the_G_String_BWV1068_Arranged_for_Woodwinds_and_Strings.WAV_Bach_Air_on_the_G_String_BWV1068_Arranged_for_Woodwinds_and_Strings"),
-		TEXT("/Game/Classical_Musicbox/WAV/WAV_Bach_The_Well_Tempered_Clavier_Book_1_1_Prelude_C_Major_BWV846_Music_Box_wav.WAV_Bach_The_Well_Tempered_Clavier_Book_1_1_Prelude_C_Major_BWV846_Music_Box_wav"),
-	};
-	for (const TCHAR* Path : DefaultTracks)
-	{
-		Tracks.Add(TSoftObjectPtr<USoundBase>(FSoftObjectPath(Path)));
-	}
+	// No default tracks: set them on the placed actor (L_NYC_Cafe uses /Game/_CleanCutAction/MusicFX).
 }
 
 void ALTTMusicPlayer::GatherFolderTracks()

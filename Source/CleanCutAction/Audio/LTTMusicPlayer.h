@@ -1,7 +1,7 @@
 // Clean! Cut! Action! - Background music: plays a list of tracks in a shuffled loop with crossfades.
-// Place one in the level. Defaults to five calm cafe tracks from Classical_Musicbox / Classical_Collection, set in C++.
-// Nothing references them from content, so they are cooked by +MapsToCook entries in Config/DefaultGame.ini
-// (ProjectPackagingSettings). Tracks added on the placed actor are cooked anyway (the level references them).
+// Place one in the level and set Tracks (or MusicFolders) on the instance. Tracks set on the placed actor are
+// cooked because the level references them. MusicFolders are found at runtime, so those folders must also be
+// cooked (e.g. DirectoriesToAlwaysCook in Config/DefaultGame.ini).
 
 #pragma once
 

@@ -36,13 +36,7 @@ public class CleanCutAction : ModuleRules
 		}
 
 		PublicIncludePaths.AddRange(new string[] {
-			"CleanCutAction",
-			"CleanCutAction/Variant_Horror",
-			"CleanCutAction/Variant_Horror/UI",
-			"CleanCutAction/Variant_Shooter",
-			"CleanCutAction/Variant_Shooter/AI",
-			"CleanCutAction/Variant_Shooter/UI",
-			"CleanCutAction/Variant_Shooter/Weapons"
+			"CleanCutAction"
 		});
 
 		// Uncomment if you are using Slate UI
