@@ -142,8 +142,25 @@ void ACleanCutActionPlayerController::ClosePauseMenu()
 	PauseMenuWidget->RemoveFromParent();
 	PauseMenuWidget = nullptr;
 	UGameplayStatics::SetGamePaused(this, false);
-	SetShowMouseCursor(false);
-	SetInputMode(FInputModeGameOnly());
+	RestoreGameInput();
+}
+
+void ACleanCutActionPlayerController::RestoreGameInput()
+{
+	if (ShouldUseTouchControls())
+	{
+		// Same mode UI_TouchSimple sets on Construct: GameOnly would stop the touch buttons taking taps.
+		FInputModeGameAndUI Mode;
+		Mode.SetLockMouseToViewportBehavior(EMouseLockMode::DoNotLock);
+		Mode.SetHideCursorDuringCapture(false);
+		SetInputMode(Mode);
+		SetShowMouseCursor(true);
+	}
+	else
+	{
+		SetShowMouseCursor(false);
+		SetInputMode(FInputModeGameOnly());
+	}
 }
 
 bool ACleanCutActionPlayerController::ShouldUseTouchControls() const

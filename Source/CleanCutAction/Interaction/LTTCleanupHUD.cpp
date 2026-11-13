@@ -1,6 +1,9 @@
 // Clean! Cut! Action!
 
 #include "Interaction/LTTCleanupHUD.h"
+#include "UI/LTTUITheme.h"
+#include "Components/Border.h"
+#include "CleanCutActionPlayerController.h"
 #include "Interaction/LTTMessDirector.h"
 #include "Interaction/LTTCarryComponent.h"
 #include "Interaction/LTTInteractableBase.h"
@@ -37,13 +40,7 @@ void ULTTCleanupHUD::NativeConstruct()
 UTextBlock* ULTTCleanupHUD::MakeText(FName Name, int32 FontSize) const
 {
 	UTextBlock* Text = WidgetTree->ConstructWidget<UTextBlock>(UTextBlock::StaticClass(), Name);
-	FSlateFontInfo Font = Text->GetFont();
-	Font.Size = FontSize;
-	Font.OutlineSettings.OutlineSize = 2;
-	Font.OutlineSettings.OutlineColor = FLinearColor(0.f, 0.f, 0.f, 0.85f);
-	Text->SetFont(Font);
-	Text->SetShadowOffset(FVector2D(1.5f, 1.5f));
-	Text->SetShadowColorAndOpacity(FLinearColor(0.f, 0.f, 0.f, 0.5f));
+	LTTTheme::StyleText(Text, FontSize, LTTTheme::Ink()); // sits on a paper panel
 	return Text;
 }
 
@@ -53,8 +50,12 @@ void ULTTCleanupHUD::BuildDefaultLayout()
 	WidgetTree->RootWidget = Root;
 
 	// Top left: placed / destroyed / points.
+	UBorder* StatsPanel = WidgetTree->ConstructWidget<UBorder>(UBorder::StaticClass(), TEXT("StatsPanel"));
+	LTTTheme::ApplyBrush(StatsPanel, LTTTheme::Rounded(LTTTheme::Hex(0xFB, 0xF7, 0xEC, 0.93f), 18.f, LTTTheme::GoldTrim(), 3.f));
+	StatsPanel->SetPadding(FMargin(20.f, 12.f, 24.f, 10.f));
 	UVerticalBox* Stats = WidgetTree->ConstructWidget<UVerticalBox>(UVerticalBox::StaticClass(), TEXT("Stats"));
-	if (UCanvasPanelSlot* StatsSlot = Root->AddChildToCanvas(Stats))
+	StatsPanel->SetContent(Stats);
+	if (UCanvasPanelSlot* StatsSlot = Root->AddChildToCanvas(StatsPanel))
 	{
 		StatsSlot->SetAnchors(FAnchors(0.f, 0.f));
 		StatsSlot->SetAlignment(FVector2D(0.f, 0.f));
@@ -66,8 +67,8 @@ void ULTTCleanupHUD::BuildDefaultLayout()
 	DestroyedText = MakeText(TEXT("DestroyedText"), 20);
 	PointsText = MakeText(TEXT("PointsText"), 20);
 	HintKeyText = MakeText(TEXT("HintKeyText"), 18);
-	DestroyedText->SetColorAndOpacity(FSlateColor(FLinearColor(1.f, 0.55f, 0.45f)));
-	PointsText->SetColorAndOpacity(FSlateColor(FLinearColor(1.f, 0.85f, 0.3f)));
+	DestroyedText->SetColorAndOpacity(FSlateColor(LTTTheme::Bad()));
+	PointsText->SetColorAndOpacity(FSlateColor(LTTTheme::Coin()));
 	for (UTextBlock* Text : { PlacedText.Get(), DestroyedText.Get(), PointsText.Get(), HintKeyText.Get() })
 	{
 		if (UVerticalBoxSlot* TextSlot = Stats->AddChildToVerticalBox(Text))
@@ -79,7 +80,11 @@ void ULTTCleanupHUD::BuildDefaultLayout()
 	// Top centre: countdown.
 	TimerText = MakeText(TEXT("TimerText"), 40);
 	TimerText->SetJustification(ETextJustify::Center);
-	if (UCanvasPanelSlot* TimerSlot = Root->AddChildToCanvas(TimerText))
+	UBorder* TimerPanel = WidgetTree->ConstructWidget<UBorder>(UBorder::StaticClass(), TEXT("TimerPanel"));
+	LTTTheme::ApplyBrush(TimerPanel, LTTTheme::Rounded(LTTTheme::Hex(0xFB, 0xF7, 0xEC, 0.93f), -1.f, LTTTheme::GoldTrim(), 3.f));
+	TimerPanel->SetPadding(FMargin(30.f, 2.f, 30.f, 4.f));
+	TimerPanel->SetContent(TimerText);
+	if (UCanvasPanelSlot* TimerSlot = Root->AddChildToCanvas(TimerPanel))
 	{
 		TimerSlot->SetAnchors(FAnchors(0.5f, 0.f));
 		TimerSlot->SetAlignment(FVector2D(0.5f, 0.f));
@@ -90,7 +95,7 @@ void ULTTCleanupHUD::BuildDefaultLayout()
 	// Under the crosshair: what the hint points at.
 	HintText = MakeText(TEXT("HintText"), 20);
 	HintText->SetJustification(ETextJustify::Center);
-	HintText->SetColorAndOpacity(FSlateColor(HintArrowColor));
+	LTTTheme::StyleOverlayText(HintText, 20, HintArrowColor);
 	if (UCanvasPanelSlot* HintSlot = Root->AddChildToCanvas(HintText))
 	{
 		HintSlot->SetAnchors(FAnchors(0.5f, 0.5f));
@@ -136,13 +141,20 @@ void ULTTCleanupHUD::UpdateTexts()
 		HintKeyText->SetText(Cooldown > 0.f
 			? FText::Format(LOCTEXT("HintCooldown", "[{0}] Hint ({1}s)"), Key, FText::AsNumber(FMath::CeilToInt(Cooldown)))
 			: FText::Format(LOCTEXT("HintReady", "[{0}] Hint"), Key));
-		HintKeyText->SetColorAndOpacity(FSlateColor(Cooldown > 0.f ? FLinearColor(1.f, 1.f, 1.f, 0.45f) : FLinearColor::White));
-		HintKeyText->SetVisibility(D && !D->IsSetClean() && !D->IsTimeUp() ? ESlateVisibility::HitTestInvisible : ESlateVisibility::Collapsed);
+		HintKeyText->SetColorAndOpacity(FSlateColor(Cooldown > 0.f ? LTTTheme::InkMuted() : LTTTheme::HeaderBrown()));
+		// Touch has its own Hint button (UI_TouchSimple), so the "[F] Hint" key prompt is desktop only.
+		const ACleanCutActionPlayerController* CCPC = Cast<ACleanCutActionPlayerController>(GetOwningPlayer());
+		const bool bTouch = CCPC && CCPC->ShouldUseTouchControls();
+		HintKeyText->SetVisibility(D && !bTouch && !D->IsSetClean() && !D->IsTimeUp() ? ESlateVisibility::HitTestInvisible : ESlateVisibility::Collapsed);
 	}
 	if (TimerText)
 	{
 		const bool bShow = D && (D->bUseTimer || D->IsTimeUp());
 		TimerText->SetVisibility(bShow ? ESlateVisibility::HitTestInvisible : ESlateVisibility::Collapsed);
+		if (UWidget* TimerPanel = TimerText->GetParent())
+		{
+			TimerPanel->SetVisibility(bShow ? ESlateVisibility::HitTestInvisible : ESlateVisibility::Collapsed);
+		}
 		if (bShow)
 		{
 			if (D->IsTimeUp())
@@ -262,7 +274,7 @@ int32 ULTTCleanupHUD::NativePaint(const FPaintArgs& Args, const FGeometry& Allot
 	TArray<FVector2f> Chevron2 = { Chevron[0] + Shift, Chevron[1] + Shift, Chevron[2] + Shift };
 
 	const FPaintGeometry Geo = AllottedGeometry.ToPaintGeometry();
-	const FLinearColor Outline(0.f, 0.f, 0.f, 0.7f * ArrowDrawColor.A);
+	const FLinearColor Outline = LTTTheme::Hex(0x5A, 0x34, 0x15, 0.85f * ArrowDrawColor.A);
 	FLinearColor Faded = ArrowDrawColor;
 	Faded.A *= 0.6f;
 

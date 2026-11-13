@@ -19,6 +19,7 @@ UCLASS(Blueprintable)
 class CLEANCUTACTION_API ULTTEndScreen : public UUserWidget
 {
 	GENERATED_BODY()
+	friend class ULTTWidgetBaker; // editor tool: bakes BuildDefaultLayout into a WBP_ child
 
 public:
 	/** Fills in the results. Called by the mess director right after creating the widget. */
@@ -53,6 +54,10 @@ public:
 
 	UPROPERTY(BlueprintReadOnly, Category = "End Screen", meta = (BindWidgetOptional))
 	TObjectPtr<UTextBlock> HintsValue;
+
+	/** "+N" for the seconds left on the clock (set clean only). */
+	UPROPERTY(BlueprintReadOnly, Category = "End Screen", meta = (BindWidgetOptional))
+	TObjectPtr<UTextBlock> TimeBonusValue;
 
 	UPROPERTY(BlueprintReadOnly, Category = "End Screen", meta = (BindWidgetOptional))
 	TObjectPtr<UTextBlock> PointsValue;

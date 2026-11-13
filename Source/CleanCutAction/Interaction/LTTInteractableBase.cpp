@@ -30,6 +30,8 @@ ALTTInteractableBase::ALTTInteractableBase()
 	// Cooked through the "BreakFX" AlwaysCook entry in Config/DefaultGame.ini (nothing in content references it).
 	// Lives outside /Game/_CleanCutAction/Destruction: that folder (the old per-prop GCs) is never cooked.
 	GenericBreakCollection = TSoftObjectPtr<UGeometryCollection>(FSoftObjectPath(TEXT("/Game/_CleanCutAction/BreakFX/GC_Generic_Shatter.GC_Generic_Shatter")));
+	// Cooked through a +MapsToCook entry in Config/DefaultGame.ini (C++ soft defaults aren't seen by the cooker).
+	BrokenMaterial = TSoftObjectPtr<UMaterialInterface>(FSoftObjectPath(TEXT("/Game/_CleanCutAction/Materials/M_BrokenProp.M_BrokenProp")));
 	// The mesh component lives in BP_MasterInteractables (Blueprint SCS) so content can be built before code.
 }
 
@@ -152,6 +154,7 @@ float ALTTInteractableBase::GetEffectiveThrowMultiplier() const
 void ALTTInteractableBase::BeginHold(AActor* InHolder)
 {
 	Holder = InHolder;
+	bBreakOnLanding = false;
 
 	WakeTouchingProps();
 	Mesh->SetSimulatePhysics(false);
@@ -359,6 +362,59 @@ bool ALTTInteractableBase::IsTargetingHome(const FVector& ViewLocation, const FV
 	return (ToHome - Dir * Along).SizeSquared() <= FMath::Square(Radius);
 }
 
+bool ALTTInteractableBase::IsNearHome(const FVector& ViewLocation, const FVector& ViewDirection, float MaxDistance, float Margin) const
+{
+	if (!bHasHome || bPlaced || !Mesh)
+	{
+		return false;
+	}
+	const FVector Home = GetHomeCenter();
+	const float Radius = GetSnapRadius() + FMath::Max(Margin, 0.f);
+	if (FVector::DistSquared(Mesh->Bounds.Origin, Home) <= FMath::Square(Radius))
+	{
+		return true;
+	}
+	const FVector Dir = ViewDirection.GetSafeNormal();
+	const FVector ToHome = Home - ViewLocation;
+	const float Along = FVector::DotProduct(ToHome, Dir);
+	if (Along <= 0.f || Along > MaxDistance + Margin)
+	{
+		return false;
+	}
+	return (ToHome - Dir * Along).SizeSquared() <= FMath::Square(Radius);
+}
+
+void ALTTInteractableBase::ArmBreakOnLanding()
+{
+	if (!bPlaced && !IsHeld())
+	{
+		bBreakOnLanding = true;
+	}
+}
+
+void ALTTInteractableBase::NotifyHit(UPrimitiveComponent* MyComp, AActor* Other, UPrimitiveComponent* OtherComp, bool bSelfMoved,
+	FVector HitLocation, FVector HitNormal, FVector NormalImpulse, const FHitResult& Hit)
+{
+	Super::NotifyHit(MyComp, Other, OtherComp, bSelfMoved, HitLocation, HitNormal, NormalImpulse, Hit); // BP ReceiveHit
+	if (!bBreakOnLanding || IsHeld() || bPlaced || bPlacing || !IsValid(this) || IsActorBeingDestroyed())
+	{
+		return;
+	}
+	bBreakOnLanding = false;
+	// Break with the prop's own Geometry Collection: BP_MasterInteractables' BreakFromImpact event spawns
+	// BP_BreakDebris with BreakCollection (soft props with bBreakOnThrow off don't break).
+	static const FName BreakFromImpactName(TEXT("BreakFromImpact"));
+	if (UFunction* Break = FindFunction(BreakFromImpactName); Break && Break->ParmsSize == 0)
+	{
+		ProcessEvent(Break, nullptr);
+	}
+	else
+	{
+		UE_LOG(LogTemp, Warning, TEXT("%s: no BreakFromImpact event; destroying it."), *GetName());
+		Destroy(); // still counts as broken
+	}
+}
+
 void ALTTInteractableBase::UpdateGhost(bool bVisible, bool bTargeted, bool bReady, bool bAsRequiredSupport)
 {
 	const bool bShow = bVisible && bHasHome && bIsCleanupTask && !bPlaced && Mesh && Mesh->GetStaticMesh();
@@ -464,13 +520,14 @@ void ALTTInteractableBase::Tick(float DeltaSeconds)
 	}
 }
 
-void ALTTInteractableBase::FinishPlacing()
+void ALTTInteractableBase::LockAtHome()
 {
 	bPlacing = false;
 	bPlaced = true;
+	bBreakOnLanding = false;
 	SetActorTickEnabled(false);
 
-	// Locked: kinematic, solid, never woken, picked up or broken again.
+	// Locked: kinematic, solid, never woken or picked up again.
 	SetActorTransform(HomeTransform, false, nullptr, ETeleportType::TeleportPhysics);
 	Mesh->SetSimulatePhysics(false);
 	Mesh->SetCollisionProfileName(SavedCollisionProfile.IsNone() ? Mesh->GetCollisionProfileName() : SavedCollisionProfile);
@@ -484,6 +541,11 @@ void ALTTInteractableBase::FinishPlacing()
 		Ghost->DestroyComponent();
 		Ghost = nullptr;
 	}
+}
+
+void ALTTInteractableBase::FinishPlacing()
+{
+	LockAtHome();
 
 	ReceivePlaced();
 	if (ALTTMessDirector* Director = ALTTMessDirector::Get(this))
@@ -571,7 +633,59 @@ AActor* ALTTInteractableBase::ShatterGeneric(FVector ImpactPoint, bool bDestroyP
 
 	if (bDestroyProp)
 	{
-		Destroy(); // mess director counts it as broken (OnDestroyed)
+		BreakAway(); // destroyed (counted as broken), or back home in red if other props rest on it
 	}
 	return Debris;
+}
+
+void ALTTInteractableBase::K2_DestroyActor()
+{
+	// BP_MasterInteractables' BreakFromImpact ends with DestroyActor after spawning its debris.
+	BreakAway();
+}
+
+void ALTTInteractableBase::BreakAway()
+{
+	if (bBrokenInPlace || IsActorBeingDestroyed())
+	{
+		return;
+	}
+	ALTTMessDirector* Director = ALTTMessDirector::Get(this);
+	if (!Mesh || !bHasHome || !bIsCleanupTask || !Director || !Director->HasDependents(this))
+	{
+		Destroy(); // mess director counts it as broken (OnDestroyed)
+		return;
+	}
+
+	// Cups and plates still need this table: the debris has flown, now a red "broken" copy stands back on its mark
+	// so they can be put back on it and the set can still be finished.
+	bBrokenInPlace = true;
+	Holder = nullptr;
+	Mesh->SetFirstPersonPrimitiveType(EFirstPersonPrimitiveType::None);
+	LockAtHome();
+	ApplyBrokenLook();
+
+	// Never break again (the BP checks bBreakOnThrow before spawning debris).
+	if (FBoolProperty* BreakFlag = FindFProperty<FBoolProperty>(GetClass(), TEXT("bBreakOnThrow")))
+	{
+		BreakFlag->SetPropertyValue_InContainer(this, false);
+	}
+
+	Director->NotifyBrokenInPlace(this);
+}
+
+void ALTTInteractableBase::ApplyBrokenLook()
+{
+	UMaterialInterface* Base = BrokenMaterial.LoadSynchronous();
+	if (!Base || !Mesh)
+	{
+		UE_LOG(LogTemp, Warning, TEXT("%s: broken material %s didn't load (not cooked?)."), *GetName(), *BrokenMaterial.ToString());
+		return;
+	}
+	UMaterialInstanceDynamic* MID = UMaterialInstanceDynamic::Create(Base, this);
+	MID->SetVectorParameterValue(TEXT("Color"), BrokenColor);
+	for (int32 i = 0; i < Mesh->GetNumMaterials(); ++i)
+	{
+		Mesh->SetMaterial(i, MID);
+	}
 }

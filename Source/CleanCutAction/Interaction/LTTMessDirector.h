@@ -101,12 +101,32 @@ public:
 	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Score")
 	int32 PointsPerPlaced = 10;
 
-	/** Points for each cleanup prop destroyed before it was put back (use a negative number for a penalty). */
+	/** Points for each cleanup prop destroyed before it was put back (negative = penalty). */
 	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Score")
-	int32 PointsPerBroken = 0;
+	int32 PointsPerBroken = -15;
+
+	/** Bonus points for every second left on the countdown when the set is clean. */
+	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Score", meta = (ClampMin = "0"))
+	float PointsPerSecondLeft = 1.f;
 
 	UFUNCTION(BlueprintPure, Category = "Score")
-	int32 GetScore() const { return PlacedCount * PointsPerPlaced + BrokenCount * PointsPerBroken + HintsUsed * PointsPerHint; }
+	int32 GetScore() const { return GetPropPoints() + GetBrokenPoints() + HintsUsed * PointsPerHint + TimeBonusPoints; }
+
+	/** Points from props put back. */
+	UFUNCTION(BlueprintPure, Category = "Score")
+	int32 GetPropPoints() const { return PlacedCount * PointsPerPlaced; }
+
+	/** Points lost (or won) for broken props. */
+	UFUNCTION(BlueprintPure, Category = "Score")
+	int32 GetBrokenPoints() const { return BrokenCount * PointsPerBroken; }
+
+	/** Bonus for time left on the clock; set when the set is clean (0 before, or after time ran out). */
+	UFUNCTION(BlueprintPure, Category = "Score")
+	int32 GetTimeBonusPoints() const { return TimeBonusPoints; }
+
+	/** Seconds that were left on the clock when the set was clean. */
+	UFUNCTION(BlueprintPure, Category = "Score")
+	float GetTimeLeftAtFinish() const { return TimeLeftAtFinish; }
 
 	// ---- Countdown ----
 
@@ -116,7 +136,7 @@ public:
 
 	/** Countdown length in seconds. It starts with the earthquake (or right away if there is none). */
 	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Countdown", meta = (ClampMin = "1", EditCondition = "bUseTimer"))
-	float TimeLimitSeconds = 900.f;
+	float TimeLimitSeconds = 1800.f;
 
 	/** Starts (or restarts) the countdown from Seconds; <= 0 uses TimeLimitSeconds. */
 	UFUNCTION(BlueprintCallable, Category = "Countdown")
@@ -207,6 +227,24 @@ public:
 
 	UFUNCTION(BlueprintPure, Category = "HUD")
 	UUserWidget* GetHUDWidget() const { return HUDWidget; }
+
+	// ---- Briefing: story, controls and rules before the game starts ----
+
+	/** Show the briefing (call sheet + controls + Start button) over the black screen before the game fades in.
+	 *  The mess is made behind it; the countdown starts when the player presses Start. */
+	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Briefing")
+	bool bShowBriefing = true;
+
+	/** ULTTBriefingScreen or a Widget Blueprint based on it. */
+	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Briefing", meta = (EditCondition = "bShowBriefing"))
+	TSubclassOf<UUserWidget> BriefingClass;
+
+	UFUNCTION(BlueprintPure, Category = "Briefing")
+	bool IsBriefingOpen() const { return BriefingWidget != nullptr; }
+
+	/** Closes the briefing and starts the game (fade in + countdown). Called by the briefing's Start button. */
+	UFUNCTION(BlueprintCallable, Category = "Briefing")
+	void StartFromBriefing();
 
 	// ---- Intro: hide the mess being made ----
 
@@ -316,6 +354,13 @@ public:
 	/** Called by a prop when it locks into its home. */
 	void NotifyPlaced(ALTTInteractableBase* Prop);
 
+	/** True if another cleanup prop still in play rests on Prop at home (cups on a table). */
+	bool HasDependents(const ALTTInteractableBase* Prop) const;
+
+	/** Called by a prop that broke but went back to its home (red) because others rest on it: counts it as broken
+	 *  and takes it off the to-do list. */
+	void NotifyBrokenInPlace(ALTTInteractableBase* Prop);
+
 protected:
 	virtual void BeginPlay() override;
 	virtual void PreSave(FObjectPreSaveContext ObjectSaveContext) override;
@@ -326,6 +371,7 @@ protected:
 	void HandlePropDestroyed(AActor* DestroyedActor);
 
 	void CheckComplete();
+	void ShowBriefing();
 	void HandleTimeUp();
 	void CreateHUD();
 	void SetupHintInput();
@@ -353,6 +399,14 @@ protected:
 	TArray<TObjectPtr<ALTTInteractableBase>> Tasks;
 
 	int32 PlacedCount = 0;
+	int32 TimeBonusPoints = 0;
+	float TimeLeftAtFinish = 0.f;
+	/** The intro fade / mess start was due while the briefing was up; run it when Start is pressed. */
+	bool bFinishIntroPending = false;
+	bool bMessStartPending = false;
+
+	UPROPERTY(Transient)
+	TObjectPtr<UUserWidget> BriefingWidget;
 	int32 BrokenCount = 0;
 	bool bAllPlaced = false;
 	bool bTimeUp = false;

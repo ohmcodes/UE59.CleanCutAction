@@ -95,6 +95,10 @@ void ULTTInteractionComponent::UpdatePlaceHint()
 	{
 		PlaceHint = bReady ? ELTTPlaceHint::Place : ELTTPlaceHint::NeedsSupport;
 	}
+	else if (bBreakOnNearMissDrop && Held->IsNearHome(ViewLoc, ViewRot.Vector(), PlaceDistance, NearMissMargin))
+	{
+		PlaceHint = ELTTPlaceHint::Fumble;
+	}
 	Held->UpdateGhost(true, bTargeted, bReady);
 }
 
@@ -130,6 +134,8 @@ FText ULTTInteractionComponent::GetPlaceHintText() const
 	}
 	case ELTTPlaceHint::Drop:
 		return NSLOCTEXT("LTT", "HintDrop", "Drop");
+	case ELTTPlaceHint::Fumble:
+		return NSLOCTEXT("LTT", "HintFumble", "Missed the mark! Dropping here breaks it");
 	default:
 		return FText::GetEmpty();
 	}
@@ -218,7 +224,14 @@ void ULTTInteractionComponent::Interact()
 			PlaceHint = ELTTPlaceHint::None;
 			return;
 		}
+		ALTTInteractableBase* Dropped = Carry->GetHeldItem();
+		const bool bFumble = PlaceHint == ELTTPlaceHint::Fumble;
 		Carry->Drop();
+		if (bFumble && IsValid(Dropped))
+		{
+			// Aimed just beside its silhouette: it slips and shatters on whatever it lands on.
+			Dropped->ArmBreakOnLanding();
+		}
 		return;
 	}
 

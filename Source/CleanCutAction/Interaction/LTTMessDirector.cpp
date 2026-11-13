@@ -1,9 +1,11 @@
 // Clean! Cut! Action!
 
 #include "Interaction/LTTMessDirector.h"
+#include "CleanCutActionPlayerController.h"
 #include "Interaction/LTTInteractableBase.h"
 #include "Interaction/LTTCleanupHUD.h"
 #include "Interaction/LTTEndScreen.h"
+#include "UI/LTTBriefingScreen.h"
 #include "HAL/IConsoleManager.h"
 #include "UObject/ObjectSaveContext.h"
 #include "Engine/Level.h"
@@ -28,12 +30,28 @@
 #include "Engine/World.h"
 #include "TimerManager.h"
 
+namespace
+{
+	/** Game input after a menu closes; the project's controller keeps Game+UI on touch so the touch buttons still work. */
+	void LTTRestoreGameInput(APlayerController* PC)
+	{
+		if (ACleanCutActionPlayerController* CCPC = Cast<ACleanCutActionPlayerController>(PC))
+		{
+			CCPC->RestoreGameInput();
+			return;
+		}
+		PC->SetShowMouseCursor(false);
+		PC->SetInputMode(FInputModeGameOnly());
+	}
+}
+
 ALTTMessDirector::ALTTMessDirector()
 {
 	PrimaryActorTick.bCanEverTick = false;
 	SetRootComponent(CreateDefaultSubobject<USceneComponent>(TEXT("Root")));
 	HUDClass = ULTTCleanupHUD::StaticClass();
 	EndScreenClass = ULTTEndScreen::StaticClass();
+	BriefingClass = ULTTBriefingScreen::StaticClass();
 }
 
 ALTTMessDirector* ALTTMessDirector::Get(const UObject* WorldContext)
@@ -64,6 +82,7 @@ void ALTTMessDirector::SetupTasks()
 	CreateHUD(); // in case the player controller didn't exist yet at BeginPlay
 	BlackOut();
 	SetupHintInput();
+	ShowBriefing();
 	TArray<ALTTInteractableBase*> All;
 	for (TActorIterator<ALTTInteractableBase> It(GetWorld()); It; ++It)
 	{
@@ -427,6 +446,39 @@ void ALTTMessDirector::NotifyPlaced(ALTTInteractableBase* Prop)
 	CheckComplete();
 }
 
+bool ALTTMessDirector::HasDependents(const ALTTInteractableBase* Prop) const
+{
+	if (!Prop)
+	{
+		return false;
+	}
+	for (const ALTTInteractableBase* T : Tasks)
+	{
+		if (IsValid(T) && T != Prop && T->HomeSupport == Prop)
+		{
+			return true;
+		}
+	}
+	return false;
+}
+
+void ALTTMessDirector::NotifyBrokenInPlace(ALTTInteractableBase* Prop)
+{
+	if (!Prop || !Tasks.Contains(Prop))
+	{
+		return;
+	}
+	Tasks.Remove(Prop);
+	Prop->OnDestroyed.RemoveDynamic(this, &ALTTMessDirector::HandlePropDestroyed);
+	++BrokenCount;
+	if (HintTarget.Get() == Prop)
+	{
+		ClearHint();
+	}
+	UE_LOG(LogTemp, Log, TEXT("MessDirector: %s broke; back on its mark (red) for the props that rest on it."), *Prop->GetPropName().ToString());
+	NotifyPlaced(nullptr); // recounts placed props, broadcasts progress, checks for a clean set
+}
+
 void ALTTMessDirector::HandlePropDestroyed(AActor* DestroyedActor)
 {
 	ALTTInteractableBase* Prop = Cast<ALTTInteractableBase>(DestroyedActor);
@@ -454,6 +506,12 @@ void ALTTMessDirector::CheckComplete()
 		return;
 	}
 	bAllPlaced = true;
+	// Finishing early pays: bonus for every second still on the clock.
+	if (bUseTimer && bMessStarted && !bTimeUp)
+	{
+		TimeLeftAtFinish = GetTimeRemaining();
+		TimeBonusPoints = FMath::FloorToInt(TimeLeftAtFinish * FMath::Max(PointsPerSecondLeft, 0.f));
+	}
 	StopTimer();
 	ClearHint();
 	UE_LOG(LogTemp, Log, TEXT("MessDirector: set is clean (%d placed, %d broken)."), PlacedCount, BrokenCount);
@@ -469,6 +527,11 @@ void ALTTMessDirector::MarkMessStarted()
 {
 	if (bMessStarted)
 	{
+		return;
+	}
+	if (BriefingWidget)
+	{
+		bMessStartPending = true; // the clock waits for the Start button
 		return;
 	}
 	bMessStarted = true;
@@ -582,10 +645,73 @@ void ALTTMessDirector::CloseEndScreen()
 		{
 			PC->PlayerCameraManager->StopCameraFade();
 		}
-		PC->SetShowMouseCursor(false);
-		PC->SetInputMode(FInputModeGameOnly());
+		LTTRestoreGameInput(PC);
 	}
 	SetPlayerInputBlocked(false);
+}
+
+// ---- Briefing ----
+
+void ALTTMessDirector::ShowBriefing()
+{
+	if (!bShowBriefing || !BriefingClass || BriefingWidget)
+	{
+		return;
+	}
+	APlayerController* PC = UGameplayStatics::GetPlayerController(this, 0);
+	if (!PC || !PC->IsLocalController())
+	{
+		return;
+	}
+	BriefingWidget = CreateWidget<UUserWidget>(PC, BriefingClass);
+	if (!BriefingWidget)
+	{
+		return;
+	}
+	if (ULTTBriefingScreen* Screen = Cast<ULTTBriefingScreen>(BriefingWidget))
+	{
+		Screen->Setup(this);
+	}
+	BriefingWidget->AddToViewport(20);
+	if (HUDWidget)
+	{
+		HUDWidget->SetVisibility(ESlateVisibility::Collapsed);
+	}
+	PC->SetShowMouseCursor(true);
+	FInputModeUIOnly Mode;
+	Mode.SetWidgetToFocus(BriefingWidget->TakeWidget());
+	Mode.SetLockMouseToViewportBehavior(EMouseLockMode::DoNotLock);
+	PC->SetInputMode(Mode);
+}
+
+void ALTTMessDirector::StartFromBriefing()
+{
+	if (!BriefingWidget)
+	{
+		return;
+	}
+	BriefingWidget->RemoveFromParent();
+	BriefingWidget = nullptr;
+	if (HUDWidget)
+	{
+		HUDWidget->SetVisibility(ESlateVisibility::HitTestInvisible);
+	}
+	if (APlayerController* PC = UGameplayStatics::GetPlayerController(this, 0))
+	{
+		LTTRestoreGameInput(PC);
+	}
+	// Whatever was waiting on the briefing: the fade in (which starts the clock) or just the clock.
+	if (bFinishIntroPending)
+	{
+		bFinishIntroPending = false;
+		bMessStartPending = false;
+		FinishIntro();
+	}
+	else if (bMessStartPending)
+	{
+		bMessStartPending = false;
+		MarkMessStarted();
+	}
 }
 
 // ---- Intro fade ----
@@ -608,6 +734,11 @@ void ALTTMessDirector::FinishIntro()
 {
 	if (bIntroDone)
 	{
+		return;
+	}
+	if (BriefingWidget)
+	{
+		bFinishIntroPending = true; // stay black until the player presses Start
 		return;
 	}
 	bIntroDone = true;

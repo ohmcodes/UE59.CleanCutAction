@@ -92,6 +92,26 @@ public:
 	UFUNCTION(BlueprintCallable, Category = "Interactable|Break")
 	AActor* ShatterGeneric(FVector ImpactPoint, bool bDestroyProp = true);
 
+	/** Material for a prop that broke but other props rest on (a table under cups): it goes back to its home in
+	 *  this look so the props on it can still be placed. Needs a vector parameter "Color". */
+	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Interactable|Break")
+	TSoftObjectPtr<UMaterialInterface> BrokenMaterial;
+
+	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Interactable|Break")
+	FLinearColor BrokenColor = FLinearColor(0.8f, 0.04f, 0.02f);
+
+	/** Called instead of destroying the prop when it breaks. A prop other cleanup props rest on returns to its home,
+	 *  locked and red (counted as broken); any other prop is destroyed. Also runs for the BP's DestroyActor call. */
+	UFUNCTION(BlueprintCallable, Category = "Interactable|Break")
+	void BreakAway();
+
+	/** True once the prop broke and was put back red at its home. It can't break or be picked up again. */
+	UFUNCTION(BlueprintPure, Category = "Interactable|Break")
+	bool IsBrokenInPlace() const { return bBrokenInPlace; }
+
+	/** Routes the BP's DestroyActor (BreakFromImpact) through BreakAway. */
+	virtual void K2_DestroyActor() override;
+
 	// ---- Cleanup: put the prop back where it was in the clean level ----
 
 	/** The set isn't clean until this prop is back home. Off for props that don't matter (trash, extras). */
@@ -143,6 +163,18 @@ public:
 	/** True if the view ray passes through the home silhouette, or the prop's centre is already inside it. */
 	UFUNCTION(BlueprintPure, Category = "Interactable|Cleanup")
 	bool IsTargetingHome(const FVector& ViewLocation, const FVector& ViewDirection, float MaxDistance) const;
+
+	/** Like IsTargetingHome, but with the snap radius grown by Margin: true when the aim just misses the silhouette. */
+	UFUNCTION(BlueprintPure, Category = "Interactable|Cleanup")
+	bool IsNearHome(const FVector& ViewLocation, const FVector& ViewDirection, float MaxDistance, float Margin) const;
+
+	/** The prop breaks (its own BreakCollection, via the BP BreakFromImpact event) the first time it hits something. Used for a sloppy drop right next to
+	 *  its home silhouette. Picking it up again cancels it. */
+	UFUNCTION(BlueprintCallable, Category = "Interactable|Break")
+	void ArmBreakOnLanding();
+
+	UFUNCTION(BlueprintPure, Category = "Interactable|Break")
+	bool IsBreakOnLandingArmed() const { return bBreakOnLanding; }
 
 	/** Readable prop name for the HUD, e.g. "Coffee Cup". */
 	UFUNCTION(BlueprintPure, Category = "Interactable")
@@ -216,8 +248,18 @@ protected:
 	virtual void BeginPlay() override;
 	virtual void Tick(float DeltaSeconds) override;
 	virtual void FellOutOfWorld(const UDamageType& DmgType) override;
+	virtual void NotifyHit(UPrimitiveComponent* MyComp, AActor* Other, UPrimitiveComponent* OtherComp, bool bSelfMoved,
+		FVector HitLocation, FVector HitNormal, FVector NormalImpulse, const FHitResult& Hit) override;
+
+	/** Set by ArmBreakOnLanding; cleared on pickup or when it breaks. */
+	bool bBreakOnLanding = false;
 
 	void FinishPlacing();
+	/** Puts the prop at its home, kinematic and solid (shared by placing and breaking in place). */
+	void LockAtHome();
+	void ApplyBrokenLook();
+
+	bool bBrokenInPlace = false;
 
 	bool bHasHome = false;
 	bool bPlaced = false;

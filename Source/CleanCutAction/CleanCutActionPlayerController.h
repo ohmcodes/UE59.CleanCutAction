@@ -41,6 +41,12 @@ public:
 	UFUNCTION(BlueprintPure, Category = "Pause")
 	bool IsPauseMenuOpen() const { return PauseMenuWidget != nullptr; }
 
+	/** Returns true if the player should use UMG touch controls (mobile / touch-first browser, or bForceTouchControls). */
+	bool ShouldUseTouchControls() const;
+
+	/** Gives input back to the game after a menu closes. Touch keeps Game+UI and the cursor so the touch buttons still take taps. */
+	void RestoreGameInput();
+
 protected:
 
 	/** Input Mapping Contexts */
@@ -91,6 +97,4 @@ protected:
 	/** Input mapping context setup */
 	virtual void SetupInputComponent() override;
 
-	/** Returns true if the player should use UMG touch controls */
-	bool ShouldUseTouchControls() const;
 };
