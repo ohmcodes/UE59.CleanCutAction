@@ -1,21 +1,29 @@
-MIT License
+Clean! Cut! Action!
+Copyright (c) 2026 QLE OPC (Quality Level Entertainment). All Rights Reserved.
 
-Copyright (c) 2026 ✪Ohmcodes™✪
+This repository and everything in it, including the source code, Blueprints,
+content, art, audio, text, and documentation (together, the "Software"), are
+the proprietary property of QLE OPC, except for the third-party materials
+described below.
 
-Permission is hereby granted, free of charge, to any person obtaining a copy
-of this software and associated documentation files (the "Software"), to deal
-in the Software without restriction, including without limitation the rights
-to use, copy, modify, merge, publish, distribute, sublicense, and/or sell
-copies of the Software, and to permit persons to whom the Software is
-furnished to do so, subject to the following conditions:
+No license is granted. Unless QLE OPC gives you prior written permission, you
+may not copy, modify, merge, publish, distribute, sublicense, sell, or create
+derivative works of the Software, in whole or in part, or use it for any
+commercial purpose.
 
-The above copyright notice and this permission notice shall be included in all
-copies or substantial portions of the Software.
+You may view this repository and play released builds of the game as allowed
+by the QLE OPC terms and conditions at https://qlestudio.com/terms-and-conditions.
+
+Third-party materials: some assets in the Content/ folder come from third-party
+sources (for example, Fab/Marketplace asset packs). They remain the property of
+their respective owners and are covered by their own licenses. This license
+does not grant any rights to them.
 
 THE SOFTWARE IS PROVIDED "AS IS", WITHOUT WARRANTY OF ANY KIND, EXPRESS OR
 IMPLIED, INCLUDING BUT NOT LIMITED TO THE WARRANTIES OF MERCHANTABILITY,
-FITNESS FOR A PARTICULAR PURPOSE AND NONINFRINGEMENT. IN NO EVENT SHALL THE
-AUTHORS OR COPYRIGHT HOLDERS BE LIABLE FOR ANY CLAIM, DAMAGES OR OTHER
-LIABILITY, WHETHER IN AN ACTION OF CONTRACT, TORT OR OTHERWISE, ARISING FROM,
-OUT OF OR IN CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER DEALINGS IN THE
-SOFTWARE.
+FITNESS FOR A PARTICULAR PURPOSE AND NONINFRINGEMENT. IN NO EVENT SHALL QLE OPC
+BE LIABLE FOR ANY CLAIM, DAMAGES OR OTHER LIABILITY, WHETHER IN AN ACTION OF
+CONTRACT, TORT OR OTHERWISE, ARISING FROM, OUT OF OR IN CONNECTION WITH THE
+SOFTWARE OR THE USE OR OTHER DEALINGS IN THE SOFTWARE.
+
+To ask about permissions, contact support@qlestudio.com.

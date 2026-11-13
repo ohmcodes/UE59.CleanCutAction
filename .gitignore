@@ -53,6 +53,7 @@ Plugins/**/Binaries/*
 
 # Builds
 Build/*
+Build/
 
 # Whitelist PakBlacklist-<BuildConfiguration>.txt files
 !Build/*/
@@ -80,4 +81,3 @@ DerivedDataCache/*
 
 # Visual Studio upgrade report
 UpgradeLog*.htm
-CleanCutAction.uproject
