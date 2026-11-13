@@ -22,9 +22,9 @@
 namespace
 {
 	// Cafe theme (UI/LTTUITheme.h).
-	const FLinearColor TapeYellow = LTTTheme::ButtonGold();
-	const FLinearColor SoftWhite = LTTTheme::Ink();
-	const FLinearColor Muted = LTTTheme::InkMuted();
+	const FLinearColor EndTapeYellow = LTTTheme::ButtonGold();
+	const FLinearColor EndSoftWhite = LTTTheme::Ink();
+	const FLinearColor EndMuted = LTTTheme::InkMuted();
 	const FLinearColor RedTitle = LTTTheme::Hex(0xFF, 0xC2, 0xAE); // salmon letters on the banner for TIME'S UP
 
 	float EaseOutBounce(float T)
@@ -37,7 +37,7 @@ namespace
 		return N * T * T + 0.984375f;
 	}
 
-	float EaseOutCubic(float T)
+	float EndEaseOutCubic(float T)
 	{
 		const float U = 1.f - T;
 		return 1.f - U * U * U;
@@ -89,7 +89,7 @@ UButton* ULTTEndScreen::MakeButton(FName Name, const FText& Label, const FLinear
 void ULTTEndScreen::AddStatRow(UVerticalBox* Box, const FText& Label, UTextBlock* Value) const
 {
 	UHorizontalBox* Row = WidgetTree->ConstructWidget<UHorizontalBox>(UHorizontalBox::StaticClass());
-	UTextBlock* LabelText = MakeText(NAME_None, 22, Muted);
+	UTextBlock* LabelText = MakeText(NAME_None, 22, EndMuted);
 	LabelText->SetText(Label);
 	if (UHorizontalBoxSlot* LabelSlot = Row->AddChildToHorizontalBox(LabelText))
 	{
@@ -153,7 +153,7 @@ void ULTTEndScreen::BuildDefaultLayout()
 		S->SetPadding(FMargin(0.f, 0.f, 0.f, 10.f));
 	}
 
-	SubtitleText = MakeText(TEXT("SubtitleText"), 20, SoftWhite);
+	SubtitleText = MakeText(TEXT("SubtitleText"), 20, EndSoftWhite);
 	SubtitleText->SetJustification(ETextJustify::Center);
 	SubtitleText->SetAutoWrapText(true);
 	if (UVerticalBoxSlot* S = Column->AddChildToVerticalBox(SubtitleText))
@@ -162,10 +162,10 @@ void ULTTEndScreen::BuildDefaultLayout()
 		S->SetPadding(FMargin(0.f, 4.f, 0.f, 24.f));
 	}
 
-	TimeValue = MakeText(TEXT("TimeValue"), 22, SoftWhite);
-	ReturnedValue = MakeText(TEXT("ReturnedValue"), 22, SoftWhite);
+	TimeValue = MakeText(TEXT("TimeValue"), 22, EndSoftWhite);
+	ReturnedValue = MakeText(TEXT("ReturnedValue"), 22, EndSoftWhite);
 	DestroyedValue = MakeText(TEXT("DestroyedValue"), 22, LTTTheme::Bad());
-	HintsValue = MakeText(TEXT("HintsValue"), 22, SoftWhite);
+	HintsValue = MakeText(TEXT("HintsValue"), 22, EndSoftWhite);
 	TimeBonusValue = MakeText(TEXT("TimeBonusValue"), 22, LTTTheme::Good());
 	PointsValue = MakeText(TEXT("PointsValue"), 36, LTTTheme::Coin());
 	AddStatRow(Column, LOCTEXT("RowTime", "Time on set"), TimeValue);
@@ -176,7 +176,7 @@ void ULTTEndScreen::BuildDefaultLayout()
 	AddStatRow(Column, LOCTEXT("RowPoints", "Points"), PointsValue);
 
 	UHorizontalBox* Buttons = WidgetTree->ConstructWidget<UHorizontalBox>(UHorizontalBox::StaticClass(), TEXT("Buttons"));
-	PlayAgainButton = MakeButton(TEXT("PlayAgainButton"), LOCTEXT("PlayAgain", "Play Again"), TapeYellow);
+	PlayAgainButton = MakeButton(TEXT("PlayAgainButton"), LOCTEXT("PlayAgain", "Play Again"), EndTapeYellow);
 	KeepPlayingButton = MakeButton(TEXT("KeepPlayingButton"), LOCTEXT("KeepPlaying", "Keep Playing"), LTTTheme::ButtonCream());
 	for (UButton* Button : { PlayAgainButton.Get(), KeepPlayingButton.Get() })
 	{
@@ -271,7 +271,7 @@ void ULTTEndScreen::NativeTick(const FGeometry& MyGeometry, float InDeltaTime)
 	if (Card)
 	{
 		const float T = FMath::Clamp((AnimTime - 0.2f) / 0.35f, 0.f, 1.f);
-		const float E = EaseOutCubic(T);
+		const float E = EndEaseOutCubic(T);
 		Card->SetRenderOpacity(FMath::Max(E, 0.35f));
 		Card->SetRenderTranslation(FVector2D((1.f - E) * 120.f, 0.f));
 	}
@@ -279,7 +279,7 @@ void ULTTEndScreen::NativeTick(const FGeometry& MyGeometry, float InDeltaTime)
 	if (PointsValue)
 	{
 		const float T = FMath::Clamp((AnimTime - 0.6f) / 1.f, 0.f, 1.f);
-		PointsValue->SetText(FText::AsNumber(FMath::RoundToInt(FinalPoints * EaseOutCubic(T))));
+		PointsValue->SetText(FText::AsNumber(FMath::RoundToInt(FinalPoints * EndEaseOutCubic(T))));
 	}
 }
 
