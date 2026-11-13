@@ -17,14 +17,14 @@
 
 #define LOCTEXT_NAMESPACE "LTTPauseMenu"
 
-namespace
+namespace // names prefixed: unity builds can put this file next to other widgets with the same helpers
 {
 	// Cafe theme (UI/LTTUITheme.h).
 	const FLinearColor PauseTapeYellow = LTTTheme::ButtonGold();
 	const FLinearColor PauseSoftWhite = LTTTheme::Ink();
 	const FLinearColor PauseMuted = LTTTheme::InkMuted();
-	const FLinearColor ButtonGrey = LTTTheme::ButtonCream();
-	const FLinearColor QuitRed = LTTTheme::ButtonRed();
+	const FLinearColor PauseButtonGrey = LTTTheme::ButtonCream();
+	const FLinearColor PauseQuitRed = LTTTheme::ButtonRed();
 
 	float PauseEaseOutCubic(float T)
 	{
@@ -115,14 +115,13 @@ void ULTTPauseMenu::BuildDefaultLayout()
 	UVerticalBox* Column = WidgetTree->ConstructWidget<UVerticalBox>(UVerticalBox::StaticClass());
 	Width->SetContent(Column);
 
-	// Title painted on a wooden banner.
+	// "CUT!" on the ribbon banner, with Marlowe's megaphone.
 	UBorder* Banner = WidgetTree->ConstructWidget<UBorder>(UBorder::StaticClass(), TEXT("TitleBanner"));
-	LTTTheme::StyleBanner(Banner);
 	TitleText = WidgetTree->ConstructWidget<UTextBlock>(UTextBlock::StaticClass(), TEXT("TitleText"));
 	LTTTheme::StyleTitle(TitleText, 56);
 	TitleText->SetText(LOCTEXT("Title", "CUT!"));
 	TitleText->SetJustification(ETextJustify::Center);
-	Banner->SetContent(TitleText);
+	LTTTheme::FillRibbonBanner(WidgetTree, Banner, TitleText, TEXT("megaphone"), nullptr, 72.f);
 	if (UVerticalBoxSlot* S = Column->AddChildToVerticalBox(Banner))
 	{
 		S->SetHorizontalAlignment(HAlign_Center);
@@ -140,10 +139,10 @@ void ULTTPauseMenu::BuildDefaultLayout()
 
 	ResumeButton = MakeButton(TEXT("ResumeButton"), LOCTEXT("Resume", "Resume"), PauseTapeYellow);
 	UTextBlock* MusicText = nullptr;
-	MusicButton = MakeButton(TEXT("MusicButton"), FText::GetEmpty(), ButtonGrey, &MusicText);
+	MusicButton = MakeButton(TEXT("MusicButton"), FText::GetEmpty(), PauseButtonGrey, &MusicText);
 	MusicText->Rename(TEXT("MusicLabel")); // same name as the property, so a WBP_ child binds it
 	MusicLabel = MusicText;
-	QuitButton = MakeButton(TEXT("QuitButton"), LOCTEXT("Quit", "Quit"), QuitRed);
+	QuitButton = MakeButton(TEXT("QuitButton"), LOCTEXT("Quit", "Quit"), PauseQuitRed);
 	for (UButton* Button : { ResumeButton.Get(), MusicButton.Get(), QuitButton.Get() })
 	{
 		if (UVerticalBoxSlot* S = Column->AddChildToVerticalBox(Button))

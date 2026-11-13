@@ -10,6 +10,11 @@
 #include "Components/Border.h"
 #include "Components/Button.h"
 #include "Components/TextBlock.h"
+#include "Components/Image.h"
+#include "Components/HorizontalBox.h"
+#include "Components/HorizontalBoxSlot.h"
+#include "Blueprint/WidgetTree.h"
+#include "Engine/Texture2D.h"
 
 namespace LTTTheme
 {
@@ -87,6 +92,72 @@ namespace LTTTheme
 	{
 		ApplyBrush(Border, Rounded(Wood(), 16.f, WoodDark(), 4.f));
 		Border->SetPadding(FMargin(36.f, 6.f, 36.f, 10.f));
+	}
+
+	// ---- Cartoon art in /Game/_CleanCutAction/UI/Widget (banner, coffee, diamond, megaphone, ...) ----
+	inline UTexture2D* Art(const TCHAR* Name)
+	{
+		const FString Path = FString::Printf(TEXT("/Game/_CleanCutAction/UI/Widget/%s.%s"), Name, Name);
+		return LoadObject<UTexture2D>(nullptr, *Path);
+	}
+
+	/** Full-colour icon (not tinted) at Size x Size. */
+	inline UImage* MakeArtIcon(UWidgetTree* Tree, FName WidgetName, const TCHAR* TextureName, float Size)
+	{
+		UImage* Icon = Tree->ConstructWidget<UImage>(UImage::StaticClass(), WidgetName);
+		// Size goes on the brush itself: a Widget Blueprint saves the brush, not SetDesiredSizeOverride.
+		FSlateBrush Brush;
+		Brush.SetResourceObject(Art(TextureName));
+		Brush.ImageSize = FVector2D(Size, Size);
+		Icon->SetBrush(Brush);
+		return Icon;
+	}
+
+	/** The wooden ribbon texture behind titles, drawn as a 9-slice box so the ribbon tails keep their shape
+	 *  however long the title is. Falls back to the plain wooden plank if the texture is missing. */
+	inline void StyleRibbonBanner(UBorder* Border)
+	{
+		UTexture2D* Tex = Art(TEXT("banner"));
+		if (!Tex)
+		{
+			StyleBanner(Border);
+			return;
+		}
+		FSlateBrush Brush;
+		Brush.SetResourceObject(Tex);
+		Brush.ImageSize = FVector2D(Tex->GetSizeX(), Tex->GetSizeY());
+		Brush.DrawAs = ESlateBrushDrawType::Box;
+		Brush.Margin = FMargin(0.21f, 0.f, 0.21f, 0.f); // ends (tails) fixed, middle stretches
+		ApplyBrush(Border, Brush);
+		Border->SetPadding(FMargin(118.f, 14.f, 118.f, 32.f)); // text sits on the front band, clear of the tails
+		Border->SetHorizontalAlignment(HAlign_Center);
+		Border->SetVerticalAlignment(VAlign_Center);
+	}
+
+	/** Puts Title on the ribbon banner with an icon either side (nullptr = none). Icons are named
+	 *  TitleIcon / TitleIconRight so a WBP_ child can swap them. */
+	inline void FillRibbonBanner(UWidgetTree* Tree, UBorder* Banner, UTextBlock* Title, const TCHAR* LeftIcon, const TCHAR* RightIcon, float IconSize)
+	{
+		StyleRibbonBanner(Banner);
+		UHorizontalBox* Row = Tree->ConstructWidget<UHorizontalBox>(UHorizontalBox::StaticClass(), TEXT("TitleRow"));
+		Banner->SetContent(Row);
+		auto AddIcon = [&](const TCHAR* Name, FName WidgetName, const FMargin& Pad)
+		{
+			if (Name)
+			{
+				if (UHorizontalBoxSlot* S = Row->AddChildToHorizontalBox(MakeArtIcon(Tree, WidgetName, Name, IconSize)))
+				{
+					S->SetVerticalAlignment(VAlign_Center);
+					S->SetPadding(Pad);
+				}
+			}
+		};
+		AddIcon(LeftIcon, TEXT("TitleIcon"), FMargin(0.f, 0.f, 14.f, 0.f));
+		if (UHorizontalBoxSlot* S = Row->AddChildToHorizontalBox(Title))
+		{
+			S->SetVerticalAlignment(VAlign_Center);
+		}
+		AddIcon(RightIcon, TEXT("TitleIconRight"), FMargin(14.f, 0.f, 0.f, 0.f));
 	}
 
 	inline void StyleBackdrop(UBorder* Border, float Alpha)

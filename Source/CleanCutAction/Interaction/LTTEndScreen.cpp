@@ -140,14 +140,13 @@ void ULTTEndScreen::BuildDefaultLayout()
 	UVerticalBox* Column = WidgetTree->ConstructWidget<UVerticalBox>(UVerticalBox::StaticClass());
 	Width->SetContent(Column);
 
-	// Title painted on a wooden banner.
+	// Title on the ribbon banner, with a clapperboard.
 	UBorder* Banner = WidgetTree->ConstructWidget<UBorder>(UBorder::StaticClass(), TEXT("TitleBanner"));
-	LTTTheme::StyleBanner(Banner);
 	TitleText = WidgetTree->ConstructWidget<UTextBlock>(UTextBlock::StaticClass(), TEXT("TitleText"));
 	LTTTheme::StyleTitle(TitleText, 60);
 	TitleText->SetJustification(ETextJustify::Center);
 	TitleText->SetRenderTransformPivot(FVector2D(0.5f, 0.5f));
-	Banner->SetContent(TitleText);
+	LTTTheme::FillRibbonBanner(WidgetTree, Banner, TitleText, TEXT("clapperboard"), nullptr, 76.f);
 	if (UVerticalBoxSlot* S = Column->AddChildToVerticalBox(Banner))
 	{
 		S->SetHorizontalAlignment(HAlign_Center);

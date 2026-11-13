@@ -2,7 +2,8 @@
 // arrow toward the held prop's home (or the hinted prop) when the player isn't looking at it.
 // Created by ALTTMessDirector (HUDClass). Works on its own: if no Widget Blueprint layout is given it
 // builds a default one. A Widget Blueprint child can restyle it by naming its Text Blocks PlacedText,
-// DestroyedText, PointsText, TimerText, HintKeyText and HintText.
+// DestroyedText, PointsText, TimerText, HintKeyText and HintText, and its Images PlacedIcon, DestroyedIcon,
+// PointsIcon, HintIcon and TimerIcon (the timer icon pulses with each second of the countdown).
 
 #pragma once
 
@@ -11,6 +12,8 @@
 #include "LTTCleanupHUD.generated.h"
 
 class UTextBlock;
+class UImage;
+class UTexture2D;
 class ALTTMessDirector;
 
 UCLASS(Blueprintable)
@@ -39,6 +42,33 @@ public:
 	/** Under the crosshair while a hint is up: prop name, distance, and floor. */
 	UPROPERTY(BlueprintReadOnly, Category = "Cleanup HUD", meta = (BindWidgetOptional))
 	TObjectPtr<UTextBlock> HintText;
+
+	// ---- Icons (top left stats and the countdown) ----
+
+	UPROPERTY(BlueprintReadOnly, Category = "Cleanup HUD", meta = (BindWidgetOptional))
+	TObjectPtr<UImage> PlacedIcon;
+
+	UPROPERTY(BlueprintReadOnly, Category = "Cleanup HUD", meta = (BindWidgetOptional))
+	TObjectPtr<UImage> DestroyedIcon;
+
+	UPROPERTY(BlueprintReadOnly, Category = "Cleanup HUD", meta = (BindWidgetOptional))
+	TObjectPtr<UImage> PointsIcon;
+
+	/** Light bulb next to the "[F] Hint" prompt; faded while the hint cools down. */
+	UPROPERTY(BlueprintReadOnly, Category = "Cleanup HUD", meta = (BindWidgetOptional))
+	TObjectPtr<UImage> HintIcon;
+
+	/** Grows and shrinks once per second while the countdown runs (twice, and bigger, when time is low). */
+	UPROPERTY(BlueprintReadOnly, Category = "Cleanup HUD", meta = (BindWidgetOptional))
+	TObjectPtr<UImage> TimerIcon;
+
+	/** How much the timer icon grows on each beat (0.15 = 15% bigger). */
+	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Cleanup HUD|Countdown", meta = (ClampMin = "0"))
+	float TimerPulseAmount = 0.15f;
+
+	/** Beat size in the last LowTimeSeconds. */
+	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Cleanup HUD|Countdown", meta = (ClampMin = "0"))
+	float LowTimePulseAmount = 0.3f;
 
 	// ---- Countdown look ----
 
@@ -97,6 +127,9 @@ protected:
 	/** Builds the default layout when there is no Widget Blueprint layout. */
 	void BuildDefaultLayout();
 	UTextBlock* MakeText(FName Name, int32 FontSize) const;
+	/** Image showing /Game/_CleanCutAction/UI/Widget/<TextureName> at Size x Size. */
+	UImage* MakeIcon(FName Name, const TCHAR* TextureName, float Size) const;
+	void UpdateTimerIcon();
 
 	void UpdateTexts();
 	void UpdateArrow();
