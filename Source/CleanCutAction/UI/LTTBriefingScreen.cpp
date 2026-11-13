@@ -1,4 +1,5 @@
 // Clean! Cut! Action!
+#pragma once
 
 #include "UI/LTTBriefingScreen.h"
 #include "UI/LTTUITheme.h"
