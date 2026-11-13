@@ -11,6 +11,7 @@
 #include "Components/Button.h"
 #include "Components/TextBlock.h"
 #include "Components/Image.h"
+#include "Components/EditableTextBox.h"
 #include "Components/HorizontalBox.h"
 #include "Components/HorizontalBoxSlot.h"
 #include "Blueprint/WidgetTree.h"
@@ -235,5 +236,28 @@ namespace LTTTheme
 		Button->SetStyle(ButtonStyle(Fill));
 		Button->SetBackgroundColor(FLinearColor::White);
 		Button->SetColorAndOpacity(FLinearColor::White);
+	}
+
+	// ---- Text entry ----
+	/** White pill text field with the button edge; brown outline + gold glow when focused. */
+	inline void StyleTextBox(UEditableTextBox* Box, int32 Size)
+	{
+		FEditableTextBoxStyle Style = Box->GetWidgetStyle();
+		FSlateFontInfo Font = Style.TextStyle.Font;
+		Font.Size = Size;
+		Font.TypefaceFontName = FName(TEXT("Bold"));
+		Font.OutlineSettings.OutlineSize = 0;
+		Style.SetFont(Font);
+		const FLinearColor Field = Hex(0xFF, 0xFD, 0xF6);
+		Style.SetBackgroundImageNormal(Rounded(Field, -1.f, ButtonEdge(), 3.f));
+		Style.SetBackgroundImageHovered(Rounded(Field, -1.f, WoodDark(), 3.f));
+		Style.SetBackgroundImageFocused(Rounded(FLinearColor::White, -1.f, WoodDark(), 3.f));
+		Style.SetBackgroundImageReadOnly(Rounded(PaperDeep(), -1.f, ButtonEdge(), 3.f));
+		Style.SetPadding(FMargin(20.f, 9.f, 20.f, 9.f));
+		Style.SetForegroundColor(FSlateColor(Ink()));
+		Style.SetFocusedForegroundColor(FSlateColor(Ink()));
+		Style.SetReadOnlyForegroundColor(FSlateColor(InkMuted()));
+		Style.SetBackgroundColor(FSlateColor(FLinearColor::White));
+		Box->SetWidgetStyle(Style);
 	}
 }

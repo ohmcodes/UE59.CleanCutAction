@@ -1,9 +1,10 @@
 // Clean! Cut! Action!
-#pragma once
 
 #include "UI/LTTBriefingScreen.h"
 #include "UI/LTTUITheme.h"
 #include "Interaction/LTTMessDirector.h"
+#include "UI/LTTLeaderboardSubsystem.h"
+#include "Components/EditableTextBox.h"
 #include "CleanCutActionPlayerController.h"
 #include "Kismet/GameplayStatics.h"
 #include "Engine/Texture2D.h"
@@ -55,6 +56,15 @@ void ULTTBriefingScreen::NativeOnInitialized()
 	{
 		NoTimerButton->OnClicked.AddDynamic(this, &ULTTBriefingScreen::HandleNoTimerClicked);
 	}
+	if (RandomNameButton)
+	{
+		RandomNameButton->OnClicked.AddDynamic(this, &ULTTBriefingScreen::HandleRandomNameClicked);
+	}
+	if (NameInput)
+	{
+		NameInput->OnTextChanged.AddDynamic(this, &ULTTBriefingScreen::HandleNameChanged);
+		NameInput->OnTextCommitted.AddDynamic(this, &ULTTBriefingScreen::HandleNameCommitted);
+	}
 }
 
 void ULTTBriefingScreen::NativeConstruct()
@@ -63,6 +73,12 @@ void ULTTBriefingScreen::NativeConstruct()
 	AnimTime = 0.f;
 	ApplyInputVariant();
 	ApplyTexts();
+	if (NameInput)
+	{
+		const ULTTLeaderboardSubsystem* Board = ULTTLeaderboardSubsystem::Get(this);
+		NameInput->SetText(FText::FromString(Board ? Board->GetPlayerName() : ULTTLeaderboardSubsystem::MakeRandomName()));
+		NameInput->SetHintText(LOCTEXT("NameHint", "Type your name"));
+	}
 }
 
 void ULTTBriefingScreen::ApplyInputVariant()
@@ -377,12 +393,15 @@ void ULTTBriefingScreen::BuildDefaultLayout()
 	ScoreBrokenText = AddIconTextRow(Right, TEXT("ScoreBrokenText"), TEXT("destroyed"));
 	ScoreBonusText = AddIconTextRow(Right, TEXT("ScoreBonusText"), TEXT("timer"));
 
+	// ---- Leaderboard name ----
+	AddNameRow(Column);
+
 	// ---- Start: time trial, or no clock ----
 	UHorizontalBox* StartRow = WidgetTree->ConstructWidget<UHorizontalBox>(UHorizontalBox::StaticClass(), TEXT("StartButtons"));
 	if (UVerticalBoxSlot* S = Column->AddChildToVerticalBox(StartRow))
 	{
 		S->SetHorizontalAlignment(HAlign_Center);
-		S->SetPadding(FMargin(0.f, 18.f, 0.f, 0.f));
+		S->SetPadding(FMargin(0.f, 14.f, 0.f, 0.f));
 	}
 	auto AddStartButton = [this, StartRow](FName Name, const FLinearColor& Fill, const TCHAR* Icon, float IconSize, const FText& Label, int32 FontSize, float LeftPad)
 	{
@@ -416,6 +435,93 @@ void ULTTBriefingScreen::BuildDefaultLayout()
 	{
 		S->SetHorizontalAlignment(HAlign_Center);
 		S->SetPadding(FMargin(0.f, 6.f, 0.f, 0.f));
+	}
+}
+
+void ULTTBriefingScreen::AddNameRow(UVerticalBox* Box)
+{
+	UHorizontalBox* Row = WidgetTree->ConstructWidget<UHorizontalBox>(UHorizontalBox::StaticClass(), TEXT("NameRow"));
+	if (UHorizontalBoxSlot* S = Row->AddChildToHorizontalBox(LTTTheme::MakeArtIcon(WidgetTree, TEXT("NameIcon"), TEXT("director_chair"), 40.f)))
+	{
+		S->SetVerticalAlignment(VAlign_Center);
+		S->SetPadding(FMargin(0.f, 0.f, 10.f, 0.f));
+	}
+	UTextBlock* Label = MakeText(TEXT("NameLabel"), 18, TapeYellow);
+	Label->SetText(LOCTEXT("NameLabel", "YOUR NAME ON THE LEADERBOARD"));
+	if (UHorizontalBoxSlot* S = Row->AddChildToHorizontalBox(Label))
+	{
+		S->SetVerticalAlignment(VAlign_Center);
+		S->SetPadding(FMargin(0.f, 0.f, 14.f, 0.f));
+	}
+	NameInput = WidgetTree->ConstructWidget<UEditableTextBox>(UEditableTextBox::StaticClass(), TEXT("NameInput"));
+	LTTTheme::StyleTextBox(NameInput, 18);
+	NameInput->SetJustification(ETextJustify::Center);
+	USizeBox* InputWidth = WidgetTree->ConstructWidget<USizeBox>(USizeBox::StaticClass(), TEXT("NameInputWidth"));
+	InputWidth->SetWidthOverride(320.f);
+	InputWidth->SetContent(NameInput);
+	if (UHorizontalBoxSlot* S = Row->AddChildToHorizontalBox(InputWidth))
+	{
+		S->SetVerticalAlignment(VAlign_Center);
+	}
+	RandomNameButton = WidgetTree->ConstructWidget<UButton>(UButton::StaticClass(), TEXT("RandomNameButton"));
+	LTTTheme::StyleButton(RandomNameButton, LTTTheme::ButtonCream());
+	RandomNameButton->SetToolTipText(LOCTEXT("RandomTip", "Pick a random name"));
+	UTextBlock* RandomLabel = MakeText(TEXT("RandomNameButton_Label"), 16, LTTTheme::Ink());
+	RandomLabel->SetText(LOCTEXT("Random", "Random"));
+	RandomNameButton->SetContent(RandomLabel);
+	if (UHorizontalBoxSlot* S = Row->AddChildToHorizontalBox(RandomNameButton))
+	{
+		S->SetVerticalAlignment(VAlign_Center);
+		S->SetPadding(FMargin(10.f, 0.f, 0.f, 0.f));
+	}
+	if (UVerticalBoxSlot* S = Box->AddChildToVerticalBox(Row))
+	{
+		S->SetHorizontalAlignment(HAlign_Center);
+		S->SetPadding(FMargin(0.f, 16.f, 0.f, 0.f));
+	}
+}
+
+void ULTTBriefingScreen::CommitName()
+{
+	if (!NameInput)
+	{
+		return;
+	}
+	if (ULTTLeaderboardSubsystem* Board = ULTTLeaderboardSubsystem::Get(this))
+	{
+		const FString Kept = Board->SetPlayerName(NameInput->GetText().ToString());
+		NameInput->SetText(FText::FromString(Kept));
+	}
+}
+
+void ULTTBriefingScreen::HandleRandomNameClicked()
+{
+	if (ULTTLeaderboardSubsystem* Board = ULTTLeaderboardSubsystem::Get(this))
+	{
+		if (NameInput)
+		{
+			NameInput->SetText(FText::FromString(Board->RandomizePlayerName()));
+		}
+	}
+	SetKeyboardFocus(); // Enter starts again, not the text box
+}
+
+void ULTTBriefingScreen::HandleNameChanged(const FText& Text)
+{
+	// Cap the length while typing (the server keeps 24 characters).
+	const FString Str = Text.ToString();
+	if (Str.Len() > ULTTLeaderboardSubsystem::MaxNameLength && NameInput)
+	{
+		NameInput->SetText(FText::FromString(Str.Left(ULTTLeaderboardSubsystem::MaxNameLength)));
+	}
+}
+
+void ULTTBriefingScreen::HandleNameCommitted(const FText& Text, ETextCommit::Type CommitMethod)
+{
+	CommitName();
+	if (CommitMethod == ETextCommit::OnEnter)
+	{
+		SetKeyboardFocus(); // the next Enter starts the time trial
 	}
 }
 
@@ -518,6 +624,10 @@ void ULTTBriefingScreen::NativeTick(const FGeometry& MyGeometry, float InDeltaTi
 FReply ULTTBriefingScreen::NativeOnKeyDown(const FGeometry& InGeometry, const FKeyEvent& InKeyEvent)
 {
 	const FKey Key = InKeyEvent.GetKey();
+	if (NameInput && NameInput->HasKeyboardFocus())
+	{
+		return Super::NativeOnKeyDown(InGeometry, InKeyEvent); // typing a name: N and Space are letters, not shortcuts
+	}
 	if (!InKeyEvent.IsRepeat() && (Key == EKeys::Enter || Key == EKeys::SpaceBar || Key == EKeys::Gamepad_FaceButton_Bottom || Key == EKeys::Gamepad_Special_Right))
 	{
 		StartGame(true);
@@ -543,6 +653,7 @@ void ULTTBriefingScreen::HandleNoTimerClicked()
 
 void ULTTBriefingScreen::StartGame(bool bTimeTrial)
 {
+	CommitName(); // keep a typed name even if Enter was never pressed in the box
 	if (ALTTMessDirector* D = Director.Get())
 	{
 		// Before StartFromBriefing: the countdown starts there only if the timer is on.

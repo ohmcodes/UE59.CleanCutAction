@@ -3,6 +3,8 @@
 #include "Interaction/LTTEndScreen.h"
 #include "UI/LTTUITheme.h"
 #include "Interaction/LTTMessDirector.h"
+#include "UI/LTTLeaderboardPanel.h"
+#include "UI/LTTLeaderboardSubsystem.h"
 #include "Blueprint/WidgetTree.h"
 #include "Components/Border.h"
 #include "Components/Button.h"
@@ -66,6 +68,14 @@ void ULTTEndScreen::NativeOnInitialized()
 	if (KeepPlayingButton)
 	{
 		KeepPlayingButton->OnClicked.AddDynamic(this, &ULTTEndScreen::HandleKeepPlayingClicked);
+	}
+	if (LeaderboardButton)
+	{
+		LeaderboardButton->OnClicked.AddDynamic(this, &ULTTEndScreen::HandleLeaderboardClicked);
+	}
+	if (FullLeaderboardButton)
+	{
+		FullLeaderboardButton->OnClicked.AddDynamic(this, &ULTTEndScreen::HandleFullLeaderboardClicked);
 	}
 }
 
@@ -175,6 +185,15 @@ void ULTTEndScreen::BuildDefaultLayout()
 	AddStatRow(Column, LOCTEXT("RowTimeBonus", "Time bonus"), TimeBonusValue);
 	AddStatRow(Column, LOCTEXT("RowPoints", "Points"), PointsValue);
 
+	RankText = MakeText(TEXT("RankText"), 18, LTTTheme::HeaderBrown());
+	RankText->SetJustification(ETextJustify::Center);
+	RankText->SetAutoWrapText(true);
+	if (UVerticalBoxSlot* S = Column->AddChildToVerticalBox(RankText))
+	{
+		S->SetHorizontalAlignment(HAlign_Center);
+		S->SetPadding(FMargin(0.f, 10.f, 0.f, 0.f));
+	}
+
 	UHorizontalBox* Buttons = WidgetTree->ConstructWidget<UHorizontalBox>(UHorizontalBox::StaticClass(), TEXT("Buttons"));
 	PlayAgainButton = MakeButton(TEXT("PlayAgainButton"), LOCTEXT("PlayAgain", "Play Again"), EndTapeYellow);
 	KeepPlayingButton = MakeButton(TEXT("KeepPlayingButton"), LOCTEXT("KeepPlaying", "Keep Playing"), LTTTheme::ButtonCream());
@@ -190,6 +209,23 @@ void ULTTEndScreen::BuildDefaultLayout()
 		S->SetHorizontalAlignment(HAlign_Center);
 		S->SetPadding(FMargin(0.f, 28.f, 0.f, 0.f));
 	}
+
+	// Leaderboard: the in-game top 10, and the website.
+	UHorizontalBox* BoardButtons = WidgetTree->ConstructWidget<UHorizontalBox>(UHorizontalBox::StaticClass(), TEXT("LeaderboardButtons"));
+	LeaderboardButton = MakeButton(TEXT("LeaderboardButton"), LOCTEXT("Leaderboard", "Leaderboard"), LTTTheme::ButtonCream());
+	FullLeaderboardButton = MakeButton(TEXT("FullLeaderboardButton"), LOCTEXT("FullLeaderboard", "Full Leaderboard"), LTTTheme::ButtonCream());
+	for (UButton* Button : { LeaderboardButton.Get(), FullLeaderboardButton.Get() })
+	{
+		if (UHorizontalBoxSlot* S = BoardButtons->AddChildToHorizontalBox(Button))
+		{
+			S->SetPadding(FMargin(8.f, 0.f));
+		}
+	}
+	if (UVerticalBoxSlot* S = Column->AddChildToVerticalBox(BoardButtons))
+	{
+		S->SetHorizontalAlignment(HAlign_Center);
+		S->SetPadding(FMargin(0.f, 12.f, 0.f, 0.f));
+	}
 }
 
 void ULTTEndScreen::Setup(ALTTMessDirector* InDirector, bool bInSetClean)
@@ -199,6 +235,102 @@ void ULTTEndScreen::Setup(ALTTMessDirector* InDirector, bool bInSetClean)
 	FinalPoints = InDirector ? InDirector->GetScore() : 0;
 	AnimTime = 0.f;
 	ApplyTexts();
+	SubmitRun();
+}
+
+void ULTTEndScreen::SubmitRun()
+{
+	ULTTLeaderboardSubsystem* Board = ULTTLeaderboardSubsystem::Get(this);
+	const ALTTMessDirector* D = Director.Get();
+	if (!Board || !D || !bSubmitToLeaderboard || !Board->bEnabled)
+	{
+		if (RankText)
+		{
+			RankText->SetVisibility(ESlateVisibility::Collapsed);
+		}
+		return;
+	}
+	Board->OnRunSubmitted.AddUniqueDynamic(this, &ULTTEndScreen::HandleRunSubmitted);
+	if (RankText)
+	{
+		RankText->SetVisibility(ESlateVisibility::SelfHitTestInvisible);
+		RankText->SetColorAndOpacity(FSlateColor(LTTTheme::InkMuted()));
+		RankText->SetText(FText::Format(LOCTEXT("Sending", "Sending {0}'s take to the leaderboard..."), FText::FromString(Board->GetPlayerName())));
+	}
+	Board->SubmitRun(FinalPoints, D->GetTimeOnSet(), bSetClean, D->bUseTimer, D->GetPlacedCount(), D->GetTotalCount(), D->GetBrokenCount(), D->GetHintsUsed());
+}
+
+void ULTTEndScreen::HandleRunSubmitted(const FLTTRunResult& Result)
+{
+	if (ULTTLeaderboardSubsystem* Board = ULTTLeaderboardSubsystem::Get(this))
+	{
+		Board->OnRunSubmitted.RemoveDynamic(this, &ULTTEndScreen::HandleRunSubmitted);
+	}
+	if (!RankText)
+	{
+		return;
+	}
+	if (!Result.bOk)
+	{
+		RankText->SetColorAndOpacity(FSlateColor(LTTTheme::Bad()));
+		RankText->SetText(LOCTEXT("SendFailed", "Couldn't reach the leaderboard (offline?). Your take wasn't recorded."));
+		return;
+	}
+	FText Best;
+	if (Result.bNewBestScore && Result.bNewBestTime)
+	{
+		Best = LOCTEXT("BestBoth", "  -  New best score and time!");
+	}
+	else if (Result.bNewBestScore)
+	{
+		Best = LOCTEXT("BestScore", "  -  New best score!");
+	}
+	else if (Result.bNewBestTime)
+	{
+		Best = LOCTEXT("BestTime", "  -  New best time!");
+	}
+	RankText->SetColorAndOpacity(FSlateColor(Result.bNewBestScore || Result.bNewBestTime ? LTTTheme::Good() : LTTTheme::HeaderBrown()));
+	RankText->SetText(FText::Format(LOCTEXT("Rank", "Leaderboard: #{0} of {1}{2}"), FText::AsNumber(Result.You.Rank), FText::AsNumber(Result.TotalPlayers), Best));
+}
+
+void ULTTEndScreen::NativeDestruct()
+{
+	if (ULTTLeaderboardSubsystem* Board = ULTTLeaderboardSubsystem::Get(this))
+	{
+		Board->OnRunSubmitted.RemoveDynamic(this, &ULTTEndScreen::HandleRunSubmitted);
+	}
+	Super::NativeDestruct();
+}
+
+void ULTTEndScreen::OpenLeaderboard()
+{
+	APlayerController* PC = GetOwningPlayer();
+	if (!PC)
+	{
+		return;
+	}
+	TSubclassOf<ULTTLeaderboardPanel> PanelClass = LeaderboardPanelClass;
+	if (!PanelClass)
+	{
+		PanelClass = ULTTLeaderboardPanel::StaticClass();
+	}
+	if (ULTTLeaderboardPanel* Panel = CreateWidget<ULTTLeaderboardPanel>(PC, PanelClass))
+	{
+		Panel->Open(this);
+	}
+}
+
+void ULTTEndScreen::HandleLeaderboardClicked()
+{
+	OpenLeaderboard();
+}
+
+void ULTTEndScreen::HandleFullLeaderboardClicked()
+{
+	if (const ULTTLeaderboardSubsystem* Board = ULTTLeaderboardSubsystem::Get(this))
+	{
+		Board->OpenFullLeaderboard();
+	}
 }
 
 void ULTTEndScreen::ApplyTexts()

@@ -5,6 +5,8 @@
 #include "UI/LTTPauseMenu.h"
 #include "Interaction/LTTEndScreen.h"
 #include "Interaction/LTTCleanupHUD.h"
+#include "UI/LTTLeaderboardPanel.h"
+#include "Components/PanelWidget.h"
 #include "Blueprint/WidgetTree.h"
 #include "Components/TextBlock.h"
 #include "Components/Widget.h"
@@ -17,13 +19,14 @@
 #include "Kismet2/KismetEditorUtilities.h"
 #endif
 
-FString ULTTWidgetBaker::BakeLayoutIntoWidgetBlueprint(UObject* WidgetBlueprint)
+UUserWidget* ULTTWidgetBaker::BuildTempLayout(UObject* WidgetBlueprint, UClass*& OutNative, FString& Error)
 {
 #if WITH_EDITOR
 	UWidgetBlueprint* WBP = Cast<UWidgetBlueprint>(WidgetBlueprint);
 	if (!WBP)
 	{
-		return TEXT("ERROR: not a Widget Blueprint");
+		Error = TEXT("ERROR: not a Widget Blueprint");
+		return nullptr;
 	}
 
 	// The first native class up the chain decides which C++ layout to build.
@@ -34,8 +37,10 @@ FString ULTTWidgetBaker::BakeLayoutIntoWidgetBlueprint(UObject* WidgetBlueprint)
 	}
 	if (!Native)
 	{
-		return TEXT("ERROR: no native parent class");
+		Error = TEXT("ERROR: no native parent class");
+		return nullptr;
 	}
+	OutNative = Native;
 
 	// Temporary instance of the C++ class with its own tree; run the code layout on it.
 	UUserWidget* Temp = NewObject<UUserWidget>(GetTransientPackage(), Native, NAME_None, RF_Transient);
@@ -59,13 +64,153 @@ FString ULTTWidgetBaker::BakeLayoutIntoWidgetBlueprint(UObject* WidgetBlueprint)
 	{
 		HUD->BuildDefaultLayout();
 	}
+	else if (ULTTLeaderboardPanel* Board = Cast<ULTTLeaderboardPanel>(Temp))
+	{
+		Board->BuildDefaultLayout();
+	}
 	else
 	{
-		return FString::Printf(TEXT("ERROR: %s has no code layout to bake"), *Native->GetName());
+		Error = FString::Printf(TEXT("ERROR: %s has no code layout to bake"), *Native->GetName());
+		return nullptr;
 	}
 	if (!Temp->WidgetTree->RootWidget)
 	{
-		return TEXT("ERROR: the code layout produced no root widget");
+		Error = TEXT("ERROR: the code layout produced no root widget");
+		return nullptr;
+	}
+	return Temp;
+#else
+	Error = TEXT("ERROR: editor only");
+	return nullptr;
+#endif
+}
+
+FString ULTTWidgetBaker::BakeWidgetIntoWidgetBlueprint(UObject* WidgetBlueprint, FName WidgetName, FName InsertBefore, FName ParentPanel)
+{
+#if WITH_EDITOR
+	UWidgetBlueprint* WBP = Cast<UWidgetBlueprint>(WidgetBlueprint);
+	if (!WBP || !WBP->WidgetTree)
+	{
+		return TEXT("ERROR: not a Widget Blueprint");
+	}
+	if (WBP->WidgetTree->FindWidget(WidgetName))
+	{
+		return FString::Printf(TEXT("%s: already has %s, left as is"), *WBP->GetName(), *WidgetName.ToString());
+	}
+
+	// Where it goes in the Blueprint.
+	UPanelWidget* Target = nullptr;
+	int32 Index = INDEX_NONE;
+	if (!InsertBefore.IsNone())
+	{
+		UWidget* Before = WBP->WidgetTree->FindWidget(InsertBefore);
+		Target = Before ? Before->GetParent() : nullptr;
+		Index = Target ? Target->GetChildIndex(Before) : INDEX_NONE;
+	}
+	else
+	{
+		Target = Cast<UPanelWidget>(WBP->WidgetTree->FindWidget(ParentPanel));
+	}
+	if (!Target)
+	{
+		return FString::Printf(TEXT("ERROR: %s has no %s to insert next to"), *WBP->GetName(), *(InsertBefore.IsNone() ? ParentPanel : InsertBefore).ToString());
+	}
+
+	UClass* Native = nullptr;
+	FString Error;
+	UUserWidget* Temp = BuildTempLayout(WBP, Native, Error);
+	if (!Temp)
+	{
+		return Error;
+	}
+	UWidget* Source = Temp->WidgetTree->FindWidget(WidgetName);
+	if (!Source)
+	{
+		Temp->MarkAsGarbage();
+		return FString::Printf(TEXT("ERROR: the code layout has no %s"), *WidgetName.ToString());
+	}
+
+	// The subtree: the widget and everything under it.
+	TArray<UWidget*> Subtree;
+	Subtree.Add(Source);
+	UWidgetTree::GetChildWidgets(Source, Subtree);
+
+	WBP->Modify();
+	WBP->WidgetTree->Modify();
+	Target->Modify();
+	Source->RemoveFromParent();
+
+	// Move each widget into the Blueprint's tree (slots are outered to their panel and travel with it).
+	// Names that clash with an existing widget get a fresh one; bound names are unique to the new subtree.
+	TArray<FString> Bound;
+	for (UWidget* Widget : Subtree)
+	{
+		FName NewName = Widget->GetFName();
+		if (StaticFindObjectFast(nullptr, WBP->WidgetTree, NewName) || WBP->WidgetTree->FindWidget(NewName))
+		{
+			NewName = MakeUniqueObjectName(WBP->WidgetTree, Widget->GetClass(), Widget->GetClass()->GetFName());
+		}
+		Widget->Rename(*NewName.ToString(), WBP->WidgetTree, REN_DontCreateRedirectors | REN_NonTransactional);
+		TArray<UObject*> Inner;
+		GetObjectsWithOuter(Widget, Inner, EGetObjectsFlags::IncludeNestedObjects);
+		Inner.Add(Widget);
+		for (UObject* Obj : Inner)
+		{
+			Obj->ClearFlags(RF_Transient);
+			Obj->SetFlags(RF_Transactional);
+		}
+		if (UTextBlock* Text = Cast<UTextBlock>(Widget))
+		{
+			if (Text->GetText().IsEmpty())
+			{
+				Text->SetText(FText::FromString(Text->GetName()));
+			}
+		}
+		const bool bBound = FindFProperty<FObjectPropertyBase>(Native, Widget->GetFName()) != nullptr;
+		Widget->bIsVariable = bBound;
+		if (bBound)
+		{
+			Bound.Add(Widget->GetName());
+		}
+		WBP->OnVariableAdded(Widget->GetFName());
+	}
+
+	if (Index != INDEX_NONE)
+	{
+		Target->InsertChildAt(Index, Source);
+	}
+	else
+	{
+		Target->AddChild(Source);
+	}
+
+	FBlueprintEditorUtils::MarkBlueprintAsStructurallyModified(WBP);
+	FKismetEditorUtilities::CompileBlueprint(WBP);
+	WBP->MarkPackageDirty();
+	Temp->MarkAsGarbage();
+
+	return FString::Printf(TEXT("%s: added %s (%d widgets) to %s, bound: %s"), *WBP->GetName(), *WidgetName.ToString(), Subtree.Num(),
+		*Target->GetName(), *FString::Join(Bound, TEXT(", ")));
+#else
+	return TEXT("ERROR: editor only");
+#endif
+}
+
+FString ULTTWidgetBaker::BakeLayoutIntoWidgetBlueprint(UObject* WidgetBlueprint)
+{
+#if WITH_EDITOR
+	UWidgetBlueprint* WBP = Cast<UWidgetBlueprint>(WidgetBlueprint);
+	if (!WBP)
+	{
+		return TEXT("ERROR: not a Widget Blueprint");
+	}
+
+	UClass* Native = nullptr;
+	FString Error;
+	UUserWidget* Temp = BuildTempLayout(WBP, Native, Error);
+	if (!Temp)
+	{
+		return Error;
 	}
 
 	// Placeholder text for anything the game fills in at runtime, so the designer isn't blank.

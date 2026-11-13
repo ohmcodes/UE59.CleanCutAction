@@ -14,6 +14,8 @@ class UButton;
 class UWidget;
 class UVerticalBox;
 class ALTTMessDirector;
+class ULTTLeaderboardPanel;
+struct FLTTRunResult;
 
 UCLASS(Blueprintable)
 class CLEANCUTACTION_API ULTTEndScreen : public UUserWidget
@@ -68,6 +70,29 @@ public:
 	UPROPERTY(BlueprintReadOnly, Category = "End Screen", meta = (BindWidgetOptional))
 	TObjectPtr<UButton> KeepPlayingButton;
 
+	/** Leaderboard place after the run was sent ("#4 of 27 - new best score!"), or the sending / offline note. */
+	UPROPERTY(BlueprintReadOnly, Category = "End Screen", meta = (BindWidgetOptional))
+	TObjectPtr<UTextBlock> RankText;
+
+	/** Opens the leaderboard panel (top 10 + your place). */
+	UPROPERTY(BlueprintReadOnly, Category = "End Screen", meta = (BindWidgetOptional))
+	TObjectPtr<UButton> LeaderboardButton;
+
+	/** Opens cca.ohmcodes.com/leaderboard in a new browser tab. */
+	UPROPERTY(BlueprintReadOnly, Category = "End Screen", meta = (BindWidgetOptional))
+	TObjectPtr<UButton> FullLeaderboardButton;
+
+	/** ULTTLeaderboardPanel or a Widget Blueprint based on it (empty = the C++ panel). */
+	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "End Screen")
+	TSubclassOf<ULTTLeaderboardPanel> LeaderboardPanelClass;
+
+	/** Send the result to the online leaderboard when the screen opens. */
+	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "End Screen")
+	bool bSubmitToLeaderboard = true;
+
+	UFUNCTION(BlueprintCallable, Category = "End Screen")
+	void OpenLeaderboard();
+
 	/** The results card (fades and slides in). */
 	UPROPERTY(BlueprintReadOnly, Category = "End Screen", meta = (BindWidgetOptional))
 	TObjectPtr<UWidget> Card;
@@ -75,6 +100,7 @@ public:
 protected:
 	virtual void NativeOnInitialized() override;
 	virtual void NativeTick(const FGeometry& MyGeometry, float InDeltaTime) override;
+	virtual void NativeDestruct() override;
 
 	void BuildDefaultLayout();
 	UTextBlock* MakeText(FName Name, int32 FontSize, const FLinearColor& Color) const;
@@ -87,6 +113,17 @@ protected:
 
 	UFUNCTION()
 	void HandleKeepPlayingClicked();
+
+	UFUNCTION()
+	void HandleLeaderboardClicked();
+
+	UFUNCTION()
+	void HandleFullLeaderboardClicked();
+
+	UFUNCTION()
+	void HandleRunSubmitted(const FLTTRunResult& Result);
+
+	void SubmitRun();
 
 	TWeakObjectPtr<ALTTMessDirector> Director;
 	bool bSetClean = true;
