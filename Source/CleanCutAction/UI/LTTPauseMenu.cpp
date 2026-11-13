@@ -1,6 +1,7 @@
 // Clean! Cut! Action!
 
 #include "UI/LTTPauseMenu.h"
+#include "UI/LTTUITheme.h"
 #include "CleanCutActionPlayerController.h"
 #include "Audio/LTTMusicPlayer.h"
 #include "Blueprint/WidgetTree.h"
@@ -18,11 +19,12 @@
 
 namespace
 {
-	const FLinearColor TapeYellow(1.f, 0.78f, 0.1f);
-	const FLinearColor SoftWhite(0.95f, 0.95f, 0.92f);
-	const FLinearColor Muted(0.7f, 0.7f, 0.68f);
-	const FLinearColor ButtonGrey(0.75f, 0.75f, 0.75f);
-	const FLinearColor QuitRed(1.f, 0.42f, 0.32f);
+	// Cafe theme (UI/LTTUITheme.h).
+	const FLinearColor TapeYellow = LTTTheme::ButtonGold();
+	const FLinearColor SoftWhite = LTTTheme::Ink();
+	const FLinearColor Muted = LTTTheme::InkMuted();
+	const FLinearColor ButtonGrey = LTTTheme::ButtonCream();
+	const FLinearColor QuitRed = LTTTheme::ButtonRed();
 
 	float EaseOutCubic(float T)
 	{
@@ -63,21 +65,15 @@ void ULTTPauseMenu::NativeConstruct()
 UTextBlock* ULTTPauseMenu::MakeText(FName Name, int32 FontSize, const FLinearColor& Color) const
 {
 	UTextBlock* Text = WidgetTree->ConstructWidget<UTextBlock>(UTextBlock::StaticClass(), Name);
-	FSlateFontInfo Font = Text->GetFont();
-	Font.Size = FontSize;
-	Text->SetFont(Font);
-	Text->SetColorAndOpacity(FSlateColor(Color));
-	Text->SetShadowOffset(FVector2D(2.f, 2.f));
-	Text->SetShadowColorAndOpacity(FLinearColor(0.f, 0.f, 0.f, 0.6f));
+	LTTTheme::StyleText(Text, FontSize, Color);
 	return Text;
 }
 
 UButton* ULTTPauseMenu::MakeButton(FName Name, const FText& Label, const FLinearColor& Color, UTextBlock** OutLabel) const
 {
 	UButton* Button = WidgetTree->ConstructWidget<UButton>(UButton::StaticClass(), Name);
-	Button->SetBackgroundColor(Color);
-	UTextBlock* Text = MakeText(*(Name.ToString() + TEXT("_Label")), 24, FLinearColor(0.08f, 0.08f, 0.08f));
-	Text->SetShadowColorAndOpacity(FLinearColor::Transparent);
+	LTTTheme::StyleButton(Button, Color);
+	UTextBlock* Text = MakeText(*(Name.ToString() + TEXT("_Label")), 24, LTTTheme::Ink());
 	Text->SetJustification(ETextJustify::Center);
 	Text->SetText(Label);
 	Button->SetContent(Text);
@@ -94,7 +90,7 @@ void ULTTPauseMenu::BuildDefaultLayout()
 	WidgetTree->RootWidget = Root;
 
 	UBorder* Dim = WidgetTree->ConstructWidget<UBorder>(UBorder::StaticClass(), TEXT("Dim"));
-	Dim->SetBrushColor(FLinearColor(0.f, 0.f, 0.f, 0.55f));
+	LTTTheme::StyleBackdrop(Dim, 0.55f);
 	if (UCanvasPanelSlot* DimSlot = Root->AddChildToCanvas(Dim))
 	{
 		DimSlot->SetAnchors(FAnchors(0.f, 0.f, 1.f, 1.f));
@@ -102,7 +98,7 @@ void ULTTPauseMenu::BuildDefaultLayout()
 	}
 
 	UBorder* CardBorder = WidgetTree->ConstructWidget<UBorder>(UBorder::StaticClass(), TEXT("Card"));
-	CardBorder->SetBrushColor(FLinearColor(0.06f, 0.06f, 0.07f, 0.92f));
+	LTTTheme::StylePanel(CardBorder);
 	CardBorder->SetPadding(FMargin(48.f, 36.f));
 	Card = CardBorder;
 	if (UCanvasPanelSlot* CardSlot = Root->AddChildToCanvas(CardBorder))
@@ -119,12 +115,18 @@ void ULTTPauseMenu::BuildDefaultLayout()
 	UVerticalBox* Column = WidgetTree->ConstructWidget<UVerticalBox>(UVerticalBox::StaticClass());
 	Width->SetContent(Column);
 
-	TitleText = MakeText(TEXT("TitleText"), 56, TapeYellow);
+	// Title painted on a wooden banner.
+	UBorder* Banner = WidgetTree->ConstructWidget<UBorder>(UBorder::StaticClass(), TEXT("TitleBanner"));
+	LTTTheme::StyleBanner(Banner);
+	TitleText = WidgetTree->ConstructWidget<UTextBlock>(UTextBlock::StaticClass(), TEXT("TitleText"));
+	LTTTheme::StyleTitle(TitleText, 56);
 	TitleText->SetText(LOCTEXT("Title", "CUT!"));
 	TitleText->SetJustification(ETextJustify::Center);
-	if (UVerticalBoxSlot* S = Column->AddChildToVerticalBox(TitleText))
+	Banner->SetContent(TitleText);
+	if (UVerticalBoxSlot* S = Column->AddChildToVerticalBox(Banner))
 	{
 		S->SetHorizontalAlignment(HAlign_Center);
+		S->SetPadding(FMargin(0.f, 0.f, 0.f, 10.f));
 	}
 
 	UTextBlock* Subtitle = MakeText(TEXT("SubtitleText"), 18, Muted);
@@ -139,6 +141,7 @@ void ULTTPauseMenu::BuildDefaultLayout()
 	ResumeButton = MakeButton(TEXT("ResumeButton"), LOCTEXT("Resume", "Resume"), TapeYellow);
 	UTextBlock* MusicText = nullptr;
 	MusicButton = MakeButton(TEXT("MusicButton"), FText::GetEmpty(), ButtonGrey, &MusicText);
+	MusicText->Rename(TEXT("MusicLabel")); // same name as the property, so a WBP_ child binds it
 	MusicLabel = MusicText;
 	QuitButton = MakeButton(TEXT("QuitButton"), LOCTEXT("Quit", "Quit"), QuitRed);
 	for (UButton* Button : { ResumeButton.Get(), MusicButton.Get(), QuitButton.Get() })

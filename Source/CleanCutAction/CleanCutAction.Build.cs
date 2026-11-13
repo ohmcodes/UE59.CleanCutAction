@@ -29,6 +29,12 @@ public class CleanCutAction : ModuleRules
 
 		PrivateDependencyModuleNames.AddRange(new string[] { });
 
+		// Editor-only: ULTTWidgetBaker copies the C++ widget layouts into WBP_ children.
+		if (Target.bBuildEditor)
+		{
+			PrivateDependencyModuleNames.AddRange(new string[] { "UnrealEd", "UMGEditor", "Kismet" });
+		}
+
 		PublicIncludePaths.AddRange(new string[] {
 			"CleanCutAction",
 			"CleanCutAction/Variant_Horror",

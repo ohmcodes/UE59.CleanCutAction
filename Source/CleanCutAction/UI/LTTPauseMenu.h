@@ -16,6 +16,7 @@ UCLASS(Blueprintable)
 class CLEANCUTACTION_API ULTTPauseMenu : public UUserWidget
 {
 	GENERATED_BODY()
+	friend class ULTTWidgetBaker; // editor tool: bakes BuildDefaultLayout into a WBP_ child
 
 public:
 	/** Closes the menu and unpauses. */

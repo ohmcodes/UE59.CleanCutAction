@@ -17,6 +17,7 @@ UCLASS(Blueprintable)
 class CLEANCUTACTION_API ULTTCleanupHUD : public UUserWidget
 {
 	GENERATED_BODY()
+	friend class ULTTWidgetBaker; // editor tool: bakes BuildDefaultLayout into a WBP_ child
 
 public:
 	UPROPERTY(BlueprintReadOnly, Category = "Cleanup HUD", meta = (BindWidgetOptional))
@@ -46,10 +47,10 @@ public:
 	float LowTimeSeconds = 30.f;
 
 	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Cleanup HUD|Countdown")
-	FLinearColor TimerColor = FLinearColor::White;
+	FLinearColor TimerColor = FLinearColor(0.0685f, 0.0296f, 0.0091f); // theme Ink (#4A3018), on the paper pill
 
 	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Cleanup HUD|Countdown")
-	FLinearColor LowTimeColor = FLinearColor(1.f, 0.15f, 0.1f);
+	FLinearColor LowTimeColor = FLinearColor(0.5271f, 0.0685f, 0.0296f); // theme Bad (#C04A30)
 
 	// ---- Home arrow ----
 

@@ -1,6 +1,7 @@
 // Clean! Cut! Action!
 
 #include "Interaction/LTTEndScreen.h"
+#include "UI/LTTUITheme.h"
 #include "Interaction/LTTMessDirector.h"
 #include "Blueprint/WidgetTree.h"
 #include "Components/Border.h"
@@ -20,10 +21,11 @@
 
 namespace
 {
-	const FLinearColor TapeYellow(1.f, 0.78f, 0.1f);
-	const FLinearColor SoftWhite(0.95f, 0.95f, 0.92f);
-	const FLinearColor Muted(0.7f, 0.7f, 0.68f);
-	const FLinearColor RedTitle(1.f, 0.3f, 0.2f);
+	// Cafe theme (UI/LTTUITheme.h).
+	const FLinearColor TapeYellow = LTTTheme::ButtonGold();
+	const FLinearColor SoftWhite = LTTTheme::Ink();
+	const FLinearColor Muted = LTTTheme::InkMuted();
+	const FLinearColor RedTitle = LTTTheme::Hex(0xFF, 0xC2, 0xAE); // salmon letters on the banner for TIME'S UP
 
 	float EaseOutBounce(float T)
 	{
@@ -70,21 +72,15 @@ void ULTTEndScreen::NativeOnInitialized()
 UTextBlock* ULTTEndScreen::MakeText(FName Name, int32 FontSize, const FLinearColor& Color) const
 {
 	UTextBlock* Text = WidgetTree->ConstructWidget<UTextBlock>(UTextBlock::StaticClass(), Name);
-	FSlateFontInfo Font = Text->GetFont();
-	Font.Size = FontSize;
-	Text->SetFont(Font);
-	Text->SetColorAndOpacity(FSlateColor(Color));
-	Text->SetShadowOffset(FVector2D(2.f, 2.f));
-	Text->SetShadowColorAndOpacity(FLinearColor(0.f, 0.f, 0.f, 0.6f));
+	LTTTheme::StyleText(Text, FontSize, Color);
 	return Text;
 }
 
 UButton* ULTTEndScreen::MakeButton(FName Name, const FText& Label, const FLinearColor& Color) const
 {
 	UButton* Button = WidgetTree->ConstructWidget<UButton>(UButton::StaticClass(), Name);
-	Button->SetBackgroundColor(Color);
-	UTextBlock* Text = MakeText(*(Name.ToString() + TEXT("_Label")), 22, FLinearColor(0.08f, 0.08f, 0.08f));
-	Text->SetShadowColorAndOpacity(FLinearColor::Transparent);
+	LTTTheme::StyleButton(Button, Color);
+	UTextBlock* Text = MakeText(*(Name.ToString() + TEXT("_Label")), 22, LTTTheme::Ink());
 	Text->SetText(Label);
 	Button->SetContent(Text);
 	return Button;
@@ -118,7 +114,7 @@ void ULTTEndScreen::BuildDefaultLayout()
 
 	// Darken the game behind.
 	UBorder* Dim = WidgetTree->ConstructWidget<UBorder>(UBorder::StaticClass(), TEXT("Dim"));
-	Dim->SetBrushColor(FLinearColor(0.f, 0.f, 0.f, 0.6f));
+	LTTTheme::StyleBackdrop(Dim, 0.6f);
 	if (UCanvasPanelSlot* DimSlot = Root->AddChildToCanvas(Dim))
 	{
 		DimSlot->SetAnchors(FAnchors(0.f, 0.f, 1.f, 1.f));
@@ -127,7 +123,7 @@ void ULTTEndScreen::BuildDefaultLayout()
 
 	// The call-sheet card.
 	UBorder* CardBorder = WidgetTree->ConstructWidget<UBorder>(UBorder::StaticClass(), TEXT("Card"));
-	CardBorder->SetBrushColor(FLinearColor(0.06f, 0.06f, 0.07f, 0.92f));
+	LTTTheme::StylePanel(CardBorder);
 	CardBorder->SetPadding(FMargin(48.f, 36.f));
 	Card = CardBorder;
 	if (UCanvasPanelSlot* CardSlot = Root->AddChildToCanvas(CardBorder))
@@ -144,12 +140,18 @@ void ULTTEndScreen::BuildDefaultLayout()
 	UVerticalBox* Column = WidgetTree->ConstructWidget<UVerticalBox>(UVerticalBox::StaticClass());
 	Width->SetContent(Column);
 
-	TitleText = MakeText(TEXT("TitleText"), 64, TapeYellow);
+	// Title painted on a wooden banner.
+	UBorder* Banner = WidgetTree->ConstructWidget<UBorder>(UBorder::StaticClass(), TEXT("TitleBanner"));
+	LTTTheme::StyleBanner(Banner);
+	TitleText = WidgetTree->ConstructWidget<UTextBlock>(UTextBlock::StaticClass(), TEXT("TitleText"));
+	LTTTheme::StyleTitle(TitleText, 60);
 	TitleText->SetJustification(ETextJustify::Center);
 	TitleText->SetRenderTransformPivot(FVector2D(0.5f, 0.5f));
-	if (UVerticalBoxSlot* S = Column->AddChildToVerticalBox(TitleText))
+	Banner->SetContent(TitleText);
+	if (UVerticalBoxSlot* S = Column->AddChildToVerticalBox(Banner))
 	{
 		S->SetHorizontalAlignment(HAlign_Center);
+		S->SetPadding(FMargin(0.f, 0.f, 0.f, 10.f));
 	}
 
 	SubtitleText = MakeText(TEXT("SubtitleText"), 20, SoftWhite);
@@ -163,18 +165,20 @@ void ULTTEndScreen::BuildDefaultLayout()
 
 	TimeValue = MakeText(TEXT("TimeValue"), 22, SoftWhite);
 	ReturnedValue = MakeText(TEXT("ReturnedValue"), 22, SoftWhite);
-	DestroyedValue = MakeText(TEXT("DestroyedValue"), 22, FLinearColor(1.f, 0.55f, 0.45f));
+	DestroyedValue = MakeText(TEXT("DestroyedValue"), 22, LTTTheme::Bad());
 	HintsValue = MakeText(TEXT("HintsValue"), 22, SoftWhite);
-	PointsValue = MakeText(TEXT("PointsValue"), 36, TapeYellow);
+	TimeBonusValue = MakeText(TEXT("TimeBonusValue"), 22, LTTTheme::Good());
+	PointsValue = MakeText(TEXT("PointsValue"), 36, LTTTheme::Coin());
 	AddStatRow(Column, LOCTEXT("RowTime", "Time on set"), TimeValue);
 	AddStatRow(Column, LOCTEXT("RowReturned", "Props returned"), ReturnedValue);
 	AddStatRow(Column, LOCTEXT("RowDestroyed", "Props destroyed"), DestroyedValue);
 	AddStatRow(Column, LOCTEXT("RowHints", "Hints used"), HintsValue);
+	AddStatRow(Column, LOCTEXT("RowTimeBonus", "Time bonus"), TimeBonusValue);
 	AddStatRow(Column, LOCTEXT("RowPoints", "Points"), PointsValue);
 
 	UHorizontalBox* Buttons = WidgetTree->ConstructWidget<UHorizontalBox>(UHorizontalBox::StaticClass(), TEXT("Buttons"));
 	PlayAgainButton = MakeButton(TEXT("PlayAgainButton"), LOCTEXT("PlayAgain", "Play Again"), TapeYellow);
-	KeepPlayingButton = MakeButton(TEXT("KeepPlayingButton"), LOCTEXT("KeepPlaying", "Keep Playing"), FLinearColor(0.75f, 0.75f, 0.75f));
+	KeepPlayingButton = MakeButton(TEXT("KeepPlayingButton"), LOCTEXT("KeepPlaying", "Keep Playing"), LTTTheme::ButtonCream());
 	for (UButton* Button : { PlayAgainButton.Get(), KeepPlayingButton.Get() })
 	{
 		if (UHorizontalBoxSlot* S = Buttons->AddChildToHorizontalBox(Button))
@@ -204,7 +208,7 @@ void ULTTEndScreen::ApplyTexts()
 	if (TitleText)
 	{
 		TitleText->SetText(bSetClean ? LOCTEXT("TitleClean", "SET READY!") : LOCTEXT("TitleTimeUp", "TIME'S UP!"));
-		TitleText->SetColorAndOpacity(FSlateColor(bSetClean ? TapeYellow : RedTitle));
+		TitleText->SetColorAndOpacity(FSlateColor(bSetClean ? LTTTheme::TitleCream() : RedTitle));
 	}
 	if (SubtitleText)
 	{
@@ -226,11 +230,24 @@ void ULTTEndScreen::ApplyTexts()
 	}
 	if (DestroyedValue)
 	{
-		DestroyedValue->SetText(FText::AsNumber(D->GetBrokenCount()));
+		// "3  (-45 pts)"
+		FNumberFormattingOptions Signed;
+		Signed.AlwaysSign = true;
+		DestroyedValue->SetText(D->GetBrokenCount() > 0 && D->GetBrokenPoints() != 0
+			? FText::Format(LOCTEXT("DestroyedPts", "{0}  ({1} pts)"), FText::AsNumber(D->GetBrokenCount()), FText::AsNumber(D->GetBrokenPoints(), &Signed))
+			: FText::AsNumber(D->GetBrokenCount()));
 	}
 	if (HintsValue)
 	{
 		HintsValue->SetText(FText::AsNumber(D->GetHintsUsed()));
+	}
+	if (TimeBonusValue)
+	{
+		FNumberFormattingOptions Signed;
+		Signed.AlwaysSign = true;
+		TimeBonusValue->SetText(D->GetTimeBonusPoints() > 0
+			? FText::Format(LOCTEXT("TimeBonus", "{0}  ({1} left)"), FText::AsNumber(D->GetTimeBonusPoints(), &Signed), FormatTime(D->GetTimeLeftAtFinish()))
+			: LOCTEXT("NoTimeBonus", "-"));
 	}
 	if (KeepPlayingButton)
 	{

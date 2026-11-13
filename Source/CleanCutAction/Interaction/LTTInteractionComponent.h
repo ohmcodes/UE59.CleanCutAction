@@ -19,7 +19,8 @@ enum class ELTTPlaceHint : uint8
 	None,          // not holding anything
 	Drop,          // not aiming at its home: drops it
 	Place,         // aiming at its home: puts it back and locks it
-	NeedsSupport   // aiming at its home, but the prop under it (e.g. the table) isn't back yet: drops it
+	NeedsSupport,  // aiming at its home, but the prop under it (e.g. the table) isn't back yet: drops it
+	Fumble         // aim just misses its home: dropping it here breaks it
 };
 
 UCLASS(ClassGroup = (LTT), meta = (BlueprintSpawnableComponent))
@@ -59,6 +60,14 @@ public:
 	/** Max distance from the eye to a home silhouette for placing. */
 	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Interaction")
 	float PlaceDistance = 400.f;
+
+	/** Dropping a cleanup prop while the aim only just misses its home silhouette breaks it (a fumbled placement). */
+	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Interaction|Fumble")
+	bool bBreakOnNearMissDrop = true;
+
+	/** How far outside the snap radius still counts as a near miss (cm). */
+	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Interaction|Fumble", meta = (ClampMin = "0", EditCondition = "bBreakOnNearMissDrop"))
+	float NearMissMargin = 35.f;
 
 	UFUNCTION(BlueprintPure, Category = "Interaction")
 	ELTTPlaceHint GetPlaceHint() const { return PlaceHint; }
