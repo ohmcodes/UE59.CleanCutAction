@@ -23,10 +23,18 @@ The design docs live in `Docs/`. The overview below is imported in full; read th
 
 ## Current project state (differs from the docs)
 
-- Game content folder is `/Game/_CleanCutAction/` (with `Blueprints/`, `Core/`), not `Content/CleanCutAction/` as the docs say.
-- `Source/` still holds the First Person template classes (`CleanCutAction*`, `Variant_Horror`, `Variant_Shooter`); the `LTT`-prefixed classes from the docs aren't written yet.
-- The only map cooked for packaging is `/Game/StylizedNewYorkCity/Level/L_NYC_Cafe` (Config/DefaultGame.ini `MapsToCook`).
+- Game content folder is `/Game/_CleanCutAction/` (`Blueprints/Interactables`, `Blueprints/Widgets`, `BreakFX/`, `Destruction/` geometry collections, `Input/`, `Materials/`, `MusicFX/`, `UI/`), not `Content/CleanCutAction/` as the docs say.
+- `Source/CleanCutAction/` has the template base classes (`CleanCutAction*` character, game mode, player controller, camera manager) plus `LTT` classes: `Interaction/` (carry, interaction component, interactable base, mess director, cleanup HUD, end screen, first person anim instance), `UI/` (briefing screen, pause menu, UI theme, widget baker), `Audio/` (music player). The Horror/Shooter template variants are gone. Many classes from the docs (save game, tween subsystem, Phase 2 director) aren't written yet.
+- The only map cooked for packaging is `/Game/StylizedNewYorkCity/Level/L_NYC_Cafe`. `MapsToCook` in `Config/DefaultGame.ini` also force-cooks the music WAVs, `GC_Generic_Shatter`, `M_GhostSilhouette` and `M_BrokenProp`. Add any asset that's only loaded by path there.
+- The editor's default map is `L_NYC_Cafe_Michael` (`Config/DefaultEngine.ini`), a per-dev copy of the cafe level.
 - Set art comes from the StylizedNewYorkCity pack (`/Game/StylizedNewYorkCity`).
+
+## Ownership and copyright
+
+- The game is owned by **QLE OPC** (Quality Level Entertainment), Mandaluyong, Metro Manila, PH. The full notice is in `COPYRIGHT.md`, and the project settings in `Config/DefaultGame.ini` (`CopyrightNotice`, `CompanyName`) carry the same notice.
+- Use `Copyright © 2026 QLE OPC. All Rights Reserved.` wherever a copyright line is needed (end screens, credits, the itch.io page).
+- Third-party packs in `Content/` keep their own licenses. Don't put the QLE notice on them.
+- `LICENSE` is a proprietary all-rights-reserved license from QLE OPC. It replaced the original MIT license (© Ohmcodes) on 2026-11-13. Don't add open-source license headers to files.
 
 ## Web build / itch.io
 
