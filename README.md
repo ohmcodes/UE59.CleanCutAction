@@ -90,6 +90,8 @@ The docs were written as a plan before development started, so some of them no l
 - Set art: *Stylized New York City* asset pack
 - Built with Unreal Engine 5.9 and AI coding tools for the Epic Mega AI Jam 2026
 
-## License
+## Copyright and license
 
-See [LICENSE](LICENSE). Third-party Marketplace/Fab assets in `Content/` are covered by their own licenses and can't be redistributed separately.
+Copyright © 2026 QLE OPC (Quality Level Entertainment). All Rights Reserved. See [COPYRIGHT.md](COPYRIGHT.md) for the full notice.
+
+This is proprietary software. No license to copy, modify or redistribute it is granted (see [LICENSE](LICENSE)). Third-party Marketplace/Fab assets in `Content/` are covered by their own licenses and can't be redistributed separately.
