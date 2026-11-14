@@ -5,9 +5,13 @@
 #include "Engine/StaticMesh.h"
 #include "Engine/OverlapResult.h"
 #include "Engine/World.h"
+#include "EngineUtils.h"
 #include "Materials/MaterialInterface.h"
 #include "Materials/MaterialInstanceDynamic.h"
 #include "Interaction/LTTMessDirector.h"
+#include "Interaction/LTTLightSwitchComponent.h"
+#include "Interaction/LTTUsableComponent.h"
+#include "Audio/LTTMusicPlayer.h"
 #include "GeometryCollection/GeometryCollectionActor.h"
 #include "GeometryCollection/GeometryCollectionComponent.h"
 #include "GeometryCollection/GeometryCollectionObject.h"
@@ -44,6 +48,8 @@ void ALTTInteractableBase::PostInitializeComponents()
 	{
 		Mesh = FindComponentByClass<UStaticMeshComponent>();
 	}
+	CachedLightSwitch = FindComponentByClass<ULTTLightSwitchComponent>();
+	CachedAppliance = FindComponentByClass<ULTTUsableComponent>();
 }
 
 void ALTTInteractableBase::BeginPlay()
@@ -68,6 +74,12 @@ void ALTTInteractableBase::BeginPlay()
 	{
 		Mesh->SetSimulatePhysics(true);
 		Mesh->PutAllRigidBodiesToSleep();
+	}
+
+	// A lamp is dark until it's put back (the switch found its light at home, before the mess moves it).
+	if (CachedLightSwitch)
+	{
+		CachedLightSwitch->SetLightOn(bPlaced);
 	}
 }
 
@@ -155,6 +167,7 @@ void ALTTInteractableBase::BeginHold(AActor* InHolder)
 {
 	Holder = InHolder;
 	bBreakOnLanding = false;
+	bEverHeld = true;
 
 	WakeTouchingProps();
 	Mesh->SetSimulatePhysics(false);
@@ -188,14 +201,65 @@ void ALTTInteractableBase::EndHold(const FVector& LinearVelocity, const FVector&
 	ReceiveDropped(OldHolder, bLastReleaseWasThrow);
 }
 
+bool ALTTInteractableBase::IsSwitchableLamp() const
+{
+	return CachedLightSwitch && bPlaced && !bBrokenInPlace;
+}
+
+bool ALTTInteractableBase::IsUsableWhenPlaced() const
+{
+	return (CachedLightSwitch || CachedAppliance || bChangesMusic) && bPlaced && !bBrokenInPlace && !bTrashed;
+}
+
 bool ALTTInteractableBase::CanInteract_Implementation(AActor* InstigatorActor) const
 {
-	// Placed props are locked: no pickup, no outline.
+	// Placed props are locked: no pickup, no outline. A placed lamp or appliance can still be used.
+	if (IsUsableWhenPlaced())
+	{
+		return true;
+	}
 	return bCanBePickedUp && !IsHeld() && !bPlaced && !bPlacing;
+}
+
+ELTTInteractKind ALTTInteractableBase::GetInteractKind_Implementation() const
+{
+	return IsUsableWhenPlaced() ? ELTTInteractKind::Press : ELTTInteractKind::Pickup;
+}
+
+void ALTTInteractableBase::OnInteract_Implementation(AActor* InstigatorActor)
+{
+	if (!IsUsableWhenPlaced())
+	{
+		return;
+	}
+	if (CachedAppliance)
+	{
+		CachedAppliance->Use();
+	}
+	else if (CachedLightSwitch)
+	{
+		CachedLightSwitch->Toggle();
+	}
+	else if (bChangesMusic)
+	{
+		ChangeMusic();
+	}
 }
 
 FText ALTTInteractableBase::GetPromptText_Implementation(AActor* InstigatorActor) const
 {
+	if (IsUsableWhenPlaced())
+	{
+		if (CachedAppliance)
+		{
+			return CachedAppliance->GetPrompt();
+		}
+		if (CachedLightSwitch)
+		{
+			return CachedLightSwitch->GetToggleText();
+		}
+		return ALTTMusicPlayer::IsMusicMuted() ? NSLOCTEXT("LTT", "MusicOnUse", "Turn music on") : NSLOCTEXT("LTT", "MusicNext", "Next song");
+	}
 	return FText::Format(NSLOCTEXT("LTT", "PromptFmt", "{0} {1}"), PromptVerb, GetPropName());
 }
 
@@ -242,9 +306,82 @@ void ALTTInteractableBase::RecordHome()
 {
 	if (Mesh && !bHasHome)
 	{
-		HomeTransform = Mesh->GetComponentTransform();
+		HomeTransform = bUseCustomHome ? CustomHome : Mesh->GetComponentTransform();
 		bHasHome = true;
 	}
+}
+
+void ALTTInteractableBase::SetCustomHomeHere()
+{
+	Modify();
+	CustomHome = GetActorTransform();
+	bUseCustomHome = true;
+	UpdateCustomHomePreview();
+}
+
+void ALTTInteractableBase::OnConstruction(const FTransform& Transform)
+{
+	Super::OnConstruction(Transform);
+	UpdateCustomHomePreview();
+}
+
+#if WITH_EDITOR
+void ALTTInteractableBase::PostEditChangeProperty(FPropertyChangedEvent& PropertyChangedEvent)
+{
+	// Ticking Use Custom Home starts the home where the prop is now.
+	if (PropertyChangedEvent.GetMemberPropertyName() == GET_MEMBER_NAME_CHECKED(ALTTInteractableBase, bUseCustomHome)
+		&& bUseCustomHome && CustomHome.Equals(FTransform::Identity))
+	{
+		CustomHome = GetActorTransform();
+	}
+	Super::PostEditChangeProperty(PropertyChangedEvent);
+	UpdateCustomHomePreview();
+}
+#endif
+
+void ALTTInteractableBase::UpdateCustomHomePreview()
+{
+#if WITH_EDITOR
+	UWorld* World = GetWorld();
+	const UStaticMeshComponent* Source = Cast<UStaticMeshComponent>(GetRootComponent());
+	// Only once the prop has been moved away from its home: on top of it, the silhouette would catch the clicks.
+	const bool bAway = !GetActorTransform().GetLocation().Equals(CustomHome.GetLocation(), 1.0)
+		|| !GetActorQuat().Equals(CustomHome.GetRotation(), 0.01);
+	const bool bShow = World && !World->IsGameWorld() && bUseCustomHome && bAway && Source && Source->GetStaticMesh();
+	if (!bShow)
+	{
+		if (CustomHomePreview)
+		{
+			CustomHomePreview->DestroyComponent();
+			CustomHomePreview = nullptr;
+		}
+		return;
+	}
+	if (!CustomHomePreview)
+	{
+		CustomHomePreview = NewObject<UStaticMeshComponent>(this, TEXT("CustomHomePreview"), RF_Transient | RF_TextExportTransient | RF_DuplicateTransient);
+		CustomHomePreview->SetUsingAbsoluteLocation(true);
+		CustomHomePreview->SetUsingAbsoluteRotation(true);
+		CustomHomePreview->SetUsingAbsoluteScale(true);
+		CustomHomePreview->SetMobility(EComponentMobility::Movable);
+		CustomHomePreview->SetCollisionEnabled(ECollisionEnabled::NoCollision);
+		CustomHomePreview->SetCastShadow(false);
+		CustomHomePreview->SetCanEverAffectNavigation(false);
+		CustomHomePreview->bIsEditorOnly = true;
+		CustomHomePreview->bSelectable = false; // clicks go to the prop, never to its home silhouette
+		CustomHomePreview->SetupAttachment(GetRootComponent());
+		CustomHomePreview->RegisterComponent();
+	}
+	CustomHomePreview->SetStaticMesh(Source->GetStaticMesh());
+	if (UMaterialInterface* GhostMat = GhostMaterial.LoadSynchronous())
+	{
+		for (int32 i = 0; i < CustomHomePreview->GetNumMaterials(); ++i)
+		{
+			CustomHomePreview->SetMaterial(i, GhostMat);
+		}
+	}
+	CustomHomePreview->SetWorldTransform(CustomHome);
+#endif
 }
 
 void ALTTInteractableBase::FindHomeSupport()
@@ -395,6 +532,16 @@ void ALTTInteractableBase::ArmBreakOnLanding()
 void ALTTInteractableBase::NotifyHit(UPrimitiveComponent* MyComp, AActor* Other, UPrimitiveComponent* OtherComp, bool bSelfMoved,
 	FVector HitLocation, FVector HitNormal, FVector NormalImpulse, const FHitResult& Hit)
 {
+	// Trash that lands in (or hits) a bin is thrown away, before BP ReceiveHit gets a chance to break it.
+	if (bIsTrash && bEverHeld && !bTrashed && !IsHeld() && !bPlacing)
+	{
+		const ALTTInteractableBase* OtherProp = Cast<ALTTInteractableBase>(Other);
+		if (OtherProp && OtherProp->bIsTrashBin && !OtherProp->IsHeld())
+		{
+			ThrowAwayInto(Other);
+			return;
+		}
+	}
 	Super::NotifyHit(MyComp, Other, OtherComp, bSelfMoved, HitLocation, HitNormal, NormalImpulse, Hit); // BP ReceiveHit
 	if (!bBreakOnLanding || IsHeld() || bPlaced || bPlacing || !IsValid(this) || IsActorBeingDestroyed())
 	{
@@ -417,7 +564,7 @@ void ALTTInteractableBase::NotifyHit(UPrimitiveComponent* MyComp, AActor* Other,
 
 void ALTTInteractableBase::UpdateGhost(bool bVisible, bool bTargeted, bool bReady, bool bAsRequiredSupport)
 {
-	const bool bShow = bVisible && bHasHome && bIsCleanupTask && !bPlaced && Mesh && Mesh->GetStaticMesh();
+	const bool bShow = bVisible && bHasHome && bIsCleanupTask && !bIsTrash && !bPlaced && Mesh && Mesh->GetStaticMesh();
 	if (!bShow)
 	{
 		if (Ghost)
@@ -483,6 +630,107 @@ void ALTTInteractableBase::PlaceAtHome()
 	SetActorTickEnabled(true);
 }
 
+FVector ALTTInteractableBase::GetBinOpening(const AActor* Bin)
+{
+	if (!Bin)
+	{
+		return FVector::ZeroVector;
+	}
+	FVector Origin, Extent;
+	Bin->GetActorBounds(true, Origin, Extent);
+	return Origin + FVector(0.f, 0.f, Extent.Z * 0.6f);
+}
+
+ALTTInteractableBase* ALTTInteractableBase::FindNearestTrashBin(const UObject* WorldContext, const FVector& From)
+{
+	UWorld* World = WorldContext ? WorldContext->GetWorld() : nullptr;
+	if (!World)
+	{
+		return nullptr;
+	}
+	ALTTInteractableBase* Best = nullptr;
+	double BestDistSq = TNumericLimits<double>::Max();
+	for (TActorIterator<ALTTInteractableBase> It(World); It; ++It)
+	{
+		if (It->bIsTrashBin && !It->IsActorBeingDestroyed())
+		{
+			const double D = FVector::DistSquared(GetBinOpening(*It), From);
+			if (D < BestDistSq)
+			{
+				BestDistSq = D;
+				Best = *It;
+			}
+		}
+	}
+	return Best;
+}
+
+void ALTTInteractableBase::ThrowAwayInto(AActor* Bin)
+{
+	if (bTrashed || !Bin || !Mesh)
+	{
+		return;
+	}
+	bTrashed = true;
+	bPlaced = true; // counts as cleaned up (IsPlaced), and nothing picks it up, focuses or hints it any more
+	bPlacing = false;
+	bBreakOnLanding = false;
+	Mesh->SetSimulatePhysics(false);
+	SetActorEnableCollision(false);
+	Mesh->SetRenderCustomDepth(false);
+	if (Ghost)
+	{
+		Ghost->SetVisibility(false);
+	}
+	TrashFrom = GetActorTransform();
+	TrashTarget = GetBinOpening(Bin);
+	TrashElapsed = 0.f;
+	bTrashing = true;
+	SetActorTickEnabled(true);
+
+	ReceiveThrownAway(Bin);
+	if (ALTTMessDirector* Director = ALTTMessDirector::Get(this))
+	{
+		Director->NotifyPlaced(this);
+	}
+}
+
+bool ALTTInteractableBase::ChangeMusic()
+{
+	if (ALTTMusicPlayer::IsMusicMuted())
+	{
+		ALTTMusicPlayer::SetMusicMuted(false); // resumes the music
+		return true;
+	}
+	for (TActorIterator<ALTTMusicPlayer> It(GetWorld()); It; ++It)
+	{
+		It->Skip(); // crossfades to the next track (starts the music if it wasn't playing)
+		return true;
+	}
+	return false;
+}
+
+void ALTTInteractableBase::ShiftHome(FVector Delta)
+{
+	if (Delta.IsNearlyZero())
+	{
+		return;
+	}
+	HomeTransform.AddToTranslation(Delta);
+	if (Ghost)
+	{
+		Ghost->SetWorldTransform(HomeTransform);
+	}
+	if (bPlaced || bPlacing)
+	{
+		AddActorWorldOffset(Delta, false, nullptr, ETeleportType::TeleportPhysics);
+	}
+	if (bPlacing)
+	{
+		PlaceFrom.AddToTranslation(Delta); // the slide-in tween follows too
+	}
+}
+
 void ALTTInteractableBase::SnapToHome()
 {
 	if (!Mesh || !bHasHome || bPlaced)
@@ -497,6 +745,24 @@ void ALTTInteractableBase::SnapToHome()
 void ALTTInteractableBase::Tick(float DeltaSeconds)
 {
 	Super::Tick(DeltaSeconds);
+
+	if (bTrashing)
+	{
+		TrashElapsed += DeltaSeconds;
+		const float A = FMath::Clamp(TrashElapsed / FMath::Max(TrashTweenTime, 0.05f), 0.f, 1.f);
+		const float Ease = A * A; // InQuad: drops into the bin
+		FTransform T = TrashFrom;
+		T.SetLocation(FMath::Lerp(TrashFrom.GetLocation(), TrashTarget, Ease));
+		T.SetScale3D(TrashFrom.GetScale3D() * FMath::Lerp(1.f, 0.05f, Ease));
+		SetActorTransform(T, false, nullptr, ETeleportType::TeleportPhysics);
+		if (A >= 1.f)
+		{
+			bTrashing = false;
+			SetActorHiddenInGame(true);
+			SetActorTickEnabled(false);
+		}
+		return;
+	}
 
 	if (!bPlacing)
 	{
@@ -546,6 +812,10 @@ void ALTTInteractableBase::LockAtHome()
 void ALTTInteractableBase::FinishPlacing()
 {
 	LockAtHome();
+	if (CachedLightSwitch)
+	{
+		CachedLightSwitch->SetLightOn(true); // back on its mark: the lamp lights up
+	}
 
 	ReceivePlaced();
 	if (ALTTMessDirector* Director = ALTTMessDirector::Get(this))
@@ -646,7 +916,7 @@ void ALTTInteractableBase::K2_DestroyActor()
 
 void ALTTInteractableBase::BreakAway()
 {
-	if (bBrokenInPlace || IsActorBeingDestroyed())
+	if (bBrokenInPlace || bTrashed || IsActorBeingDestroyed())
 	{
 		return;
 	}
@@ -664,6 +934,10 @@ void ALTTInteractableBase::BreakAway()
 	Mesh->SetFirstPersonPrimitiveType(EFirstPersonPrimitiveType::None);
 	LockAtHome();
 	ApplyBrokenLook();
+	if (CachedLightSwitch)
+	{
+		CachedLightSwitch->SetLightOn(false); // broken lamps stay dark
+	}
 
 	// Never break again (the BP checks bBreakOnThrow before spawning debris).
 	if (FBoolProperty* BreakFlag = FindFProperty<FBoolProperty>(GetClass(), TEXT("bBreakOnThrow")))

@@ -24,7 +24,8 @@ public class CleanCutAction : ModuleRules
 			"GeometryCollectionEngine",
 			"Chaos",
 			"LevelSequence",
-			"MovieScene"
+			"MovieScene",
+			"Niagara"
 		});
 
 		PrivateDependencyModuleNames.AddRange(new string[] { "HTTP", "Json" });

@@ -20,7 +20,8 @@ enum class ELTTPlaceHint : uint8
 	Drop,          // not aiming at its home: drops it
 	Place,         // aiming at its home: puts it back and locks it
 	NeedsSupport,  // aiming at its home, but the prop under it (e.g. the table) isn't back yet: drops it
-	Fumble         // aim just misses its home: dropping it here breaks it
+	Fumble,        // aim just misses its home: dropping it here breaks it
+	Trash          // holding trash, aiming at a trash bin: throws it away
 };
 
 UCLASS(ClassGroup = (LTT), meta = (BlueprintSpawnableComponent))
@@ -100,6 +101,9 @@ protected:
 
 	/** Support prop whose home ghost is shown (orange) because the held prop needs it first. */
 	TWeakObjectPtr<ALTTInteractableBase> ShownSupportGhost;
+
+	/** The bin the held trash is aimed at (PlaceHint Trash). */
+	TWeakObjectPtr<ALTTInteractableBase> TargetBin;
 	void SetSupportGhost(ALTTInteractableBase* Support);
 	TWeakObjectPtr<UInputComponent> BoundInputComponent;
 };

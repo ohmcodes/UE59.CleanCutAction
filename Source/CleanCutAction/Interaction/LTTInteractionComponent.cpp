@@ -81,14 +81,37 @@ void ULTTInteractionComponent::UpdatePlaceHint()
 	}
 
 	PlaceHint = ELTTPlaceHint::Drop;
-	if (!Held->bIsCleanupTask || !Held->HasHome())
-	{
-		return;
-	}
+	TargetBin = nullptr;
 
 	FVector ViewLoc;
 	FRotator ViewRot;
 	Controller->GetPlayerViewPoint(ViewLoc, ViewRot);
+
+	// Trash has no home: it goes in a bin. Aiming at one within reach = "Throw in the bin".
+	if (Held->bIsTrash)
+	{
+		Held->UpdateGhost(false, false, false);
+		if (ALTTInteractableBase* Bin = ALTTInteractableBase::FindNearestTrashBin(this, ViewLoc))
+		{
+			const FVector ToBin = ALTTInteractableBase::GetBinOpening(Bin) - ViewLoc;
+			FVector BinOrigin, BinExtent;
+			Bin->GetActorBounds(true, BinOrigin, BinExtent);
+			const double Dist = ToBin.Size();
+			// Within reach, and the aim passes within the bin's radius of its opening.
+			const double Off = FVector::CrossProduct(ViewRot.Vector(), ToBin).Size();
+			if (Dist <= PlaceDistance && FVector::DotProduct(ViewRot.Vector(), ToBin) > 0.0 && Off <= FMath::Max(BinExtent.X, BinExtent.Y) + 10.0)
+			{
+				PlaceHint = ELTTPlaceHint::Trash;
+				TargetBin = Bin;
+			}
+		}
+		return;
+	}
+
+	if (!Held->bIsCleanupTask || !Held->HasHome())
+	{
+		return;
+	}
 	const bool bTargeted = Held->IsTargetingHome(ViewLoc, ViewRot.Vector(), PlaceDistance);
 	const bool bReady = Held->IsHomeSupportReady();
 	if (bTargeted)
@@ -136,6 +159,8 @@ FText ULTTInteractionComponent::GetPlaceHintText() const
 		return NSLOCTEXT("LTT", "HintDrop", "Drop");
 	case ELTTPlaceHint::Fumble:
 		return NSLOCTEXT("LTT", "HintFumble", "Missed the mark! Dropping here breaks it");
+	case ELTTPlaceHint::Trash:
+		return NSLOCTEXT("LTT", "HintTrash", "Throw in the bin");
 	default:
 		return FText::GetEmpty();
 	}
@@ -176,7 +201,7 @@ void ULTTInteractionComponent::UpdateFocus()
 		}
 		AActor* HitActor = Hit.GetActor();
 		const ALTTInteractableBase* HitProp = Cast<ALTTInteractableBase>(HitActor);
-		if (HitProp && (HitProp->IsPlaced() || HitProp->IsHeld()))
+		if (HitProp && (HitProp->IsHeld() || (HitProp->IsPlaced() && !HitProp->IsUsableWhenPlaced())))
 		{
 			Params.AddIgnoredActor(HitActor);
 			continue;
@@ -225,6 +250,17 @@ void ULTTInteractionComponent::Interact()
 			return;
 		}
 		ALTTInteractableBase* Dropped = Carry->GetHeldItem();
+		if (PlaceHint == ELTTPlaceHint::Trash && TargetBin.IsValid())
+		{
+			ALTTInteractableBase* Bin = TargetBin.Get();
+			Carry->Drop();
+			PlaceHint = ELTTPlaceHint::None;
+			if (IsValid(Dropped))
+			{
+				Dropped->ThrowAwayInto(Bin);
+			}
+			return;
+		}
 		const bool bFumble = PlaceHint == ELTTPlaceHint::Fumble;
 		Carry->Drop();
 		if (bFumble && IsValid(Dropped))
