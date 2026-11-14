@@ -25,6 +25,7 @@
 #include "Rendering/DrawElements.h"
 #include "Interaction/LTTInteractionComponent.h"
 #include "Interaction/LTTInteractable.h"
+#include "Interaction/LTTWashStationComponent.h"
 #include "Blueprint/WidgetLayoutLibrary.h"
 #include "EngineUtils.h"
 
@@ -474,6 +475,13 @@ void ULTTCleanupHUD::UpdateArrow()
 		if (const ALTTInteractableBase* Bin = ALTTInteractableBase::FindNearestTrashBin(this, CamLoc))
 		{
 			AimArrowAt(ALTTInteractableBase::GetBinOpening(Bin), CamLoc, CamRot, ArrowColor);
+		}
+	}
+	else if (Held && Held->bIsDishwashable)
+	{
+		if (const ULTTWashStationComponent* Sink = ULTTWashStationComponent::FindNearest(this, CamLoc))
+		{
+			AimArrowAt(Sink->GetComponentLocation(), CamLoc, CamRot, ArrowColor);
 		}
 	}
 	else if (Held)

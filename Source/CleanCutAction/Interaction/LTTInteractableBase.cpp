@@ -11,7 +11,10 @@
 #include "Interaction/LTTMessDirector.h"
 #include "Interaction/LTTLightSwitchComponent.h"
 #include "Interaction/LTTUsableComponent.h"
+#include "Interaction/LTTWashStationComponent.h"
 #include "Audio/LTTMusicPlayer.h"
+#include "Kismet/GameplayStatics.h"
+#include "Sound/SoundBase.h"
 #include "GeometryCollection/GeometryCollectionActor.h"
 #include "GeometryCollection/GeometryCollectionComponent.h"
 #include "GeometryCollection/GeometryCollectionObject.h"
@@ -36,6 +39,8 @@ ALTTInteractableBase::ALTTInteractableBase()
 	GenericBreakCollection = TSoftObjectPtr<UGeometryCollection>(FSoftObjectPath(TEXT("/Game/_CleanCutAction/BreakFX/GC_Generic_Shatter.GC_Generic_Shatter")));
 	// Cooked through a +MapsToCook entry in Config/DefaultGame.ini (C++ soft defaults aren't seen by the cooker).
 	BrokenMaterial = TSoftObjectPtr<UMaterialInterface>(FSoftObjectPath(TEXT("/Game/_CleanCutAction/Materials/M_BrokenProp.M_BrokenProp")));
+	// Cooked through a +MapsToCook entry in Config/DefaultGame.ini.
+	SoundSet = TSoftObjectPtr<ULTTPropSoundSet>(FSoftObjectPath(TEXT("/Game/_CleanCutAction/SFX/Props/DA_PropSounds.DA_PropSounds")));
 	// The mesh component lives in BP_MasterInteractables (Blueprint SCS) so content can be built before code.
 }
 
@@ -168,6 +173,7 @@ void ALTTInteractableBase::BeginHold(AActor* InHolder)
 	Holder = InHolder;
 	bBreakOnLanding = false;
 	bEverHeld = true;
+	PlayPropSound(ELTTPropSoundEvent::Pickup);
 
 	WakeTouchingProps();
 	Mesh->SetSimulatePhysics(false);
@@ -387,7 +393,9 @@ void ALTTInteractableBase::UpdateCustomHomePreview()
 void ALTTInteractableBase::FindHomeSupport()
 {
 	HomeSupport = nullptr;
-	if (!Mesh || !bHasHome)
+	// Trash and dishes are never placed, so they neither need a support nor count as one (a croissant on a
+	// dishwashable plate rests on the table: the plate disappears into the sink).
+	if (!Mesh || !bHasHome || HasNoHomeSpot())
 	{
 		return;
 	}
@@ -410,7 +418,7 @@ void ALTTInteractableBase::FindHomeSupport()
 	for (const FOverlapResult& O : Overlaps)
 	{
 		ALTTInteractableBase* Under = Cast<ALTTInteractableBase>(O.GetActor());
-		if (!Under || Under == this || !Under->Mesh || !Under->bIsCleanupTask)
+		if (!Under || Under == this || !Under->Mesh || !Under->bIsCleanupTask || Under->HasNoHomeSpot())
 		{
 			continue;
 		}
@@ -542,6 +550,19 @@ void ALTTInteractableBase::NotifyHit(UPrimitiveComponent* MyComp, AActor* Other,
 			return;
 		}
 	}
+	// A dish dropped (or thrown) into a sink's basin is washed.
+	if (bIsDishwashable && bEverHeld && !bTrashed && !IsHeld() && !bPlacing)
+	{
+		if (ULTTWashStationComponent* Station = ULTTWashStationComponent::FindOn(Other))
+		{
+			const FVector ToBasin = Station->GetComponentLocation() - (Mesh ? FVector(Mesh->Bounds.Origin) : GetActorLocation());
+			if (ToBasin.Size2D() <= Station->AimRadius + GetPropRadius())
+			{
+				WashIn(Station);
+				return;
+			}
+		}
+	}
 	Super::NotifyHit(MyComp, Other, OtherComp, bSelfMoved, HitLocation, HitNormal, NormalImpulse, Hit); // BP ReceiveHit
 	if (!bBreakOnLanding || IsHeld() || bPlaced || bPlacing || !IsValid(this) || IsActorBeingDestroyed())
 	{
@@ -564,7 +585,7 @@ void ALTTInteractableBase::NotifyHit(UPrimitiveComponent* MyComp, AActor* Other,
 
 void ALTTInteractableBase::UpdateGhost(bool bVisible, bool bTargeted, bool bReady, bool bAsRequiredSupport)
 {
-	const bool bShow = bVisible && bHasHome && bIsCleanupTask && !bIsTrash && !bPlaced && Mesh && Mesh->GetStaticMesh();
+	const bool bShow = bVisible && bHasHome && bIsCleanupTask && !HasNoHomeSpot() && !bPlaced && Mesh && Mesh->GetStaticMesh();
 	if (!bShow)
 	{
 		if (Ghost)
@@ -614,7 +635,7 @@ void ALTTInteractableBase::UpdateGhost(bool bVisible, bool bTargeted, bool bRead
 
 void ALTTInteractableBase::PlaceAtHome()
 {
-	if (!Mesh || !bHasHome || bPlaced || bPlacing)
+	if (!Mesh || !bHasHome || bPlaced || bPlacing || HasNoHomeSpot()) // trash / dishes go in a bin / sink instead
 	{
 		return;
 	}
@@ -671,6 +692,32 @@ void ALTTInteractableBase::ThrowAwayInto(AActor* Bin)
 	{
 		return;
 	}
+	StartVanishInto(GetBinOpening(Bin));
+	ReceiveThrownAway(Bin);
+	if (ALTTMessDirector* Director = ALTTMessDirector::Get(this))
+	{
+		Director->NotifyPlaced(this);
+	}
+}
+
+void ALTTInteractableBase::WashIn(ULTTWashStationComponent* Station)
+{
+	if (bTrashed || !Station || !Mesh)
+	{
+		return;
+	}
+	bWashed = true;
+	StartVanishInto(Station->GetComponentLocation());
+	Station->PlayWashEffects();
+	ReceiveWashed(Station->GetOwner());
+	if (ALTTMessDirector* Director = ALTTMessDirector::Get(this))
+	{
+		Director->NotifyPlaced(this);
+	}
+}
+
+void ALTTInteractableBase::StartVanishInto(const FVector& Target)
+{
 	bTrashed = true;
 	bPlaced = true; // counts as cleaned up (IsPlaced), and nothing picks it up, focuses or hints it any more
 	bPlacing = false;
@@ -683,16 +730,10 @@ void ALTTInteractableBase::ThrowAwayInto(AActor* Bin)
 		Ghost->SetVisibility(false);
 	}
 	TrashFrom = GetActorTransform();
-	TrashTarget = GetBinOpening(Bin);
+	TrashTarget = Target;
 	TrashElapsed = 0.f;
 	bTrashing = true;
 	SetActorTickEnabled(true);
-
-	ReceiveThrownAway(Bin);
-	if (ALTTMessDirector* Director = ALTTMessDirector::Get(this))
-	{
-		Director->NotifyPlaced(this);
-	}
 }
 
 bool ALTTInteractableBase::ChangeMusic()
@@ -708,6 +749,24 @@ bool ALTTInteractableBase::ChangeMusic()
 		return true;
 	}
 	return false;
+}
+
+void ALTTInteractableBase::PlayPropSound(ELTTPropSoundEvent Event) const
+{
+	if (SoundMaterial == ELTTPropMaterial::None || !GetWorld() || !GetWorld()->IsGameWorld())
+	{
+		return;
+	}
+	const ULTTPropSoundSet* Set = SoundSet.LoadSynchronous();
+	USoundBase* Sound = Set ? Set->GetSound(SoundMaterial, Event) : nullptr;
+	if (!Sound)
+	{
+		return;
+	}
+	const FVector Where = Mesh ? FVector(Mesh->Bounds.Origin) : GetActorLocation();
+	const float Volume = Set->Volume * (Event == ELTTPropSoundEvent::Break ? Set->BreakVolumeScale : 1.f);
+	const float Pitch = FMath::FRandRange(static_cast<float>(Set->PitchRange.X), static_cast<float>(Set->PitchRange.Y));
+	UGameplayStatics::PlaySoundAtLocation(this, Sound, Where, Volume, Pitch, 0.f, Set->Attenuation);
 }
 
 void ALTTInteractableBase::ShiftHome(FVector Delta)
@@ -735,6 +794,29 @@ void ALTTInteractableBase::SnapToHome()
 {
 	if (!Mesh || !bHasHome || bPlaced)
 	{
+		return;
+	}
+	// Trash / dishes have no spot to snap to (Place All cheat): bin or wash them instead.
+	if (HasNoHomeSpot())
+	{
+		ULTTWashStationComponent* Station = bIsDishwashable ? ULTTWashStationComponent::FindNearest(this, GetActorLocation()) : nullptr;
+		ALTTInteractableBase* Bin = bIsTrash ? FindNearestTrashBin(this, GetActorLocation()) : nullptr;
+		if (Station)
+		{
+			WashIn(Station);
+		}
+		else if (Bin)
+		{
+			ThrowAwayInto(Bin);
+		}
+		else
+		{
+			StartVanishInto(GetActorLocation());
+			if (ALTTMessDirector* Director = ALTTMessDirector::Get(this))
+			{
+				Director->NotifyPlaced(this);
+			}
+		}
 		return;
 	}
 	Mesh->SetSimulatePhysics(false);
@@ -812,6 +894,10 @@ void ALTTInteractableBase::LockAtHome()
 void ALTTInteractableBase::FinishPlacing()
 {
 	LockAtHome();
+	if (bEverHeld)
+	{
+		PlayPropSound(ELTTPropSoundEvent::Place); // not for props that start placed or get auto-placed
+	}
 	if (CachedLightSwitch)
 	{
 		CachedLightSwitch->SetLightOn(true); // back on its mark: the lamp lights up
@@ -920,6 +1006,7 @@ void ALTTInteractableBase::BreakAway()
 	{
 		return;
 	}
+	PlayPropSound(ELTTPropSoundEvent::Break);
 	ALTTMessDirector* Director = ALTTMessDirector::Get(this);
 	if (!Mesh || !bHasHome || !bIsCleanupTask || !Director || !Director->HasDependents(this))
 	{

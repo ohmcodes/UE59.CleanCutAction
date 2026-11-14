@@ -4,6 +4,7 @@
 #include "Interaction/LTTCarryComponent.h"
 #include "Interaction/LTTInteractable.h"
 #include "Interaction/LTTInteractableBase.h"
+#include "Interaction/LTTWashStationComponent.h"
 #include "EnhancedInputComponent.h"
 #include "GameFramework/Pawn.h"
 #include "GameFramework/Controller.h"
@@ -108,6 +109,24 @@ void ULTTInteractionComponent::UpdatePlaceHint()
 		return;
 	}
 
+	// Dishes have no home either: they go in a sink. Aiming at the basin within reach = "Wash in the sink".
+	TargetStation = nullptr;
+	if (Held->bIsDishwashable)
+	{
+		Held->UpdateGhost(false, false, false);
+		if (ULTTWashStationComponent* Station = ULTTWashStationComponent::FindNearest(this, ViewLoc))
+		{
+			const FVector ToBasin = Station->GetComponentLocation() - ViewLoc;
+			const double Off = FVector::CrossProduct(ViewRot.Vector(), ToBasin).Size();
+			if (ToBasin.Size() <= PlaceDistance && FVector::DotProduct(ViewRot.Vector(), ToBasin) > 0.0 && Off <= Station->AimRadius)
+			{
+				PlaceHint = ELTTPlaceHint::Wash;
+				TargetStation = Station;
+			}
+		}
+		return;
+	}
+
 	if (!Held->bIsCleanupTask || !Held->HasHome())
 	{
 		return;
@@ -161,6 +180,8 @@ FText ULTTInteractionComponent::GetPlaceHintText() const
 		return NSLOCTEXT("LTT", "HintFumble", "Missed the mark! Dropping here breaks it");
 	case ELTTPlaceHint::Trash:
 		return NSLOCTEXT("LTT", "HintTrash", "Throw in the bin");
+	case ELTTPlaceHint::Wash:
+		return NSLOCTEXT("LTT", "HintWash", "Wash in the sink");
 	default:
 		return FText::GetEmpty();
 	}
@@ -258,6 +279,17 @@ void ULTTInteractionComponent::Interact()
 			if (IsValid(Dropped))
 			{
 				Dropped->ThrowAwayInto(Bin);
+			}
+			return;
+		}
+		if (PlaceHint == ELTTPlaceHint::Wash && TargetStation.IsValid())
+		{
+			ULTTWashStationComponent* Station = TargetStation.Get();
+			Carry->Drop();
+			PlaceHint = ELTTPlaceHint::None;
+			if (IsValid(Dropped))
+			{
+				Dropped->WashIn(Station);
 			}
 			return;
 		}

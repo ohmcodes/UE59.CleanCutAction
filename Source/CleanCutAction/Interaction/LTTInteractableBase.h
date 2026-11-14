@@ -6,6 +6,7 @@
 #include "CoreMinimal.h"
 #include "GameFramework/Actor.h"
 #include "LTTInteractable.h"
+#include "Interaction/LTTPropSoundSet.h"
 #include "LTTInteractableBase.generated.h"
 
 class UStaticMeshComponent;
@@ -14,6 +15,7 @@ class UMaterialInstanceDynamic;
 class UGeometryCollection;
 class ULTTLightSwitchComponent;
 class ULTTUsableComponent;
+class ULTTWashStationComponent;
 
 UCLASS(Blueprintable)
 class CLEANCUTACTION_API ALTTInteractableBase : public AActor, public ILTTInteractable
@@ -120,6 +122,20 @@ public:
 	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Interactable|Cleanup")
 	bool bIsCleanupTask = true;
 
+	// ---- Sound ----
+
+	/** What it sounds like when picked up, put back and broken (sounds come from SoundSet). None = silent. */
+	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Interactable|Sound")
+	ELTTPropMaterial SoundMaterial = ELTTPropMaterial::None;
+
+	/** The sound bank (DA_PropSounds by default). */
+	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Interactable|Sound")
+	TSoftObjectPtr<ULTTPropSoundSet> SoundSet;
+
+	/** Plays this prop's SoundMaterial sound for Event at the prop. */
+	UFUNCTION(BlueprintCallable, Category = "Interactable|Sound")
+	void PlayPropSound(ELTTPropSoundEvent Event) const;
+
 	// ---- Use once placed ----
 
 	/** Once placed, Interact switches the background music to the next track (e.g. the laptop on the counter).
@@ -161,6 +177,26 @@ public:
 
 	UFUNCTION(BlueprintImplementableEvent, Category = "Interactable|Trash", meta = (DisplayName = "On Thrown Away"))
 	void ReceiveThrownAway(AActor* Bin);
+
+	// ---- Dishes ----
+
+	/** Dish: no home spot (no silhouette, never "Place"). It's cleaned up by putting it in a sink (any actor with a
+	 *  ULTTWashStationComponent): it's washed with bubbles and disappears, which counts like putting a prop back. */
+	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Interactable|Dishes", meta = (DisplayName = "Can Be Dishwashed"))
+	bool bIsDishwashable = false;
+
+	/** Washes this dish in Station: it shrinks into the basin and disappears, bubbles + sound, counts as cleaned up. */
+	UFUNCTION(BlueprintCallable, Category = "Interactable|Dishes")
+	void WashIn(ULTTWashStationComponent* Station);
+
+	UFUNCTION(BlueprintPure, Category = "Interactable|Dishes")
+	bool IsWashed() const { return bWashed; }
+
+	UFUNCTION(BlueprintImplementableEvent, Category = "Interactable|Dishes", meta = (DisplayName = "On Washed"))
+	void ReceiveWashed(AActor* Sink);
+
+	/** Trash or dish: goes in a bin / sink instead of to a home spot. */
+	bool HasNoHomeSpot() const { return bIsTrash || bIsDishwashable; }
 
 	/** Skip the earthquake: the prop starts placed and locked. */
 	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Interactable|Cleanup")
@@ -338,7 +374,12 @@ protected:
 
 	bool bBrokenInPlace = false;
 
+	/** Shrinks into Target and hides (trash into a bin, dish into a sink); marks the prop done. */
+	void StartVanishInto(const FVector& Target);
+
+	/** Thrown away or washed: gone and counted as cleaned up. */
 	bool bTrashed = false;
+	bool bWashed = false;
 	/** Picked up by the player at least once: only then does landing in a bin throw it away (not during the earthquake). */
 	bool bEverHeld = false;
 	bool bTrashing = false;
