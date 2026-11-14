@@ -12,6 +12,7 @@
 #include "Components/CanvasPanelSlot.h"
 #include "Components/TextBlock.h"
 #include "Components/Image.h"
+#include "Components/SizeBox.h"
 #include "Components/HorizontalBox.h"
 #include "Components/HorizontalBoxSlot.h"
 #include "Engine/Texture2D.h"
@@ -35,6 +36,172 @@ void ULTTCleanupHUD::NativeOnInitialized()
 	if (WidgetTree && !WidgetTree->RootWidget)
 	{
 		BuildDefaultLayout();
+	}
+	if (!ControlsLegend)
+	{
+		BuildControlsLegend(); // a WBP_ child baked before the legend existed
+	}
+	SetControlsLegendOpen(bControlsLegendStartsOpen);
+}
+
+UWidget* ULTTCleanupHUD::MakeKeyCap(const FText& Key) const
+{
+	UBorder* Cap = WidgetTree->ConstructWidget<UBorder>(UBorder::StaticClass());
+	LTTTheme::ApplyBrush(Cap, LTTTheme::Rounded(LTTTheme::Hex(0x52, 0x22, 0x08), 6.f, LTTTheme::WoodDark(), 1.5f));
+	Cap->SetPadding(FMargin(7.f, 1.f, 7.f, 2.f));
+	Cap->SetHorizontalAlignment(HAlign_Center);
+	Cap->SetVerticalAlignment(VAlign_Center);
+	UTextBlock* Text = WidgetTree->ConstructWidget<UTextBlock>(UTextBlock::StaticClass());
+	LTTTheme::StyleText(Text, 13, LTTTheme::TitleCream());
+	Text->SetText(Key);
+	Cap->SetContent(Text);
+	return Cap;
+}
+
+UWidget* ULTTCleanupHUD::MakeMouseCap(const TCHAR* IconName) const
+{
+	UBorder* Cap = WidgetTree->ConstructWidget<UBorder>(UBorder::StaticClass());
+	LTTTheme::ApplyBrush(Cap, LTTTheme::Rounded(LTTTheme::Hex(0x52, 0x22, 0x08), 6.f, LTTTheme::WoodDark(), 1.5f));
+	Cap->SetPadding(FMargin(3.f, 1.f));
+	UImage* Icon = WidgetTree->ConstructWidget<UImage>(UImage::StaticClass());
+	Icon->SetBrush(LTTTheme::UIIconBrush(IconName, 18.f));
+	Icon->SetColorAndOpacity(LTTTheme::TitleCream());
+	Cap->SetContent(Icon);
+	return Cap;
+}
+
+void ULTTCleanupHUD::AddLegendRow(UVerticalBox* Box, const TArray<UWidget*>& Caps, const FText& Action) const
+{
+	UHorizontalBox* Row = WidgetTree->ConstructWidget<UHorizontalBox>(UHorizontalBox::StaticClass());
+	// Fixed-width key column so the action names line up.
+	USizeBox* KeyColumn = WidgetTree->ConstructWidget<USizeBox>(USizeBox::StaticClass());
+	KeyColumn->SetMinDesiredWidth(92.f);
+	UHorizontalBox* KeyRow = WidgetTree->ConstructWidget<UHorizontalBox>(UHorizontalBox::StaticClass());
+	KeyColumn->SetContent(KeyRow);
+	for (int32 i = 0; i < Caps.Num(); ++i)
+	{
+		if (i > 0)
+		{
+			UTextBlock* Or = WidgetTree->ConstructWidget<UTextBlock>(UTextBlock::StaticClass());
+			LTTTheme::StyleText(Or, 12, LTTTheme::InkMuted());
+			Or->SetText(LOCTEXT("LegendOr", "/"));
+			if (UHorizontalBoxSlot* S = KeyRow->AddChildToHorizontalBox(Or))
+			{
+				S->SetVerticalAlignment(VAlign_Center);
+				S->SetPadding(FMargin(3.f, 0.f));
+			}
+		}
+		if (UHorizontalBoxSlot* S = KeyRow->AddChildToHorizontalBox(Caps[i]))
+		{
+			S->SetVerticalAlignment(VAlign_Center);
+		}
+	}
+	if (UHorizontalBoxSlot* S = Row->AddChildToHorizontalBox(KeyColumn))
+	{
+		S->SetVerticalAlignment(VAlign_Center);
+		S->SetPadding(FMargin(0.f, 0.f, 10.f, 0.f));
+	}
+	UTextBlock* Label = WidgetTree->ConstructWidget<UTextBlock>(UTextBlock::StaticClass());
+	LTTTheme::StyleText(Label, 14, LTTTheme::Ink());
+	Label->SetText(Action);
+	if (UHorizontalBoxSlot* S = Row->AddChildToHorizontalBox(Label))
+	{
+		S->SetVerticalAlignment(VAlign_Center);
+	}
+	if (UVerticalBoxSlot* S = Box->AddChildToVerticalBox(Row))
+	{
+		S->SetPadding(FMargin(0.f, 2.f));
+	}
+}
+
+void ULTTCleanupHUD::BuildControlsLegend()
+{
+	UCanvasPanel* Root = WidgetTree ? Cast<UCanvasPanel>(WidgetTree->RootWidget) : nullptr;
+	if (!Root)
+	{
+		return;
+	}
+	UBorder* Card = WidgetTree->ConstructWidget<UBorder>(UBorder::StaticClass(), TEXT("ControlsLegend"));
+	LTTTheme::ApplyBrush(Card, LTTTheme::Rounded(LTTTheme::Hex(0xFB, 0xF7, 0xEC, 0.85f), 14.f, LTTTheme::GoldTrim(), 2.f));
+	Card->SetPadding(FMargin(14.f, 10.f, 16.f, 10.f));
+	ControlsLegend = Card;
+	if (UCanvasPanelSlot* S = Root->AddChildToCanvas(Card))
+	{
+		S->SetAnchors(FAnchors(0.f, 1.f));
+		S->SetAlignment(FVector2D(0.f, 1.f));
+		S->SetPosition(FVector2D(32.f, -28.f));
+		S->SetAutoSize(true);
+	}
+
+	UVerticalBox* Column = WidgetTree->ConstructWidget<UVerticalBox>(UVerticalBox::StaticClass());
+	Card->SetContent(Column);
+
+	UVerticalBox* List = WidgetTree->ConstructWidget<UVerticalBox>(UVerticalBox::StaticClass(), TEXT("ControlsList"));
+	ControlsList = List;
+	Column->AddChildToVerticalBox(List);
+	AddLegendRow(List, { MakeKeyCap(LOCTEXT("KeyWASD", "WASD")) }, LOCTEXT("LegendMove", "Move"));
+	AddLegendRow(List, { MakeMouseCap(TEXT("T_Icon_MouseLeft")), MakeKeyCap(LOCTEXT("KeyE", "E")) }, LOCTEXT("LegendGrab", "Pick up / Place"));
+	AddLegendRow(List, { MakeMouseCap(TEXT("T_Icon_MouseRight")) }, LOCTEXT("LegendThrow", "Throw (breaks it!)"));
+	AddLegendRow(List, { MakeKeyCap(LOCTEXT("KeySpace", "Space")) }, LOCTEXT("LegendJump", "Jump"));
+	AddLegendRow(List, { MakeKeyCap(LOCTEXT("KeyC", "C")), MakeKeyCap(LOCTEXT("KeyCtrl", "Ctrl")) }, LOCTEXT("LegendCrouch", "Crouch"));
+	AddLegendRow(List, { MakeKeyCap(LOCTEXT("KeyF", "F")) }, LOCTEXT("LegendHint", "Hint"));
+	AddLegendRow(List, { MakeKeyCap(LOCTEXT("KeyP", "P")), MakeKeyCap(LOCTEXT("KeyEsc", "Esc")) }, LOCTEXT("LegendPause", "Pause / Unstuck"));
+
+	// Footer: "[H] Hide controls", or "[H] Controls" when folded.
+	UHorizontalBox* Footer = WidgetTree->ConstructWidget<UHorizontalBox>(UHorizontalBox::StaticClass());
+	if (UHorizontalBoxSlot* S = Footer->AddChildToHorizontalBox(MakeKeyCap(ToggleControlsKey.GetDisplayName())))
+	{
+		S->SetVerticalAlignment(VAlign_Center);
+		S->SetPadding(FMargin(0.f, 0.f, 8.f, 0.f));
+	}
+	ControlsToggleText = WidgetTree->ConstructWidget<UTextBlock>(UTextBlock::StaticClass(), TEXT("ControlsToggleText"));
+	LTTTheme::StyleText(ControlsToggleText, 12, LTTTheme::InkMuted());
+	if (UHorizontalBoxSlot* S = Footer->AddChildToHorizontalBox(ControlsToggleText))
+	{
+		S->SetVerticalAlignment(VAlign_Center);
+	}
+	if (UVerticalBoxSlot* S = Column->AddChildToVerticalBox(Footer))
+	{
+		S->SetPadding(FMargin(0.f, 6.f, 0.f, 0.f));
+	}
+}
+
+void ULTTCleanupHUD::SetControlsLegendOpen(bool bOpen)
+{
+	bLegendOpen = bOpen;
+	if (!ControlsList)
+	{
+		ControlsList = GetWidgetFromName(TEXT("ControlsList"));
+	}
+	if (!ControlsToggleText)
+	{
+		ControlsToggleText = Cast<UTextBlock>(GetWidgetFromName(TEXT("ControlsToggleText")));
+	}
+	if (ControlsList)
+	{
+		ControlsList->SetVisibility(bOpen ? ESlateVisibility::HitTestInvisible : ESlateVisibility::Collapsed);
+	}
+	if (ControlsToggleText)
+	{
+		ControlsToggleText->SetText(bOpen ? LOCTEXT("HideControls", "Hide controls") : LOCTEXT("ShowControls", "Controls"));
+	}
+}
+
+void ULTTCleanupHUD::UpdateControlsLegend()
+{
+	if (!ControlsLegend)
+	{
+		return;
+	}
+	APlayerController* PC = GetOwningPlayer();
+	const ACleanCutActionPlayerController* CCPC = Cast<ACleanCutActionPlayerController>(PC);
+	const bool bTouch = CCPC && CCPC->ShouldUseTouchControls();
+	const ALTTMessDirector* D = Director.Get();
+	const bool bShow = !bTouch && !(D && (D->IsBriefingOpen() || D->IsSetClean() || D->IsTimeUp()));
+	ControlsLegend->SetVisibility(bShow ? ESlateVisibility::HitTestInvisible : ESlateVisibility::Collapsed);
+	if (bShow && PC && !PC->IsPaused() && ToggleControlsKey.IsValid() && PC->WasInputKeyJustPressed(ToggleControlsKey))
+	{
+		SetControlsLegendOpen(!bLegendOpen);
 	}
 }
 
@@ -148,6 +315,8 @@ void ULTTCleanupHUD::BuildDefaultLayout()
 		HintSlot->SetPosition(FVector2D(0.f, 60.f));
 		HintSlot->SetAutoSize(true);
 	}
+
+	BuildControlsLegend();
 }
 
 void ULTTCleanupHUD::NativeTick(const FGeometry& MyGeometry, float InDeltaTime)
@@ -161,6 +330,7 @@ void ULTTCleanupHUD::NativeTick(const FGeometry& MyGeometry, float InDeltaTime)
 	ArrowPulse += InDeltaTime;
 	UpdateTexts();
 	UpdateTimerIcon();
+	UpdateControlsLegend();
 	UpdateArrow();
 	UpdatePickupRing(InDeltaTime);
 }

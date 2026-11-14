@@ -64,6 +64,11 @@ void ULTTPauseMenu::NativeOnInitialized()
 		LeaderboardButton = MakeButton(TEXT("LeaderboardButton"), LOCTEXT("Leaderboard", "Leaderboard"), PauseButtonGrey);
 		InsertBeforeQuit(LeaderboardButton);
 	}
+	if (!UnstuckButton)
+	{
+		UnstuckButton = MakeButton(TEXT("UnstuckButton"), LOCTEXT("Unstuck", "Unstuck (back to start)"), PauseButtonGrey);
+		InsertBeforeQuit(UnstuckButton);
+	}
 	if (!RestartButton)
 	{
 		RestartButton = MakeButton(TEXT("RestartButton"), LOCTEXT("Restart", "Restart"), PauseButtonGrey);
@@ -72,6 +77,10 @@ void ULTTPauseMenu::NativeOnInitialized()
 	if (LeaderboardButton)
 	{
 		LeaderboardButton->OnClicked.AddDynamic(this, &ULTTPauseMenu::HandleLeaderboardClicked);
+	}
+	if (UnstuckButton)
+	{
+		UnstuckButton->OnClicked.AddDynamic(this, &ULTTPauseMenu::HandleUnstuckClicked);
 	}
 	if (RestartButton)
 	{
@@ -215,9 +224,10 @@ void ULTTPauseMenu::BuildDefaultLayout()
 	MusicText->Rename(TEXT("MusicLabel")); // same name as the property, so a WBP_ child binds it
 	MusicLabel = MusicText;
 	LeaderboardButton = MakeButton(TEXT("LeaderboardButton"), LOCTEXT("Leaderboard", "Leaderboard"), PauseButtonGrey);
+	UnstuckButton = MakeButton(TEXT("UnstuckButton"), LOCTEXT("Unstuck", "Unstuck (back to start)"), PauseButtonGrey);
 	RestartButton = MakeButton(TEXT("RestartButton"), LOCTEXT("Restart", "Restart"), PauseButtonGrey);
 	QuitButton = MakeButton(TEXT("QuitButton"), LOCTEXT("Quit", "Quit"), PauseQuitRed);
-	for (UButton* Button : { ResumeButton.Get(), MusicButton.Get(), LeaderboardButton.Get(), RestartButton.Get(), QuitButton.Get() })
+	for (UButton* Button : { ResumeButton.Get(), MusicButton.Get(), LeaderboardButton.Get(), UnstuckButton.Get(), RestartButton.Get(), QuitButton.Get() })
 	{
 		if (UVerticalBoxSlot* S = Column->AddChildToVerticalBox(Button))
 		{
@@ -255,7 +265,7 @@ void ULTTPauseMenu::NativeTick(const FGeometry& MyGeometry, float InDeltaTime)
 		const float E = PauseEaseOutCubic(FMath::Clamp(AnimTime / 0.25f, 0.f, 1.f));
 		Card->SetRenderOpacity(E);
 		Card->SetRenderTranslation(FVector2D(0.f, (1.f - E) * -40.f));
-		LTTTheme::FitToScreen(Card, MyGeometry, 24.f); // short phone screens: all five buttons stay tappable
+		LTTTheme::FitToScreen(Card, MyGeometry, 24.f); // short phone screens: all six buttons stay tappable
 	}
 	if (CheatButton)
 	{
@@ -324,6 +334,21 @@ void ULTTPauseMenu::ToggleMusic()
 void ULTTPauseMenu::HandleRestartClicked()
 {
 	RestartGame();
+}
+
+void ULTTPauseMenu::HandleUnstuckClicked()
+{
+	Unstuck();
+}
+
+void ULTTPauseMenu::Unstuck()
+{
+	ACleanCutActionPlayerController* PC = GetOwningPlayer<ACleanCutActionPlayerController>();
+	Resume(); // unpause and give input back first
+	if (PC)
+	{
+		PC->TeleportToSpawn();
+	}
 }
 
 void ULTTPauseMenu::HandleLeaderboardClicked()

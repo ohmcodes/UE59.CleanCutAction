@@ -35,6 +35,10 @@ public:
 	UFUNCTION(BlueprintCallable, Category = "Pause Menu")
 	void RestartGame();
 
+	/** Closes the menu and puts the player back at the spawn point (for when they're stuck). */
+	UFUNCTION(BlueprintCallable, Category = "Pause Menu")
+	void Unstuck();
+
 	/** Opens the leaderboard panel over the menu. */
 	UFUNCTION(BlueprintCallable, Category = "Pause Menu")
 	void OpenLeaderboard();
@@ -62,6 +66,10 @@ public:
 	/** Added at runtime (before Quit) if the Widget Blueprint doesn't have one. */
 	UPROPERTY(BlueprintReadOnly, Category = "Pause Menu", meta = (BindWidgetOptional))
 	TObjectPtr<UButton> RestartButton;
+
+	/** "Unstuck": back to spawn. Added at runtime (before Quit) if the Widget Blueprint doesn't have one. */
+	UPROPERTY(BlueprintReadOnly, Category = "Pause Menu", meta = (BindWidgetOptional))
+	TObjectPtr<UButton> UnstuckButton;
 
 	/** Small coffee icon in the corner: runs the LTT.PlaceAll cheat, but only for the player named "iPoNet" (case-sensitive).
 	 *  Added at runtime if the Widget Blueprint doesn't have one. */
@@ -103,6 +111,9 @@ protected:
 
 	UFUNCTION()
 	void HandleLeaderboardClicked();
+
+	UFUNCTION()
+	void HandleUnstuckClicked();
 
 	float AnimTime = 0.f;
 };

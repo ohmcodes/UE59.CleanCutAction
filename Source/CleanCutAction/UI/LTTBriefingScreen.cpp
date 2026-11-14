@@ -58,6 +58,7 @@ void ULTTBriefingScreen::NativeOnInitialized()
 	{
 		BuildDefaultLayout();
 	}
+	AddCrouchRows();
 	SetIsFocusable(true); // gets Enter / Space / gamepad A while input is UI-only
 	if (StartButton)
 	{
@@ -205,9 +206,9 @@ UTextBlock* ULTTBriefingScreen::AddIconTextRow(UVerticalBox* Box, FName TextName
 	return Text;
 }
 
-void ULTTBriefingScreen::AddControlRow(UVerticalBox* Box, const FText& Action, const FText& Keyboard, const FText& Gamepad) const
+void ULTTBriefingScreen::AddControlRow(UVerticalBox* Box, const FText& Action, const FText& Keyboard, const FText& Gamepad, FName RowName) const
 {
-	UHorizontalBox* Row = WidgetTree->ConstructWidget<UHorizontalBox>(UHorizontalBox::StaticClass());
+	UHorizontalBox* Row = WidgetTree->ConstructWidget<UHorizontalBox>(UHorizontalBox::StaticClass(), RowName);
 	auto AddCell = [this, Row](const FText& Text, const FLinearColor& Color, float Fill)
 	{
 		UTextBlock* Cell = MakeText(NAME_None, 15, Color);
@@ -229,6 +230,70 @@ void ULTTBriefingScreen::AddControlRow(UVerticalBox* Box, const FText& Action, c
 	}
 }
 
+namespace
+{
+	/** Index of the row in Box with a text cell reading Text, or INDEX_NONE. */
+	int32 BriefingFindRow(const UPanelWidget* Box, const FString& Text)
+	{
+		for (int32 i = 0; i < Box->GetChildrenCount(); ++i)
+		{
+			if (const UPanelWidget* Row = Cast<UPanelWidget>(Box->GetChildAt(i)))
+			{
+				for (int32 j = 0; j < Row->GetChildrenCount(); ++j)
+				{
+					const UTextBlock* Cell = Cast<UTextBlock>(Row->GetChildAt(j));
+					if (Cell && Cell->GetText().ToString().Equals(Text))
+					{
+						return i;
+					}
+				}
+			}
+		}
+		return INDEX_NONE;
+	}
+
+	/** Moves Box's last row to just after the row reading AfterText (stays last if there's none). */
+	void BriefingMoveLastAfter(UVerticalBox* Box, const FString& AfterText)
+	{
+		const int32 Last = Box->GetChildrenCount() - 1;
+		const int32 After = BriefingFindRow(Box, AfterText);
+		if (Last < 1 || After == INDEX_NONE || After >= Last - 1)
+		{
+			return;
+		}
+		UWidget* Row = Box->GetChildAt(Last);
+		const UVerticalBoxSlot* Old = Cast<UVerticalBoxSlot>(Row->Slot);
+		const FMargin Padding = Old ? Old->GetPadding() : FMargin(0.f, 2.f);
+		Box->RemoveChildAt(Last);
+		if (UVerticalBoxSlot* S = Cast<UVerticalBoxSlot>(Box->InsertChildAt(After + 1, Row)))
+		{
+			S->SetPadding(Padding);
+		}
+	}
+}
+
+void ULTTBriefingScreen::AddCrouchRows()
+{
+	const FText Crouch = LOCTEXT("Crouch", "Crouch (squeeze under tables)");
+	if (UVerticalBox* Desktop = Cast<UVerticalBox>(GetWidgetFromName(TEXT("ControlsDesktop"))))
+	{
+		if (!GetWidgetFromName(TEXT("CrouchRowDesktop")) && BriefingFindRow(Desktop, Crouch.ToString()) == INDEX_NONE)
+		{
+			AddControlRow(Desktop, Crouch, LOCTEXT("CrouchKb", "C / Ctrl"), LOCTEXT("CrouchPad", "R-stick click"), TEXT("CrouchRowDesktop"));
+			BriefingMoveLastAfter(Desktop, LOCTEXT("Jump", "Jump").ToString());
+		}
+	}
+	if (UVerticalBox* Touch = Cast<UVerticalBox>(GetWidgetFromName(TEXT("ControlsTouch"))))
+	{
+		const FText TouchCrouch = LOCTEXT("TouchCrouch", "Crouch");
+		if (!GetWidgetFromName(TEXT("CrouchRowTouch")) && BriefingFindRow(Touch, TouchCrouch.ToString()) == INDEX_NONE)
+		{
+			AddTouchRow(Touch, TEXT("T_Icon_Crouch"), TouchCrouch, LOCTEXT("TouchCrouchHow", "Crouch button (tap again to stand)"), TEXT("CrouchRowTouch"));
+			BriefingMoveLastAfter(Touch, LOCTEXT("TouchJump", "Jump").ToString());
+		}
+	}
+}
+
 bool ULTTBriefingScreen::IsTouch() const
 {
 	if (!GetWorld())
@@ -244,9 +309,9 @@ bool ULTTBriefingScreen::IsTouch() const
 	return CCPC && CCPC->ShouldUseTouchControls();
 }
 
-void ULTTBriefingScreen::AddTouchRow(UVerticalBox* Box, const TCHAR* IconName, const FText& Action, const FText& How) const
+void ULTTBriefingScreen::AddTouchRow(UVerticalBox* Box, const TCHAR* IconName, const FText& Action, const FText& How, FName RowName) const
 {
-	UHorizontalBox* Row = WidgetTree->ConstructWidget<UHorizontalBox>(UHorizontalBox::StaticClass());
+	UHorizontalBox* Row = WidgetTree->ConstructWidget<UHorizontalBox>(UHorizontalBox::StaticClass(), RowName);
 
 	// Icon in a small round chip, like the on-screen button. The textures are cooked via UI_TouchSimple's hard refs.
 	UBorder* Chip = WidgetTree->ConstructWidget<UBorder>(UBorder::StaticClass());
@@ -511,6 +576,8 @@ void ULTTBriefingScreen::AddPages(UVerticalBox* Box)
 	ScorePlacedText = AddIconTextRow(Right, TEXT("ScorePlacedText"), TEXT("coffee"));
 	ScoreBrokenText = AddIconTextRow(Right, TEXT("ScoreBrokenText"), TEXT("destroyed"));
 	ScoreBonusText = AddIconTextRow(Right, TEXT("ScoreBonusText"), TEXT("timer"));
+
+	AddCrouchRows();
 }
 
 void ULTTBriefingScreen::AddPageNav(UVerticalBox* Box)

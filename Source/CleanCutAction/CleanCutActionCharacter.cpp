@@ -9,6 +9,11 @@
 #include "InputActionValue.h"
 #include "GameFramework/CharacterMovementComponent.h"
 #include "CleanCutAction.h"
+#include "InputAction.h"
+#include "InputMappingContext.h"
+#include "EnhancedInputSubsystems.h"
+#include "Engine/LocalPlayer.h"
+#include "GameFramework/PlayerController.h"
 
 ACleanCutActionCharacter::ACleanCutActionCharacter()
 {
@@ -42,6 +47,12 @@ ACleanCutActionCharacter::ACleanCutActionCharacter()
 	// Configure character movement
 	GetCharacterMovement()->BrakingDecelerationFalling = 1500.0f;
 	GetCharacterMovement()->AirControl = 0.5f;
+
+	// Crouch (C / Ctrl / right stick click / touch button): a shorter capsule for getting under tables and into tight spots.
+	GetCharacterMovement()->GetNavAgentPropertiesRef().bCanCrouch = true;
+	GetCharacterMovement()->SetCrouchedHalfHeight(48.f);
+	GetCharacterMovement()->MaxWalkSpeedCrouched = 250.f;
+	GetCharacterMovement()->bCanWalkOffLedgesWhenCrouching = true;
 }
 
 void ACleanCutActionCharacter::SetupPlayerInputComponent(UInputComponent* PlayerInputComponent)
@@ -59,6 +70,35 @@ void ACleanCutActionCharacter::SetupPlayerInputComponent(UInputComponent* Player
 		// Looking/Aiming
 		EnhancedInputComponent->BindAction(LookAction, ETriggerEvent::Triggered, this, &ACleanCutActionCharacter::LookInput);
 		EnhancedInputComponent->BindAction(MouseLookAction, ETriggerEvent::Triggered, this, &ACleanCutActionCharacter::LookInput);
+
+		// Crouch: a runtime action + context for CrouchKeys unless an asset action is set.
+		const UInputAction* Crouch = CrouchAction;
+		if (!Crouch)
+		{
+			APlayerController* PC = Cast<APlayerController>(GetController());
+			UEnhancedInputLocalPlayerSubsystem* Subsystem = PC ? ULocalPlayer::GetSubsystem<UEnhancedInputLocalPlayerSubsystem>(PC->GetLocalPlayer()) : nullptr;
+			if (Subsystem)
+			{
+				if (!RuntimeCrouchAction)
+				{
+					RuntimeCrouchAction = NewObject<UInputAction>(this, TEXT("IA_Crouch_Runtime"));
+					RuntimeCrouchContext = NewObject<UInputMappingContext>(this, TEXT("IMC_Crouch_Runtime"));
+					for (const FKey& Key : CrouchKeys)
+					{
+						if (Key.IsValid())
+						{
+							RuntimeCrouchContext->MapKey(RuntimeCrouchAction, Key);
+						}
+					}
+				}
+				Subsystem->AddMappingContext(RuntimeCrouchContext, 1);
+				Crouch = RuntimeCrouchAction;
+			}
+		}
+		if (Crouch)
+		{
+			EnhancedInputComponent->BindAction(Crouch, ETriggerEvent::Started, this, &ACleanCutActionCharacter::DoCrouchToggle);
+		}
 	}
 	else
 	{
@@ -111,6 +151,52 @@ void ACleanCutActionCharacter::DoJumpStart()
 {
 	// pass Jump to the character
 	Jump();
+}
+
+void ACleanCutActionCharacter::BeginPlay()
+{
+	Super::BeginPlay();
+	FirstPersonMeshBaseLocation = FirstPersonMesh->GetRelativeLocation();
+}
+
+void ACleanCutActionCharacter::Tick(float DeltaSeconds)
+{
+	Super::Tick(DeltaSeconds);
+	if (!FMath::IsNearlyEqual(CrouchViewOffset, CrouchViewTarget))
+	{
+		CrouchViewOffset = FMath::FInterpConstantTo(CrouchViewOffset, CrouchViewTarget, DeltaSeconds, CrouchViewSpeed);
+		FirstPersonMesh->SetRelativeLocation(FirstPersonMeshBaseLocation + FVector(0.f, 0.f, CrouchViewOffset));
+	}
+}
+
+void ACleanCutActionCharacter::OnStartCrouch(float HalfHeightAdjust, float ScaledHalfHeightAdjust)
+{
+	Super::OnStartCrouch(HalfHeightAdjust, ScaledHalfHeightAdjust);
+	// The capsule top came down by twice the half-height change; bring the eyes down with it.
+	CrouchViewTarget = -2.f * ScaledHalfHeightAdjust;
+}
+
+void ACleanCutActionCharacter::OnEndCrouch(float HalfHeightAdjust, float ScaledHalfHeightAdjust)
+{
+	Super::OnEndCrouch(HalfHeightAdjust, ScaledHalfHeightAdjust);
+	CrouchViewTarget = 0.f;
+}
+
+void ACleanCutActionCharacter::DoCrouchToggle()
+{
+	if (IsCrouchingOrWantsTo())
+	{
+		UnCrouch(); // movement keeps us down until there's room to stand
+	}
+	else
+	{
+		Crouch();
+	}
+}
+
+bool ACleanCutActionCharacter::IsCrouchingOrWantsTo() const
+{
+	return bIsCrouched || (GetCharacterMovement() && GetCharacterMovement()->bWantsToCrouch);
 }
 
 void ACleanCutActionCharacter::DoJumpEnd()

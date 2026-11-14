@@ -135,11 +135,16 @@ protected:
 	void AddHeader(UVerticalBox* Box, const FText& Text, float TopPadding, const TCHAR* IconName) const;
 	/** Icon + wrapping text row (scoring rules). */
 	UTextBlock* AddIconTextRow(UVerticalBox* Box, FName TextName, const TCHAR* IconName) const;
-	void AddControlRow(UVerticalBox* Box, const FText& Action, const FText& Keyboard, const FText& Gamepad) const;
+	void AddControlRow(UVerticalBox* Box, const FText& Action, const FText& Keyboard, const FText& Gamepad, FName RowName = NAME_None) const;
 	/** Touch version of a controls row: the on-screen button's icon (from /Game/_CleanCutAction/UI/Icons), the action, and where/how. */
-	void AddTouchRow(UVerticalBox* Box, const TCHAR* IconName, const FText& Action, const FText& How) const;
+	void AddTouchRow(UVerticalBox* Box, const TCHAR* IconName, const FText& Action, const FText& How, FName RowName = NAME_None) const;
 	/** True when the owning player uses the on-screen touch controls (phone/tablet, or bForceTouchControls). */
 	bool IsTouch() const;
+
+	/** Adds the Crouch rows (CrouchRowDesktop / CrouchRowTouch, after Jump) to ControlsDesktop / ControlsTouch if they
+	 *  aren't there yet. Part of BuildDefaultLayout (so the baker can copy them into WBP_Briefing), and run again at
+	 *  startup for a WBP_ child baked before crouch existed. */
+	void AddCrouchRows();
 	/** Shows ControlsDesktop or ControlsTouch and sets the StartHint text for the current input. */
 	void ApplyInputVariant();
 	void ApplyTexts();

@@ -9,9 +9,12 @@
 
 #include "CoreMinimal.h"
 #include "Blueprint/UserWidget.h"
+#include "InputCoreTypes.h"
 #include "LTTCleanupHUD.generated.h"
 
 class UTextBlock;
+class UVerticalBox;
+class UWidget;
 class UImage;
 class UTexture2D;
 class ALTTMessDirector;
@@ -113,6 +116,22 @@ public:
 	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Cleanup HUD|Home Arrow")
 	float FloorHeight = 220.f;
 
+	// ---- Controls legend (PC / web only; touch has its own buttons) ----
+
+	/** Bottom-left card listing the keys. Built at runtime if the Widget Blueprint has no widget with this name. */
+	UPROPERTY(BlueprintReadOnly, Category = "Cleanup HUD|Controls", meta = (BindWidgetOptional))
+	TObjectPtr<UWidget> ControlsLegend;
+
+	/** Shows / hides the key list (the card folds to a one-line "[H] Controls" tab). */
+	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Cleanup HUD|Controls")
+	FKey ToggleControlsKey = EKeys::H;
+
+	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Cleanup HUD|Controls")
+	bool bControlsLegendStartsOpen = true;
+
+	UFUNCTION(BlueprintCallable, Category = "Cleanup HUD|Controls")
+	void SetControlsLegendOpen(bool bOpen);
+
 	// ---- Nearby pickup ring ----
 
 	/** Draws a ring (a circle with a hole) over the nearest prop the player can pick up while empty-handed. */
@@ -159,6 +178,23 @@ protected:
 	/** Image showing /Game/_CleanCutAction/UI/Widget/<TextureName> at Size x Size. */
 	UImage* MakeIcon(FName Name, const TCHAR* TextureName, float Size) const;
 	void UpdateTimerIcon();
+
+	void BuildControlsLegend();
+	void UpdateControlsLegend();
+	/** Small dark key cap with cream letters ("E", "Space"). */
+	UWidget* MakeKeyCap(const FText& Key) const;
+	/** Key cap holding a mouse-button icon (T_Icon_MouseLeft / Right). */
+	UWidget* MakeMouseCap(const TCHAR* IconName) const;
+	/** Caps, then the action name. */
+	void AddLegendRow(UVerticalBox* Box, const TArray<UWidget*>& Caps, const FText& Action) const;
+
+	UPROPERTY(Transient)
+	TObjectPtr<UWidget> ControlsList;
+
+	UPROPERTY(Transient)
+	TObjectPtr<UTextBlock> ControlsToggleText;
+
+	bool bLegendOpen = true;
 
 	void UpdateTexts();
 	void UpdateArrow();

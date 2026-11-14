@@ -10,6 +10,7 @@
 #include "UI/LTTMusicToggle.h"
 #include "UI/LTTEndingOverlay.h"
 #include "Components/PanelWidget.h"
+#include "Components/PanelSlot.h"
 #include "Blueprint/WidgetTree.h"
 #include "Components/TextBlock.h"
 #include "Components/Widget.h"
@@ -21,6 +22,19 @@
 #include "Kismet2/BlueprintEditorUtils.h"
 #include "Kismet2/KismetEditorUtilities.h"
 #include "Editor.h"
+#endif
+
+#if WITH_EDITOR
+namespace
+{
+	/** True if Native binds a widget called Name (BindWidget / BindWidgetOptional). Plain properties that just
+	 *  cache a widget must NOT become Blueprint variables: the generated variable would clash with them. */
+	bool BakerIsBoundWidget(const UClass* Native, FName Name)
+	{
+		const FObjectPropertyBase* Prop = FindFProperty<FObjectPropertyBase>(Native, Name);
+		return Prop && (Prop->HasMetaData(TEXT("BindWidget")) || Prop->HasMetaData(TEXT("BindWidgetOptional")));
+	}
+}
 #endif
 
 UUserWidget* ULTTWidgetBaker::BuildTempLayout(UObject* WidgetBlueprint, UClass*& OutNative, FString& Error)
@@ -158,6 +172,8 @@ FString ULTTWidgetBaker::BakeWidgetIntoWidgetBlueprint(UObject* WidgetBlueprint,
 	WBP->Modify();
 	WBP->WidgetTree->Modify();
 	Target->Modify();
+	// Keep the code layout's slot settings (anchors, position, padding, alignment...): inserting makes a fresh slot.
+	UPanelSlot* SlotTemplate = Source->Slot ? DuplicateObject<UPanelSlot>(Source->Slot, GetTransientPackage()) : nullptr;
 	Source->RemoveFromParent();
 
 	// Move each widget into the Blueprint's tree (slots are outered to their panel and travel with it).
@@ -186,7 +202,7 @@ FString ULTTWidgetBaker::BakeWidgetIntoWidgetBlueprint(UObject* WidgetBlueprint,
 				Text->SetText(FText::FromString(Text->GetName()));
 			}
 		}
-		const bool bBound = FindFProperty<FObjectPropertyBase>(Native, Widget->GetFName()) != nullptr;
+		const bool bBound = BakerIsBoundWidget(Native, Widget->GetFName());
 		Widget->bIsVariable = bBound;
 		if (bBound)
 		{
@@ -195,13 +211,17 @@ FString ULTTWidgetBaker::BakeWidgetIntoWidgetBlueprint(UObject* WidgetBlueprint,
 		WBP->OnVariableAdded(Widget->GetFName());
 	}
 
-	if (Index != INDEX_NONE)
+	UPanelSlot* NewSlot = Index != INDEX_NONE ? Target->InsertChildAt(Index, Source) : Target->AddChild(Source);
+	if (NewSlot && SlotTemplate && NewSlot->GetClass() == SlotTemplate->GetClass())
 	{
-		Target->InsertChildAt(Index, Source);
-	}
-	else
-	{
-		Target->AddChild(Source);
+		for (TFieldIterator<FProperty> It(NewSlot->GetClass()); It; ++It)
+		{
+			if (It->GetOwnerClass() != UPanelSlot::StaticClass()) // skip Parent / Content
+			{
+				It->CopyCompleteValue_InContainer(NewSlot, SlotTemplate);
+			}
+		}
+		NewSlot->SynchronizeProperties();
 	}
 
 	FBlueprintEditorUtils::MarkBlueprintAsStructurallyModified(WBP);
@@ -319,7 +339,7 @@ FString ULTTWidgetBaker::BakeLayoutIntoWidgetBlueprint(UObject* WidgetBlueprint)
 	NewTree->ForEachWidget([&](UWidget* Widget)
 	{
 		++Total;
-		const bool bBound = FindFProperty<FObjectPropertyBase>(Native, Widget->GetFName()) != nullptr;
+		const bool bBound = BakerIsBoundWidget(Native, Widget->GetFName());
 		Widget->bIsVariable = bBound;
 		if (bBound)
 		{
