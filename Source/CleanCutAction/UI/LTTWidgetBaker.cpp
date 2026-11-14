@@ -18,6 +18,7 @@
 #include "Components/Widget.h"
 #include "UObject/Package.h"
 #include "UObject/UObjectHash.h"
+#include "UObject/GCObjectScopeGuard.h"
 
 #if WITH_EDITOR
 #include "WidgetBlueprint.h"
@@ -167,10 +168,11 @@ FString ULTTWidgetBaker::BakeWidgetIntoWidgetBlueprint(UObject* WidgetBlueprint,
 	{
 		return Error;
 	}
+	// Compiling the Blueprint can run a garbage collection; nothing else references the temp layout.
+	FGCObjectScopeGuard TempGuard(Temp);
 	UWidget* Source = Temp->WidgetTree->FindWidget(WidgetName);
 	if (!Source)
 	{
-		Temp->MarkAsGarbage();
 		return FString::Printf(TEXT("ERROR: the code layout has no %s"), *WidgetName.ToString());
 	}
 
@@ -184,6 +186,7 @@ FString ULTTWidgetBaker::BakeWidgetIntoWidgetBlueprint(UObject* WidgetBlueprint,
 	Target->Modify();
 	// Keep the code layout's slot settings (anchors, position, padding, alignment...): inserting makes a fresh slot.
 	UPanelSlot* SlotTemplate = Source->Slot ? DuplicateObject<UPanelSlot>(Source->Slot, GetTransientPackage()) : nullptr;
+	FGCObjectScopeGuard SlotGuard(SlotTemplate);
 	Source->RemoveFromParent();
 
 	// Move each widget into the Blueprint's tree (slots are outered to their panel and travel with it).
@@ -237,7 +240,6 @@ FString ULTTWidgetBaker::BakeWidgetIntoWidgetBlueprint(UObject* WidgetBlueprint,
 	FBlueprintEditorUtils::MarkBlueprintAsStructurallyModified(WBP);
 	FKismetEditorUtilities::CompileBlueprint(WBP);
 	WBP->MarkPackageDirty();
-	Temp->MarkAsGarbage();
 
 	return FString::Printf(TEXT("%s: added %s (%d widgets) to %s, bound: %s"), *WBP->GetName(), *WidgetName.ToString(), Subtree.Num(),
 		*Target->GetName(), *FString::Join(Bound, TEXT(", ")));
@@ -311,6 +313,8 @@ FString ULTTWidgetBaker::BakeLayoutIntoWidgetBlueprint(UObject* WidgetBlueprint)
 	{
 		return Error;
 	}
+	// Compiling the Blueprint can run a garbage collection; nothing else references the temp layout.
+	FGCObjectScopeGuard TempGuard(Temp);
 
 	// Placeholder text for anything the game fills in at runtime, so the designer isn't blank.
 	Temp->WidgetTree->ForEachWidget([](UWidget* Widget)
@@ -361,7 +365,6 @@ FString ULTTWidgetBaker::BakeLayoutIntoWidgetBlueprint(UObject* WidgetBlueprint)
 	FBlueprintEditorUtils::MarkBlueprintAsStructurallyModified(WBP);
 	FKismetEditorUtilities::CompileBlueprint(WBP);
 	WBP->MarkPackageDirty();
-	Temp->MarkAsGarbage();
 
 	return FString::Printf(TEXT("%s: %d widgets, bound: %s"), *WBP->GetName(), Total, *FString::Join(Bound, TEXT(", ")));
 #else

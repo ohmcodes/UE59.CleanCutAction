@@ -70,7 +70,7 @@ void ULTTCarryComponent::Throw()
 bool ULTTCarryComponent::PlaceHeld()
 {
 	ALTTInteractableBase* Item = HeldItem;
-	if (!IsValid(Item) || !Item->HasHome() || Item->IsPlaced())
+	if (!IsValid(Item) || !Item->HasHome() || Item->IsPlaced() || Item->HasNoHomeSpot())
 	{
 		return false;
 	}

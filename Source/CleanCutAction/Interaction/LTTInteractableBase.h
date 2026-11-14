@@ -6,12 +6,16 @@
 #include "CoreMinimal.h"
 #include "GameFramework/Actor.h"
 #include "LTTInteractable.h"
+#include "Interaction/LTTPropSoundSet.h"
 #include "LTTInteractableBase.generated.h"
 
 class UStaticMeshComponent;
 class UMaterialInterface;
 class UMaterialInstanceDynamic;
 class UGeometryCollection;
+class ULTTLightSwitchComponent;
+class ULTTUsableComponent;
+class ULTTWashStationComponent;
 
 UCLASS(Blueprintable)
 class CLEANCUTACTION_API ALTTInteractableBase : public AActor, public ILTTInteractable
@@ -118,9 +122,103 @@ public:
 	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Interactable|Cleanup")
 	bool bIsCleanupTask = true;
 
+	// ---- Sound ----
+
+	/** What it sounds like when picked up, put back and broken (sounds come from SoundSet). None = silent. */
+	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Interactable|Sound")
+	ELTTPropMaterial SoundMaterial = ELTTPropMaterial::None;
+
+	/** The sound bank (DA_PropSounds by default). */
+	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Interactable|Sound")
+	TSoftObjectPtr<ULTTPropSoundSet> SoundSet;
+
+	/** Plays this prop's SoundMaterial sound for Event at the prop. */
+	UFUNCTION(BlueprintCallable, Category = "Interactable|Sound")
+	void PlayPropSound(ELTTPropSoundEvent Event) const;
+
+	// ---- Use once placed ----
+
+	/** Once placed, Interact switches the background music to the next track (e.g. the laptop on the counter).
+	 *  While the music is muted it turns it back on instead. */
+	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Interactable|Use")
+	bool bChangesMusic = false;
+
+	/** Switches the music to the next track (or unmutes it). Returns false if the level has no music player. */
+	UFUNCTION(BlueprintCallable, Category = "Interactable|Use")
+	bool ChangeMusic();
+
+	// ---- Trash ----
+
+	/** Trash: no home spot (no silhouette, never "Place"). It's cleaned up by putting it in a trash bin, which
+	 *  counts like putting a prop back. */
+	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Interactable|Trash")
+	bool bIsTrash = false;
+
+	/** Trash that lands in (or hits) this prop is thrown away. Set on BP_Prop_Bin. */
+	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Interactable|Trash")
+	bool bIsTrashBin = false;
+
+	/** Seconds a thrown-away prop takes to shrink into the bin. */
+	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Interactable|Trash", meta = (ClampMin = "0.05"))
+	float TrashTweenTime = 0.3f;
+
+	/** Throws this trash prop into Bin: it shrinks into the bin's opening and disappears, and counts as cleaned up. */
+	UFUNCTION(BlueprintCallable, Category = "Interactable|Trash")
+	void ThrowAwayInto(AActor* Bin);
+
+	UFUNCTION(BlueprintPure, Category = "Interactable|Trash")
+	bool IsTrashed() const { return bTrashed; }
+
+	/** Where trash goes in: the top centre of the bin. */
+	static FVector GetBinOpening(const AActor* Bin);
+
+	/** The trash bin nearest to From (null if the level has none). */
+	static ALTTInteractableBase* FindNearestTrashBin(const UObject* WorldContext, const FVector& From);
+
+	UFUNCTION(BlueprintImplementableEvent, Category = "Interactable|Trash", meta = (DisplayName = "On Thrown Away"))
+	void ReceiveThrownAway(AActor* Bin);
+
+	// ---- Dishes ----
+
+	/** Dish: no home spot (no silhouette, never "Place"). It's cleaned up by putting it in a sink (any actor with a
+	 *  ULTTWashStationComponent): it's washed with bubbles and disappears, which counts like putting a prop back. */
+	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Interactable|Dishes", meta = (DisplayName = "Can Be Dishwashed"))
+	bool bIsDishwashable = false;
+
+	/** Washes this dish in Station: it shrinks into the basin and disappears, bubbles + sound, counts as cleaned up. */
+	UFUNCTION(BlueprintCallable, Category = "Interactable|Dishes")
+	void WashIn(ULTTWashStationComponent* Station);
+
+	UFUNCTION(BlueprintPure, Category = "Interactable|Dishes")
+	bool IsWashed() const { return bWashed; }
+
+	UFUNCTION(BlueprintImplementableEvent, Category = "Interactable|Dishes", meta = (DisplayName = "On Washed"))
+	void ReceiveWashed(AActor* Sink);
+
+	/** Trash or dish: goes in a bin / sink instead of to a home spot. */
+	bool HasNoHomeSpot() const { return bIsTrash || bIsDishwashable; }
+
 	/** Skip the earthquake: the prop starts placed and locked. */
 	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Interactable|Cleanup")
 	bool bStartsAtHome = false;
+
+	/** Use Custom Home instead of where the prop is placed in the level, e.g. it starts out on the counter but
+	 *  belongs in a drawer. Turning it on fills Custom Home with the prop's current transform. */
+	UPROPERTY(EditInstanceOnly, Category = "Interactable|Cleanup", meta = (InlineEditConditionToggle))
+	bool bUseCustomHome = false;
+
+	/** World transform of the home spot (shown as a silhouette in the editor). Moving the prop doesn't change it. */
+	UPROPERTY(EditInstanceOnly, Category = "Interactable|Cleanup", meta = (EditCondition = "bUseCustomHome"))
+	FTransform CustomHome;
+
+	/** Editor button: the prop's current position becomes its home. Then move the prop to where it should start. */
+	UFUNCTION(CallInEditor, Category = "Interactable|Cleanup")
+	void SetCustomHomeHere();
+
+	virtual void OnConstruction(const FTransform& Transform) override;
+#if WITH_EDITOR
+	virtual void PostEditChangeProperty(FPropertyChangedEvent& PropertyChangedEvent) override;
+#endif
 
 	/** How close the aim (or the held prop) must be to the home silhouette to place it. 0 = automatic from size. */
 	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Interactable|Cleanup", meta = (ClampMin = "0"))
@@ -192,6 +290,11 @@ public:
 	/** Locks at home immediately (bStartsAtHome). */
 	void SnapToHome();
 
+	/** Moves the home spot (and its silhouette) by Delta, for props whose home is inside something that moves,
+	 *  like a drawer: the drawer calls this as it slides. A placed (or sliding-in) prop moves with its home. */
+	UFUNCTION(BlueprintCallable, Category = "Interactable|Cleanup")
+	void ShiftHome(FVector Delta);
+
 	/** Shows the home silhouette while carried. bTargeted = aiming at it, bReady = its support is placed.
 	 *  bAsRequiredSupport = shown (orange) because a held prop needs this one put back first. */
 	void UpdateGhost(bool bVisible, bool bTargeted, bool bReady, bool bAsRequiredSupport = false);
@@ -235,11 +338,21 @@ public:
 	// ILTTInteractable
 	virtual bool CanInteract_Implementation(AActor* InstigatorActor) const override;
 	virtual FText GetPromptText_Implementation(AActor* InstigatorActor) const override;
-	virtual ELTTInteractKind GetInteractKind_Implementation() const override { return ELTTInteractKind::Pickup; }
+	virtual ELTTInteractKind GetInteractKind_Implementation() const override;
 	virtual float GetHoldDuration_Implementation() const override { return 0.f; }
 	virtual void OnFocusBegin_Implementation(AActor* InstigatorActor) override;
 	virtual void OnFocusEnd_Implementation(AActor* InstigatorActor) override;
-	virtual void OnInteract_Implementation(AActor* InstigatorActor) override {}
+	virtual void OnInteract_Implementation(AActor* InstigatorActor) override;
+
+	/** True once placed if the prop has a ULTTLightSwitchComponent (e.g. BP_Prop_ModernLamp): Interact then
+	 *  switches its light instead of picking it up. The light is off while the prop is out of place. */
+	UFUNCTION(BlueprintPure, Category = "Interactable")
+	bool IsSwitchableLamp() const;
+
+	/** True once placed if the prop has a light switch or an appliance component (lamp, microwave): Interact uses
+	 *  it instead of picking it up. */
+	UFUNCTION(BlueprintPure, Category = "Interactable")
+	bool IsUsableWhenPlaced() const;
 
 	/** Set when EndHold is called with bThrown so the BP event can tell. */
 	bool bLastReleaseWasThrow = false;
@@ -261,6 +374,19 @@ protected:
 
 	bool bBrokenInPlace = false;
 
+	/** Shrinks into Target and hides (trash into a bin, dish into a sink); marks the prop done. */
+	void StartVanishInto(const FVector& Target);
+
+	/** Thrown away or washed: gone and counted as cleaned up. */
+	bool bTrashed = false;
+	bool bWashed = false;
+	/** Picked up by the player at least once: only then does landing in a bin throw it away (not during the earthquake). */
+	bool bEverHeld = false;
+	bool bTrashing = false;
+	float TrashElapsed = 0.f;
+	FTransform TrashFrom;
+	FVector TrashTarget = FVector::ZeroVector;
+
 	bool bHasHome = false;
 	bool bPlaced = false;
 	bool bPlacing = false;
@@ -269,6 +395,12 @@ protected:
 
 	UPROPERTY(Transient)
 	TObjectPtr<UStaticMeshComponent> Ghost;
+
+	/** Editor-only silhouette at Custom Home. */
+	UPROPERTY(Transient)
+	TObjectPtr<UStaticMeshComponent> CustomHomePreview;
+
+	void UpdateCustomHomePreview();
 
 	UPROPERTY(Transient)
 	TObjectPtr<UMaterialInstanceDynamic> GhostMID;
@@ -283,6 +415,14 @@ protected:
 
 	UPROPERTY(Transient)
 	TObjectPtr<AActor> Holder;
+
+	/** Found at PostInitializeComponents (a Blueprint component; not named like this property). */
+	UPROPERTY(Transient)
+	TObjectPtr<ULTTLightSwitchComponent> CachedLightSwitch;
+
+	/** Found at PostInitializeComponents (a Blueprint component: microwave, espresso machine...). */
+	UPROPERTY(Transient)
+	TObjectPtr<ULTTUsableComponent> CachedAppliance;
 
 	FName SavedCollisionProfile;
 };
