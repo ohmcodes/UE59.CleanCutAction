@@ -8,6 +8,7 @@
 #include "Shoot/LTTShootHUD.h"
 #include "Shoot/LTTShootEndScreen.h"
 #include "Interaction/LTTInteractableBase.h"
+#include "UI/LTTUITheme.h"
 #include "Blueprint/UserWidget.h"
 #include "Camera/PlayerCameraManager.h"
 #include "Components/StaticMeshComponent.h"
@@ -143,7 +144,7 @@ void ALTTSceneDirector::CreateHUD()
 	APlayerController* PC = UGameplayStatics::GetPlayerController(this, 0);
 	if (PC && PC->IsLocalController())
 	{
-		HUDWidget = CreateWidget<UUserWidget>(PC, HUDClass);
+		HUDWidget = CreateWidget<UUserWidget>(PC, LTTTheme::PreferWBP<ULTTShootHUD>(HUDClass, TEXT("WBP_ShootHUD")));
 		if (HUDWidget)
 		{
 			HUDWidget->AddToViewport(1);
@@ -678,7 +679,7 @@ void ALTTSceneDirector::ShowEndScreen()
 	{
 		return;
 	}
-	EndScreenWidget = CreateWidget<UUserWidget>(PC, EndScreenClass);
+	EndScreenWidget = CreateWidget<UUserWidget>(PC, LTTTheme::PreferWBP<ULTTShootEndScreen>(EndScreenClass, TEXT("WBP_ShootEndScreen")));
 	if (!EndScreenWidget)
 	{
 		return;

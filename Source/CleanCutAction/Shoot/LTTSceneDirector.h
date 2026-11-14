@@ -160,11 +160,11 @@ public:
 
 	// ---- HUD / end screen ----
 
-	/** ULTTShootHUD or a Widget Blueprint based on it. */
+	/** ULTTShootHUD or a Widget Blueprint based on it. Left as the C++ class, WBP_ShootHUD is used (edit that in the UMG designer). */
 	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "HUD")
 	TSubclassOf<UUserWidget> HUDClass;
 
-	/** ULTTShootEndScreen or a Widget Blueprint based on it. */
+	/** ULTTShootEndScreen or a Widget Blueprint based on it. Left as the C++ class, WBP_ShootEndScreen is used. */
 	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "HUD")
 	TSubclassOf<UUserWidget> EndScreenClass;
 
