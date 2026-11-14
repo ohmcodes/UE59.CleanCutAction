@@ -1,6 +1,8 @@
 // Clean! Cut! Action!
 
 #include "Shoot/LTTEffectStation.h"
+#include "Components/AudioComponent.h"
+#include "Sound/SoundBase.h"
 #include "Shoot/LTTSceneDirector.h"
 #include "Shoot/LTTFilmActor.h"
 #include "Components/BoxComponent.h"
@@ -635,6 +637,23 @@ void ALTTEffectStation::SetEffectActorsOn(bool bOn)
 	}
 }
 
+namespace
+{
+	/** Stops and removes the looping effect sounds (rain) a station started; one-shots aren't kept. */
+	void StopStationLoops(AActor* Station)
+	{
+		TInlineComponentArray<UAudioComponent*> Audio(Station);
+		for (UAudioComponent* Component : Audio)
+		{
+			if (Component && Component->ComponentHasTag(TEXT("StationLoop")))
+			{
+				Component->Stop();
+				Component->DestroyComponent();
+			}
+		}
+	}
+}
+
 void ALTTEffectStation::PlayEffect(ELTTCue Cue, ELTTGrade Grade)
 {
 	const bool bMissed = Grade == ELTTGrade::Miss;
@@ -647,9 +666,22 @@ void ALTTEffectStation::PlayEffect(ELTTCue Cue, ELTTGrade Grade)
 			GetWorldTimerManager().SetTimer(EffectTimer, this, &ALTTEffectStation::EndEffect, EffectDuration, false);
 		}
 	}
+	StopStationLoops(this);
 	if (USoundBase* Sound = bMissed ? MissSound.Get() : EffectSound.Get())
 	{
-		UGameplayStatics::PlaySoundAtLocation(this, Sound, GetActorLocation());
+		if (Sound->IsLooping())
+		{
+			// A looping sound (rain) keeps going until the effect ends or the take resets.
+			if (UAudioComponent* Loop = UGameplayStatics::SpawnSoundAttached(Sound, GetRootComponent(), NAME_None,
+				FVector::ZeroVector, EAttachLocation::KeepRelativeOffset, false, 1.f, 1.f, 0.f, nullptr, nullptr, false))
+			{
+				Loop->ComponentTags.Add(TEXT("StationLoop"));
+			}
+		}
+		else
+		{
+			UGameplayStatics::PlaySoundAtLocation(this, Sound, GetActorLocation());
+		}
 	}
 	if (Game == ELTTStationGame::Choice && !bMissed)
 	{
@@ -663,6 +695,7 @@ void ALTTEffectStation::PlayEffect(ELTTCue Cue, ELTTGrade Grade)
 void ALTTEffectStation::EndEffect()
 {
 	SetEffectActorsOn(false);
+	StopStationLoops(this);
 	ReceiveEffectEnded();
 }
 
@@ -675,6 +708,7 @@ void ALTTEffectStation::ResetStation()
 	TossProp->SetVisibility(false);
 	SetActorTickEnabled(false);
 	SetEffectActorsOn(false);
+	StopStationLoops(this);
 	if (bKeyLightColorSaved && IsValid(KeyLight) && KeyLight->GetLightComponent())
 	{
 		KeyLight->GetLightComponent()->SetLightColor(SavedKeyLightColor);

@@ -198,7 +198,8 @@ public:
 	/** Trash or dish: goes in a bin / sink instead of to a home spot. */
 	bool HasNoHomeSpot() const { return bIsTrash || bIsDishwashable; }
 
-	/** Skip the earthquake: the prop starts placed and locked. */
+	/** Skip the earthquake. A cleanup task starts placed and locked; a prop that isn't a task (set dressing)
+	 *  just stays where it is and doesn't count towards the clean set. */
 	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Interactable|Cleanup")
 	bool bStartsAtHome = false;
 

@@ -9,6 +9,8 @@
 #include "UI/LTTVirtualKeyboard.h"
 #include "UI/LTTMusicToggle.h"
 #include "UI/LTTEndingOverlay.h"
+#include "Shoot/LTTShootHUD.h"
+#include "Shoot/LTTShootEndScreen.h"
 #include "Components/PanelWidget.h"
 #include "Components/PanelSlot.h"
 #include "Blueprint/WidgetTree.h"
@@ -98,6 +100,14 @@ UUserWidget* ULTTWidgetBaker::BuildTempLayout(UObject* WidgetBlueprint, UClass*&
 	else if (ULTTEndingOverlay* Ending = Cast<ULTTEndingOverlay>(Temp))
 	{
 		Ending->BuildDefaultLayout();
+	}
+	else if (ULTTShootHUD* ShootHUD = Cast<ULTTShootHUD>(Temp))
+	{
+		ShootHUD->BuildDefaultLayout();
+	}
+	else if (ULTTShootEndScreen* ShootEnd = Cast<ULTTShootEndScreen>(Temp))
+	{
+		ShootEnd->BuildDefaultLayout();
 	}
 	else
 	{

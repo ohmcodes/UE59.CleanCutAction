@@ -30,6 +30,8 @@
 #include "Camera/CameraShakeBase.h"
 #include "GameFramework/PlayerController.h"
 #include "Kismet/GameplayStatics.h"
+#include "Sound/SoundBase.h"
+#include "UObject/ConstructorHelpers.h"
 #include "EngineUtils.h"
 #include "Engine/World.h"
 #include "TimerManager.h"
@@ -57,6 +59,11 @@ ALTTMessDirector::ALTTMessDirector()
 	EndScreenClass = ULTTEndScreen::StaticClass();
 	BriefingClass = ULTTBriefingScreen::StaticClass();
 	EndingOverlayClass = ULTTEndingOverlay::StaticClass();
+
+	static ConstructorHelpers::FObjectFinder<USoundBase> NextPhase(TEXT("/Game/_CleanCutAction/SFX/SW_next_phase.SW_next_phase"));
+	static ConstructorHelpers::FObjectFinder<USoundBase> Miss(TEXT("/Game/_CleanCutAction/SFX/SW_miss.SW_miss"));
+	SetReadySound = NextPhase.Object;
+	TimeUpSound = Miss.Object;
 }
 
 ALTTMessDirector* ALTTMessDirector::Get(const UObject* WorldContext)
@@ -443,7 +450,8 @@ const bool bShouldStartHidden = bFadeInOnStart && !bIntroDone;
 	{
 		ALTTInteractableBase* Prop = *It;
 		UStaticMeshComponent* M = Prop ? Prop->Mesh.Get() : nullptr;
-		if (!M || Prop->IsPlaced() || Prop->IsHeld())
+		// Set dressing (not a task, starts at home) stays put; it isn't part of the mess.
+		if (!M || Prop->IsPlaced() || Prop->IsHeld() || (Prop->bStartsAtHome && !Prop->bIsCleanupTask))
 		{
 			continue;
 		}
@@ -629,17 +637,39 @@ void ALTTMessDirector::ShowEndScreen(bool bSetClean)
 		Screen->Setup(this, bSetClean);
 	}
 	EndScreenWidget->AddToViewport(10);
+	if (USoundBase* Sting = bSetClean ? SetReadySound.Get() : TimeUpSound.Get())
+	{
+		UGameplayStatics::PlaySound2D(this, Sting);
+	}
 	if (HUDWidget)
 	{
 		HUDWidget->SetVisibility(ESlateVisibility::Collapsed);
 	}
 
-	UGameplayStatics::SetGamePaused(this, true);
-	PC->SetShowMouseCursor(true);
-	FInputModeUIOnly Mode;
-	Mode.SetWidgetToFocus(EndScreenWidget->TakeWidget());
-	Mode.SetLockMouseToViewportBehavior(EMouseLockMode::DoNotLock);
-	PC->SetInputMode(Mode);
+	// The level is done but the player isn't frozen: hand the camera back from the ending shots, give movement
+	// back and keep the game running behind the end screen (cursor up for its buttons).
+	GetWorldTimerManager().ClearTimer(EndingTimer);
+	bEndingPlaying = false;
+	if (EndingPlayer)
+	{
+		EndingPlayer->Stop(); // also lifts the sequence's movement / look lock
+		EndingPlayer = nullptr;
+	}
+	if (EndingActor)
+	{
+		EndingActor->Destroy();
+		EndingActor = nullptr;
+	}
+	if (PC->GetPawn() && PC->GetViewTarget() != PC->GetPawn())
+	{
+		PC->SetViewTargetWithBlend(PC->GetPawn(), 0.6f, VTBlend_Cubic);
+	}
+	if (PC->PlayerCameraManager)
+	{
+		PC->PlayerCameraManager->StopCameraFade();
+	}
+	SetPlayerInputBlocked(false);
+	ACleanCutActionPlayerController::KeepGameInputWithCursor(PC);
 }
 
 void ALTTMessDirector::CloseEndScreen()
@@ -697,7 +727,8 @@ void ALTTMessDirector::LoadNextLevel()
 		return;
 	}
 	UE_LOG(LogTemp, Log, TEXT("MessDirector: set is clean, opening %s."), *NextLevelName.ToString());
-	UGameplayStatics::SetGamePaused(this, false);
+	// Input mode lives on the viewport and survives OpenLevel; don't carry the end screen's into Phase 2.
+	ACleanCutActionPlayerController::ResetGameInput(UGameplayStatics::GetPlayerController(this, 0));
 	UGameplayStatics::OpenLevel(this, NextLevelName);
 }
 

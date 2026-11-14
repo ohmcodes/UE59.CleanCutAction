@@ -39,7 +39,7 @@ ALTTFilmCamera::ALTTFilmCamera()
 	Arrow->ArrowSize = 2.f;
 
 	// Already cooked for Phase 1 (+MapsToCook in Config/DefaultGame.ini).
-	ConeMaterial = TSoftObjectPtr<UMaterialInterface>(FSoftObjectPath(TEXT("/Game/_CleanCutAction/Materials/M_GhostSilhouette.M_GhostSilhouette")));
+	ConeMaterial = TSoftObjectPtr<UMaterialInterface>(FSoftObjectPath(TEXT("/Game/_CleanCutAction/Materials/M_FrameCone.M_FrameCone")));
 }
 
 ALTTFilmCamera* ALTTFilmCamera::Get(const UObject* WorldContext)

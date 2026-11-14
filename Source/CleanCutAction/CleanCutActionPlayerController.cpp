@@ -235,6 +235,40 @@ void ACleanCutActionPlayerController::RestoreGameInput()
 	}
 }
 
+void ACleanCutActionPlayerController::KeepGameInputWithCursor(APlayerController* PC)
+{
+	if (!PC)
+	{
+		return;
+	}
+	// No widget focus: keyboard and gamepad keep driving the pawn; the mouse clicks the end screen's buttons.
+	FInputModeGameAndUI Mode;
+	Mode.SetLockMouseToViewportBehavior(EMouseLockMode::DoNotLock);
+	Mode.SetHideCursorDuringCapture(false);
+	PC->SetInputMode(Mode);
+	PC->SetShowMouseCursor(true);
+}
+
+void ACleanCutActionPlayerController::ResetGameInput(APlayerController* PC)
+{
+	if (!PC)
+	{
+		return;
+	}
+	UGameplayStatics::SetGamePaused(PC, false);
+	PC->ResetIgnoreMoveInput();
+	PC->ResetIgnoreLookInput();
+	if (ACleanCutActionPlayerController* CCPC = Cast<ACleanCutActionPlayerController>(PC))
+	{
+		CCPC->RestoreGameInput();
+	}
+	else
+	{
+		PC->SetShowMouseCursor(false);
+		PC->SetInputMode(FInputModeGameOnly());
+	}
+}
+
 bool ACleanCutActionPlayerController::ShouldUseTouchControls() const
 {
 	// are we on a mobile platform? Should we force touch?
