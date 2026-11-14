@@ -21,6 +21,7 @@ class ULevelSequence;
 class ULevelSequencePlayer;
 class ALevelSequenceActor;
 class ACameraActor;
+class ULTTEndingOverlay;
 
 DECLARE_DYNAMIC_MULTICAST_DELEGATE_TwoParams(FLTTOnCleanProgress, int32, Placed, int32, Total);
 DECLARE_DYNAMIC_MULTICAST_DELEGATE(FLTTOnAllPlaced);
@@ -198,6 +199,20 @@ public:
 	UFUNCTION(BlueprintCallable, Category = "Hint")
 	bool ShowHint();
 
+	/** When a hint lands on the same prop as the previous hint, that prop is probably clipped into something or
+	 *  under the map: move it to the middle of its floor (or HintRescueSpot) before outlining it. */
+	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Hint")
+	bool bMoveRepeatHintToMiddle = true;
+
+	/** Optional: where repeat-hinted props go (a Target Point etc.). Empty = middle of the props' home spots
+	 *  on the prop's own floor. */
+	UPROPERTY(EditInstanceOnly, BlueprintReadWrite, Category = "Hint", meta = (EditCondition = "bMoveRepeatHintToMiddle"))
+	TObjectPtr<AActor> HintRescueSpot;
+
+	/** Home spots within this height of the prop's home count as the same floor when finding the middle (cm). */
+	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Hint", meta = (ClampMin = "50", EditCondition = "bMoveRepeatHintToMiddle"))
+	float HintFloorTolerance = 200.f;
+
 	UFUNCTION(BlueprintCallable, Category = "Hint")
 	void ClearHint();
 
@@ -318,6 +333,29 @@ public:
 	UFUNCTION(BlueprintCallable, Category = "Ending")
 	void PlayEnding(bool bSetClean);
 
+	/** Show a SKIP button (Space / Enter / gamepad A) while the ending shots play. */
+	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Ending")
+	bool bAllowSkipEnding = true;
+
+	/** Confetti bursts over the screen when the set is clean, just before the end screen. */
+	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Ending")
+	bool bConfettiOnSetClean = true;
+
+	/** Seconds of confetti before the end screen comes up (it keeps falling over the end screen). */
+	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Ending", meta = (ClampMin = "0", EditCondition = "bConfettiOnSetClean"))
+	float ConfettiLeadTime = 0.9f;
+
+	/** ULTTEndingOverlay or a Widget Blueprint based on it (skip button + confetti). */
+	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Ending")
+	TSubclassOf<ULTTEndingOverlay> EndingOverlayClass;
+
+	/** Cuts the ending shots short: jumps to the last shot and goes on to the confetti / end screen. */
+	UFUNCTION(BlueprintCallable, Category = "Ending")
+	void SkipEnding();
+
+	UFUNCTION(BlueprintPure, Category = "Ending")
+	bool IsEndingPlaying() const { return bEndingPlaying; }
+
 	// ---- End screen ----
 
 	/** Show the end screen when every prop is back ("SET READY!") or the countdown runs out ("TIME'S UP!"). */
@@ -343,6 +381,29 @@ public:
 	/** Seconds from the mess starting to the set being clean / time running out (or until now). */
 	UFUNCTION(BlueprintPure, Category = "End Screen")
 	float GetTimeOnSet() const;
+
+	// ---- Stuck props: under the floor, inside furniture or walls ----
+
+	/** Every RescueInterval seconds, props that fell under the floor, out of the cafe or got stuck inside other
+	 *  geometry are moved back to a free spot on the floor near their home. Also runs once while the screen is
+	 *  still black after the earthquake. */
+	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Stuck Props")
+	bool bRescueStuckProps = true;
+
+	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Stuck Props", meta = (ClampMin = "0.5", EditCondition = "bRescueStuckProps"))
+	float RescueInterval = 2.f;
+
+	/** A prop whose top is this far below the lowest home spot (the ground floor) counts as under the map (cm). */
+	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Stuck Props", meta = (ClampMin = "0", EditCondition = "bRescueStuckProps"))
+	float UnderFloorMargin = 30.f;
+
+	/** How far from home (horizontally) a prop may end up before it counts as lost outside the set (cm). */
+	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Stuck Props", meta = (ClampMin = "100", EditCondition = "bRescueStuckProps"))
+	float MaxDistanceFromSet = 2500.f;
+
+	/** Checks every unplaced prop now and moves the stuck ones. Returns how many were moved. */
+	UFUNCTION(BlueprintCallable, Category = "Stuck Props")
+	int32 RescueStuckProps();
 
 	// ---- Cheats (console: LTT.PlaceAll [LeaveCount]) ----
 
@@ -390,6 +451,21 @@ protected:
 
 	UFUNCTION()
 	void HandleEndingFinished();
+	/** After the shots (or with none): confetti if the set is clean, then the end screen. */
+	void FinishEnding();
+	void ShowEndingOverlay(bool bWithSkip);
+	/** True if Prop is under the floor, far outside the set or its middle is inside other geometry. */
+	bool IsPropStuck(const ALTTInteractableBase* Prop) const;
+	/** A free spot on the floor near Prop's home that it can be dropped on; false if none was found. */
+	bool FindRescueSpot(const ALTTInteractableBase* Prop, FVector& OutLocation) const;
+	/** Same search as FindRescueSpot, but around Anchor instead of Prop's home. */
+	bool FindFreeSpotNear(const ALTTInteractableBase* Prop, const FVector& Anchor, FVector& OutLocation) const;
+	/** Middle of the props' home spots on Prop's floor (or HintRescueSpot). */
+	FVector GetHintRescueAnchor(const ALTTInteractableBase* Prop) const;
+	/** Moves a repeat-hinted prop to the middle of its floor. */
+	void MoveHintedPropToMiddle(ALTTInteractableBase* Prop);
+	void RescueTick();
+	void MoveStuckProp(ALTTInteractableBase* Prop);
 	void ScheduleEndScreen(bool bSetClean);
 	void HandleHintInput();
 	void UpdateHint();
@@ -420,6 +496,8 @@ protected:
 	TObjectPtr<UUserWidget> HUDWidget;
 
 	TWeakObjectPtr<ALTTInteractableBase> HintTarget;
+	/** The prop the previous hint pointed at (kept after the hint ends; reset when it's moved to the middle). */
+	TWeakObjectPtr<ALTTInteractableBase> LastHinted;
 	float HintEndTime = 0.f;
 	float HintReadyTime = 0.f;
 	int32 HintsUsed = 0;
@@ -447,6 +525,17 @@ protected:
 
 	UPROPERTY(Transient)
 	TObjectPtr<UUserWidget> EndScreenWidget;
+
+	UPROPERTY(Transient)
+	TObjectPtr<ULTTEndingOverlay> EndingOverlay;
+	bool bEndingPlaying = false;
+	bool bEndingFinished = false;
+
+	FTimerHandle RescueTimer;
+	/** Lowest home spot of any prop (the ground floor), for the under-the-map test. */
+	float LowestHomeZ = 0.f;
+	/** Props seen stuck on the last check: moved only if they're still stuck on the next one (not just passing through). */
+	TSet<TWeakObjectPtr<ALTTInteractableBase>> SuspectProps;
 
 	UPROPERTY(Transient)
 	TObjectPtr<UInputAction> RuntimeHintAction;
