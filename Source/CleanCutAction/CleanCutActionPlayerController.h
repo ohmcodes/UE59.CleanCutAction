@@ -52,6 +52,13 @@ public:
 	/** Gives input back to the game after a menu closes. Touch keeps Game+UI and the cursor so the touch buttons still take taps. */
 	void RestoreGameInput();
 
+	/** For end screens: shows the cursor so the buttons can be clicked but leaves the game taking input,
+	 *  so the player can keep walking around the finished set. Works on any player controller. */
+	static void KeepGameInputWithCursor(APlayerController* PC);
+
+	/** Clears pause, input-ignore flags and UI-only input left over from the previous level's end screen. */
+	static void ResetGameInput(APlayerController* PC);
+
 protected:
 
 	/** Input Mapping Contexts */

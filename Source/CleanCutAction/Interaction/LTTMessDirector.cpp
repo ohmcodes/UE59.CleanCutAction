@@ -634,12 +634,30 @@ void ALTTMessDirector::ShowEndScreen(bool bSetClean)
 		HUDWidget->SetVisibility(ESlateVisibility::Collapsed);
 	}
 
-	UGameplayStatics::SetGamePaused(this, true);
-	PC->SetShowMouseCursor(true);
-	FInputModeUIOnly Mode;
-	Mode.SetWidgetToFocus(EndScreenWidget->TakeWidget());
-	Mode.SetLockMouseToViewportBehavior(EMouseLockMode::DoNotLock);
-	PC->SetInputMode(Mode);
+	// The level is done but the player isn't frozen: hand the camera back from the ending shots, give movement
+	// back and keep the game running behind the end screen (cursor up for its buttons).
+	GetWorldTimerManager().ClearTimer(EndingTimer);
+	bEndingPlaying = false;
+	if (EndingPlayer)
+	{
+		EndingPlayer->Stop(); // also lifts the sequence's movement / look lock
+		EndingPlayer = nullptr;
+	}
+	if (EndingActor)
+	{
+		EndingActor->Destroy();
+		EndingActor = nullptr;
+	}
+	if (PC->GetPawn() && PC->GetViewTarget() != PC->GetPawn())
+	{
+		PC->SetViewTargetWithBlend(PC->GetPawn(), 0.6f, VTBlend_Cubic);
+	}
+	if (PC->PlayerCameraManager)
+	{
+		PC->PlayerCameraManager->StopCameraFade();
+	}
+	SetPlayerInputBlocked(false);
+	ACleanCutActionPlayerController::KeepGameInputWithCursor(PC);
 }
 
 void ALTTMessDirector::CloseEndScreen()
@@ -697,7 +715,8 @@ void ALTTMessDirector::LoadNextLevel()
 		return;
 	}
 	UE_LOG(LogTemp, Log, TEXT("MessDirector: set is clean, opening %s."), *NextLevelName.ToString());
-	UGameplayStatics::SetGamePaused(this, false);
+	// Input mode lives on the viewport and survives OpenLevel; don't carry the end screen's into Phase 2.
+	ACleanCutActionPlayerController::ResetGameInput(UGameplayStatics::GetPlayerController(this, 0));
 	UGameplayStatics::OpenLevel(this, NextLevelName);
 }
 

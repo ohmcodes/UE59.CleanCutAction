@@ -1,6 +1,7 @@
 // Clean! Cut! Action!
 
 #include "Shoot/LTTSceneDirector.h"
+#include "CleanCutActionPlayerController.h"
 #include "Shoot/LTTEffectStation.h"
 #include "Shoot/LTTFilmActor.h"
 #include "Shoot/LTTFilmCamera.h"
@@ -61,6 +62,8 @@ ALTTSceneDirector* ALTTSceneDirector::Get(const UObject* WorldContext)
 void ALTTSceneDirector::BeginPlay()
 {
 	Super::BeginPlay();
+	// Arriving from Phase 1's end screen leaves the viewport in UI-only input with the cursor up.
+	ACleanCutActionPlayerController::ResetGameInput(UGameplayStatics::GetPlayerController(this, 0));
 	Scene = SceneData ? SceneData.Get() : ULTTSceneData::MakeScene42(this);
 	TakeMeter = MeterStart;
 	CreateHUD();
@@ -644,7 +647,7 @@ void ALTTSceneDirector::StartFinale()
 	bFrameChecksPaused = true;
 	bFinale = true;
 	UpcomingCue = ELTTCue::None;
-	SetPlayerInputBlocked(true);
+	// The player keeps moving through the wrap; frame checks are already off, so nothing can cost points now.
 	if (WrapSound)
 	{
 		UGameplayStatics::PlaySound2D(this, WrapSound);
@@ -689,12 +692,8 @@ void ALTTSceneDirector::ShowEndScreen()
 	{
 		HUDWidget->SetVisibility(ESlateVisibility::Collapsed);
 	}
-	UGameplayStatics::SetGamePaused(this, true);
-	PC->SetShowMouseCursor(true);
-	FInputModeUIOnly Mode;
-	Mode.SetWidgetToFocus(EndScreenWidget->TakeWidget());
-	Mode.SetLockMouseToViewportBehavior(EMouseLockMode::DoNotLock);
-	PC->SetInputMode(Mode);
+	// Not paused and no UI-only focus: the player can keep walking the set behind the end screen.
+	ACleanCutActionPlayerController::KeepGameInputWithCursor(PC);
 }
 
 // ---- CUT / retake ----
