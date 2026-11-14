@@ -238,6 +238,73 @@ namespace LTTTheme
 		Button->SetColorAndOpacity(FLinearColor::White);
 	}
 
+	// ---- Designer versions: every LTT widget class has a WBP_ child in /Game/_CleanCutAction/Blueprints/Widgets ----
+	// Returns that WBP class when Current is unset or still the bare C++ class T; otherwise Current (a class picked in
+	// Details wins). Falls back to T if the asset is missing. Add the WBP to MapsToCook when only this loads it.
+	template <class T>
+	UClass* PreferWBP(UClass* Current, const TCHAR* WBPName)
+	{
+		if (Current && Current != T::StaticClass())
+		{
+			return Current;
+		}
+		const FString Path = FString::Printf(TEXT("/Game/_CleanCutAction/Blueprints/Widgets/%s.%s_C"), WBPName, WBPName);
+		if (UClass* Found = LoadClass<T>(nullptr, *Path))
+		{
+			return Found;
+		}
+		return T::StaticClass();
+	}
+
+	// ---- Flat white UI icons in /Game/_CleanCutAction/UI/Icons (T_Icon_Close, T_Icon_MusicOn, ...), tinted ----
+	inline UTexture2D* UIIcon(const TCHAR* Name)
+	{
+		const FString Path = FString::Printf(TEXT("/Game/_CleanCutAction/UI/Icons/%s.%s"), Name, Name);
+		return LoadObject<UTexture2D>(nullptr, *Path);
+	}
+
+	inline FSlateBrush UIIconBrush(const TCHAR* Name, float Size)
+	{
+		FSlateBrush Brush;
+		Brush.SetResourceObject(UIIcon(Name));
+		Brush.ImageSize = FVector2D(Size, Size); // on the brush so a WBP_ bake keeps it
+		return Brush;
+	}
+
+	/** Round cream button holding a brown-tinted UI icon (close X, music on/off). The icon is named <Name>_Icon. */
+	inline UButton* MakeRoundIconButton(UWidgetTree* Tree, FName Name, const TCHAR* IconName, float IconSize, float Padding = 10.f)
+	{
+		UButton* Button = Tree->ConstructWidget<UButton>(UButton::StaticClass(), Name);
+		StyleButton(Button, ButtonCream());
+		FButtonStyle Style = Button->GetStyle();
+		Style.SetNormalPadding(FMargin(Padding)).SetPressedPadding(FMargin(Padding, Padding + 2.f, Padding, Padding - 2.f));
+		Button->SetStyle(Style);
+		UImage* Icon = Tree->ConstructWidget<UImage>(UImage::StaticClass(), *(Name.ToString() + TEXT("_Icon")));
+		Icon->SetBrush(UIIconBrush(IconName, IconSize));
+		Icon->SetColorAndOpacity(Ink());
+		Button->SetContent(Icon);
+		return Button;
+	}
+
+	/** Shrinks Widget (render scale around its centre) until its desired size fits the space, minus Margin on each side.
+	 *  Call every tick; full size whenever there's room. Hit testing follows the render scale. */
+	inline void FitToScreen(UWidget* Widget, const FGeometry& Space, float Margin, float MinScale = 0.3f)
+	{
+		if (!Widget)
+		{
+			return;
+		}
+		const FVector2D Avail = Space.GetLocalSize() - FVector2D(2.f * Margin);
+		const FVector2D Want = Widget->GetDesiredSize();
+		float Fit = 1.f;
+		if (Want.X > 1.f && Want.Y > 1.f && Avail.X > 1.f && Avail.Y > 1.f)
+		{
+			Fit = FMath::Clamp(FMath::Min(Avail.X / Want.X, Avail.Y / Want.Y), MinScale, 1.f);
+		}
+		Widget->SetRenderTransformPivot(FVector2D(0.5f, 0.5f));
+		Widget->SetRenderScale(FVector2D(Fit, Fit));
+	}
+
 	// ---- Text entry ----
 	/** White pill text field with the button edge; brown outline + gold glow when focused. */
 	inline void StyleTextBox(UEditableTextBox* Box, int32 Size)

@@ -1,11 +1,15 @@
 // Clean! Cut! Action!
 
 #include "Interaction/LTTMessDirector.h"
+#include "UI/LTTUITheme.h"
 #include "CleanCutActionPlayerController.h"
 #include "Interaction/LTTInteractableBase.h"
 #include "Interaction/LTTCleanupHUD.h"
 #include "Interaction/LTTEndScreen.h"
 #include "UI/LTTBriefingScreen.h"
+#include "UI/LTTEndingOverlay.h"
+#include "Engine/OverlapResult.h"
+#include "Engine/StaticMesh.h"
 #include "HAL/IConsoleManager.h"
 #include "UObject/ObjectSaveContext.h"
 #include "Engine/Level.h"
@@ -52,6 +56,7 @@ ALTTMessDirector::ALTTMessDirector()
 	HUDClass = ULTTCleanupHUD::StaticClass();
 	EndScreenClass = ULTTEndScreen::StaticClass();
 	BriefingClass = ULTTBriefingScreen::StaticClass();
+	EndingOverlayClass = ULTTEndingOverlay::StaticClass();
 }
 
 ALTTMessDirector* ALTTMessDirector::Get(const UObject* WorldContext)
@@ -111,6 +116,23 @@ void ALTTMessDirector::SetupTasks()
 		{
 			Prop->SnapToHome(); // calls NotifyPlaced
 		}
+	}
+
+	// The ground floor, for the "fell under the map" test: the lowest bottom of any prop at home.
+	LowestHomeZ = TNumericLimits<float>::Max();
+	for (const ALTTInteractableBase* Prop : All)
+	{
+		const FBoxSphereBounds& B = Prop->Mesh->Bounds;
+		LowestHomeZ = FMath::Min(LowestHomeZ, static_cast<float>(B.Origin.Z - B.BoxExtent.Z));
+	}
+	if (All.Num() == 0)
+	{
+		LowestHomeZ = GetActorLocation().Z;
+	}
+	if (bRescueStuckProps)
+	{
+		const float FirstCheck = (bEarthquakeOnStart ? EarthquakeDelay : 0.f) + SettleTime + RescueInterval;
+		GetWorldTimerManager().SetTimer(RescueTimer, this, &ALTTMessDirector::RescueTick, RescueInterval, true, FirstCheck);
 	}
 
 	UE_LOG(LogTemp, Log, TEXT("MessDirector: %d cleanup props."), Tasks.Num());
@@ -253,6 +275,19 @@ bool ALTTMessDirector::ShowHint()
 	}
 
 	ClearHint();
+
+	// Pointed at this one last time too and it's still not back: it's likely clipped into something or under
+	// the map, so bring it to the middle of its floor where the player can reach it.
+	if (bMoveRepeatHintToMiddle && LastHinted.Get() == Best)
+	{
+		MoveHintedPropToMiddle(Best);
+		LastHinted.Reset();
+	}
+	else
+	{
+		LastHinted = Best;
+	}
+
 	const float Now = GetWorld()->GetTimeSeconds();
 	HintTarget = Best;
 	HintEndTime = Now + HintDuration;
@@ -290,6 +325,10 @@ void ALTTMessDirector::ClearHint()
 	GetWorldTimerManager().ClearTimer(HintTimer);
 	ALTTInteractableBase* Target = HintTarget.Get();
 	HintTarget.Reset();
+	if (IsValid(Target) && Target->IsHeld() && LastHinted.Get() == Target)
+	{
+		LastHinted.Reset(); // the player found it, so it isn't stuck
+	}
 	if (!IsValid(Target) || !Target->Mesh || Target->IsHeld())
 	{
 		return;
@@ -606,6 +645,7 @@ void ALTTMessDirector::ShowEndScreen(bool bSetClean)
 void ALTTMessDirector::CloseEndScreen()
 {
 	GetWorldTimerManager().ClearTimer(EndScreenTimer);
+	bEndingPlaying = false;
 	if (EndScreenWidget)
 	{
 		EndScreenWidget->RemoveFromParent();
@@ -753,6 +793,10 @@ void ALTTMessDirector::FinishIntro()
 		return;
 	}
 	bIntroDone = true;
+	if (bRescueStuckProps)
+	{
+		RescueStuckProps(); // still black: anything the earthquake pushed through the floor or into furniture comes back unseen
+	}
 	APlayerController* PC = UGameplayStatics::GetPlayerController(this, 0);
 	if (PC && PC->PlayerCameraManager)
 	{
@@ -908,6 +952,7 @@ void ALTTMessDirector::PreSave(FObjectPreSaveContext ObjectSaveContext)
 void ALTTMessDirector::PlayEnding(bool bSetClean)
 {
 	bEndingSetClean = bSetClean;
+	bEndingFinished = false;
 	const bool bWantShots = bSetClean || bPlayEndingOnTimeUp;
 	if (bWantShots && EndSequence.IsNull())
 	{
@@ -916,7 +961,7 @@ void ALTTMessDirector::PlayEnding(bool bSetClean)
 	APlayerController* PC = UGameplayStatics::GetPlayerController(this, 0);
 	if (!bWantShots || !HasEndingShots() || !PC || !PC->PlayerCameraManager)
 	{
-		ShowEndScreen(bSetClean);
+		FinishEnding();
 		return;
 	}
 
@@ -926,6 +971,8 @@ void ALTTMessDirector::PlayEnding(bool bSetClean)
 		HUDWidget->SetVisibility(ESlateVisibility::Collapsed);
 	}
 	SetPlayerInputBlocked(true);
+	bEndingPlaying = true;
+	ShowEndingOverlay(bAllowSkipEnding);
 
 	if (EndingFadeTime > 0.f)
 	{
@@ -1022,8 +1069,382 @@ void ALTTMessDirector::FadeOutTourShot()
 void ALTTMessDirector::HandleEndingFinished()
 {
 	GetWorldTimerManager().ClearTimer(EndingTimer);
+	FinishEnding();
+}
+
+void ALTTMessDirector::ShowEndingOverlay(bool bWithSkip)
+{
+	APlayerController* PC = UGameplayStatics::GetPlayerController(this, 0);
+	if (!PC || !PC->IsLocalController() || !EndingOverlayClass)
+	{
+		return;
+	}
+	if (!EndingOverlay || !EndingOverlay->IsInViewport())
+	{
+		EndingOverlay = CreateWidget<ULTTEndingOverlay>(PC, LTTTheme::PreferWBP<ULTTEndingOverlay>(EndingOverlayClass, TEXT("WBP_EndingOverlay")));
+		if (!EndingOverlay)
+		{
+			return;
+		}
+		EndingOverlay->Setup(this);
+		EndingOverlay->AddToViewport(30); // over the end screen (10), under the leaderboard (100)
+	}
+	EndingOverlay->SetSkipVisible(bWithSkip);
+	if (bWithSkip)
+	{
+		// The shots take no game input anyway; UI focus lets Space / Enter / gamepad A skip, and the cursor tap SKIP.
+		FInputModeUIOnly Mode;
+		Mode.SetWidgetToFocus(EndingOverlay->TakeWidget());
+		Mode.SetLockMouseToViewportBehavior(EMouseLockMode::DoNotLock);
+		PC->SetInputMode(Mode);
+		PC->SetShowMouseCursor(true);
+	}
+}
+
+void ALTTMessDirector::SkipEnding()
+{
+	if (!bEndingPlaying || bEndingFinished)
+	{
+		return;
+	}
+	GetWorldTimerManager().ClearTimer(EndingTimer);
+	APlayerController* PC = UGameplayStatics::GetPlayerController(this, 0);
+	if (EndingPlayer)
+	{
+		EndingPlayer->Pause(); // hold where it is under the end screen
+	}
+	else if (PC)
+	{
+		// Straight to the last tour shot (it stays up under the end screen).
+		for (int32 i = TourCameras.Num() - 1; i >= 0; --i)
+		{
+			if (IsValid(TourCameras[i]))
+			{
+				PC->SetViewTarget(TourCameras[i]);
+				TourIndex = i;
+				break;
+			}
+		}
+	}
+	if (PC && PC->PlayerCameraManager)
+	{
+		PC->PlayerCameraManager->StopCameraFade(); // no black frame left over from a cut
+	}
+	UE_LOG(LogTemp, Log, TEXT("MessDirector: ending skipped."));
+	FinishEnding();
+}
+
+void ALTTMessDirector::FinishEnding()
+{
+	if (bEndingFinished)
+	{
+		return;
+	}
+	bEndingFinished = true;
+	bEndingPlaying = false;
+	GetWorldTimerManager().ClearTimer(EndingTimer);
+
+	if (bEndingSetClean && bConfettiOnSetClean)
+	{
+		// Confetti first, then the end screen comes up under the falling pieces.
+		ShowEndingOverlay(false);
+		if (EndingOverlay)
+		{
+			EndingOverlay->PlayConfetti();
+		}
+		if (ConfettiLeadTime > 0.f)
+		{
+			const FTimerDelegate Show = FTimerDelegate::CreateUObject(this, &ALTTMessDirector::ShowEndScreen, bEndingSetClean);
+			GetWorldTimerManager().SetTimer(EndScreenTimer, Show, ConfettiLeadTime, false);
+			return;
+		}
+	}
+	else if (EndingOverlay)
+	{
+		EndingOverlay->SetSkipVisible(false);
+	}
 	ShowEndScreen(bEndingSetClean);
 }
+
+// ---- Stuck props ----
+
+namespace
+{
+	/** The prop's mesh bounds in its own space (scaled), and the world centre of that box. */
+	void LTTLocalBox(const ALTTInteractableBase* Prop, FVector& OutExtent, FVector& OutWorldCentre)
+	{
+		const UStaticMeshComponent* M = Prop->Mesh;
+		const FBoxSphereBounds Local = M->GetStaticMesh() ? M->GetStaticMesh()->GetBounds() : FBoxSphereBounds(FVector::ZeroVector, FVector(10.f), 10.f);
+		OutExtent = Local.BoxExtent * M->GetComponentScale().GetAbs();
+		OutWorldCentre = M->GetComponentTransform().TransformPosition(Local.Origin);
+	}
+
+	FCollisionObjectQueryParams LTTSolidObjects()
+	{
+		FCollisionObjectQueryParams Types;
+		Types.AddObjectTypesToQuery(ECC_WorldStatic);
+		Types.AddObjectTypesToQuery(ECC_WorldDynamic);
+		Types.AddObjectTypesToQuery(ECC_PhysicsBody);
+		return Types;
+	}
+}
+
+bool ALTTMessDirector::IsPropStuck(const ALTTInteractableBase* Prop) const
+{
+	if (!IsValid(Prop) || !Prop->Mesh || !Prop->HasHome() || Prop->IsPlaced() || Prop->IsHeld() || Prop->IsBrokenInPlace())
+	{
+		return false;
+	}
+	const UStaticMeshComponent* M = Prop->Mesh;
+	const FBoxSphereBounds& B = M->Bounds;
+
+	// Under the map: its top is below the ground floor.
+	if (B.Origin.Z + B.BoxExtent.Z < LowestHomeZ - UnderFloorMargin)
+	{
+		return true;
+	}
+	// Flew out of the set (out a window, through a wall).
+	if (FVector::Dist2D(B.Origin, Prop->HomeTransform.GetLocation()) > MaxDistanceFromSet)
+	{
+		return true;
+	}
+	// Still moving: physics may yet push it out of whatever it's in.
+	if (M->IsSimulatingPhysics() && M->GetPhysicsLinearVelocity().SizeSquared() > FMath::Square(40.f))
+	{
+		return false;
+	}
+
+	// Inside something: a small sphere at the middle of the prop (a third of its thinnest side, so a plate lying on
+	// a table doesn't count) overlaps a wall, the floor or another prop's collision.
+	// Resting where it belongs (a pencil on its home table) is never "inside" anything.
+	if (FVector::Dist(Prop->GetActorLocation(), Prop->HomeTransform.GetLocation()) < 15.f)
+	{
+		return false;
+	}
+	FVector Extent, Centre;
+	LTTLocalBox(Prop, Extent, Centre);
+	// Too thin to tell resting contact from being inside (a pencil lying on the floor touches it at its middle).
+	if (Extent.GetMin() < 2.f)
+	{
+		return false;
+	}
+	const float Radius = FMath::Clamp(Extent.GetMin() * 0.35f, 1.f, 15.f);
+	FCollisionQueryParams Params(SCENE_QUERY_STAT(LTTStuckProp), false, Prop);
+	TArray<FOverlapResult> Overlaps;
+	GetWorld()->OverlapMultiByObjectType(Overlaps, Centre, FQuat::Identity, LTTSolidObjects(), FCollisionShape::MakeSphere(Radius), Params);
+	const ECollisionChannel MyType = M->GetCollisionObjectType();
+	for (const FOverlapResult& O : Overlaps)
+	{
+		const UPrimitiveComponent* Other = O.GetComponent();
+		if (!Other || Other->GetOwner() == Prop || Other->GetCollisionResponseToChannel(MyType) != ECR_Block)
+		{
+			continue;
+		}
+		if (const ALTTInteractableBase* OtherProp = Cast<ALTTInteractableBase>(Other->GetOwner()))
+		{
+			if (OtherProp->IsHeld())
+			{
+				continue; // the player is carrying it through
+			}
+			if (OtherProp->GetPropRadius() < Prop->GetPropRadius())
+			{
+				continue; // a cup sitting on a chair's seat: the small one is the stuck one, if anything
+			}
+		}
+		return true;
+	}
+	return false;
+}
+
+bool ALTTMessDirector::FindRescueSpot(const ALTTInteractableBase* Prop, FVector& OutLocation) const
+{
+	return FindFreeSpotNear(Prop, Prop->HomeTransform.GetLocation(), OutLocation);
+}
+
+FVector ALTTMessDirector::GetHintRescueAnchor(const ALTTInteractableBase* Prop) const
+{
+	if (IsValid(HintRescueSpot))
+	{
+		return HintRescueSpot->GetActorLocation() + FVector(0.f, 0.f, 100.f); // search from about chest height
+	}
+	// Middle of the area spanned by the home spots on the prop's floor, at that floor's height (lowest home there).
+	const float HomeZ = Prop->HomeTransform.GetLocation().Z;
+	FBox Area(ForceInit);
+	for (const ALTTInteractableBase* Other : Tasks)
+	{
+		if (IsValid(Other) && Other->HasHome())
+		{
+			const FVector L = Other->HomeTransform.GetLocation();
+			if (FMath::Abs(L.Z - HomeZ) <= HintFloorTolerance)
+			{
+				Area += L;
+			}
+		}
+	}
+	if (!Area.IsValid)
+	{
+		return Prop->HomeTransform.GetLocation();
+	}
+	const FVector Centre = Area.GetCenter();
+	return FVector(Centre.X, Centre.Y, Area.Min.Z + 100.f); // about chest height, above chairs
+}
+
+void ALTTMessDirector::MoveHintedPropToMiddle(ALTTInteractableBase* Prop)
+{
+	const FVector Anchor = GetHintRescueAnchor(Prop);
+	FVector Location;
+	if (!FindFreeSpotNear(Prop, Anchor, Location) && !FindRescueSpot(Prop, Location))
+	{
+		// Nowhere free: drop it from above the middle.
+		Location = Anchor + FVector(0.f, 0.f, Prop->GetPropRadius() + 60.f);
+	}
+	UE_LOG(LogTemp, Log, TEXT("MessDirector: hinted %s twice, moved from %s to %s."), *Prop->GetName(), *Prop->GetActorLocation().ToCompactString(), *Location.ToCompactString());
+	Prop->SetActorLocationAndRotation(Location, Prop->HomeTransform.GetRotation(), false, nullptr, ETeleportType::TeleportPhysics);
+	if (UStaticMeshComponent* M = Prop->Mesh)
+	{
+		if (M->IsSimulatingPhysics())
+		{
+			M->SetPhysicsLinearVelocity(FVector::ZeroVector);
+			M->SetPhysicsAngularVelocityInDegrees(FVector::ZeroVector);
+			M->WakeAllRigidBodies();
+		}
+	}
+	SuspectProps.Remove(Prop);
+}
+
+bool ALTTMessDirector::FindFreeSpotNear(const ALTTInteractableBase* Prop, const FVector& Anchor, FVector& OutLocation) const
+{
+	const UStaticMeshComponent* M = Prop->Mesh;
+	const FTransform& Home = Prop->HomeTransform;
+	const FBoxSphereBounds Local = M->GetStaticMesh() ? M->GetStaticMesh()->GetBounds() : FBoxSphereBounds(FVector::ZeroVector, FVector(10.f), 10.f);
+	// The prop goes back the way it stands at home: its box at the home rotation.
+	const FTransform HomeRotScale(Home.GetRotation(), FVector::ZeroVector, Home.GetScale3D());
+	const FBox Rotated = FBox(Local.Origin - Local.BoxExtent, Local.Origin + Local.BoxExtent).TransformBy(HomeRotScale);
+	const FVector HalfSize = Rotated.GetExtent();
+	const FVector CentreOffset = Rotated.GetCenter(); // actor origin -> box centre
+
+	const FVector HomeLoc = Anchor;
+	FCollisionQueryParams Params(SCENE_QUERY_STAT(LTTRescueSpot), false, Prop);
+	static const float Rings[] = { 0.f, 70.f, 140.f, 220.f, 320.f };
+	for (const float Ring : Rings)
+	{
+		const int32 Steps = Ring <= 0.f ? 1 : 10;
+		for (int32 i = 0; i < Steps; ++i)
+		{
+			const float Angle = 2.f * PI * i / Steps;
+			const FVector Spot = HomeLoc + CentreOffset + FVector(FMath::Cos(Angle), FMath::Sin(Angle), 0.f) * Ring;
+			// Same room as the home spot: nothing solid in between.
+			const FVector EyeHome = HomeLoc + CentreOffset + FVector(0.f, 0.f, 30.f);
+			if (Ring > 0.f && GetWorld()->LineTraceTestByChannel(EyeHome, FVector(Spot.X, Spot.Y, EyeHome.Z), ECC_Visibility, Params))
+			{
+				continue;
+			}
+			// Whatever is underneath (floor, table, counter).
+			FHitResult Hit;
+			const FVector Start(Spot.X, Spot.Y, EyeHome.Z);
+			const FVector End(Spot.X, Spot.Y, HomeLoc.Z - 800.f);
+			if (!GetWorld()->LineTraceSingleByChannel(Hit, Start, End, ECC_Visibility, Params))
+			{
+				continue;
+			}
+			const FVector Centre(Spot.X, Spot.Y, Hit.ImpactPoint.Z + HalfSize.Z + 4.f);
+			if (Centre.Z - HalfSize.Z < LowestHomeZ - UnderFloorMargin)
+			{
+				continue; // found a hole, not a floor
+			}
+			if (GetWorld()->OverlapAnyTestByObjectType(Centre, FQuat::Identity, LTTSolidObjects(), FCollisionShape::MakeBox(HalfSize + FVector(1.f)), Params))
+			{
+				continue; // something's already there
+			}
+			OutLocation = Centre - CentreOffset;
+			return true;
+		}
+	}
+	return false;
+}
+
+void ALTTMessDirector::MoveStuckProp(ALTTInteractableBase* Prop)
+{
+	FVector Location;
+	if (!FindRescueSpot(Prop, Location))
+	{
+		// Nowhere free nearby: drop it from just above home, like a prop that fell out of the world.
+		Location = Prop->HomeTransform.GetLocation() + FVector(0.f, 0.f, Prop->GetPropRadius() + 40.f);
+	}
+	UE_LOG(LogTemp, Log, TEXT("MessDirector: %s was stuck at %s, moved to %s."), *Prop->GetName(), *Prop->GetActorLocation().ToCompactString(), *Location.ToCompactString());
+	Prop->SetActorLocationAndRotation(Location, Prop->HomeTransform.GetRotation(), false, nullptr, ETeleportType::TeleportPhysics);
+	if (UStaticMeshComponent* M = Prop->Mesh)
+	{
+		if (M->IsSimulatingPhysics())
+		{
+			M->SetPhysicsLinearVelocity(FVector::ZeroVector);
+			M->SetPhysicsAngularVelocityInDegrees(FVector::ZeroVector);
+			M->WakeAllRigidBodies();
+		}
+	}
+	SuspectProps.Remove(Prop);
+}
+
+int32 ALTTMessDirector::RescueStuckProps()
+{
+	TArray<ALTTInteractableBase*> Stuck;
+	for (ALTTInteractableBase* Prop : Tasks)
+	{
+		if (IsPropStuck(Prop))
+		{
+			Stuck.Add(Prop);
+		}
+	}
+	for (ALTTInteractableBase* Prop : Stuck)
+	{
+		MoveStuckProp(Prop);
+	}
+	return Stuck.Num();
+}
+
+namespace LTTRescueCountsPrivate
+{
+	// How often each prop was moved during play. Keyed weakly, so props from an earlier PIE session just go stale.
+	static TMap<TWeakObjectPtr<ALTTInteractableBase>, int32> Counts;
+	static constexpr int32 MaxPerProp = 3;
+}
+
+void ALTTMessDirector::RescueTick()
+{
+	if (!bRescueStuckProps || bAllPlaced)
+	{
+		return;
+	}
+	// Moved only when stuck on two checks in a row, so a prop just tumbling through a doorway is left alone.
+	TSet<TWeakObjectPtr<ALTTInteractableBase>> NewSuspects;
+	TArray<ALTTInteractableBase*> Confirmed;
+	for (ALTTInteractableBase* Prop : Tasks)
+	{
+		if (IsPropStuck(Prop))
+		{
+			if (SuspectProps.Contains(Prop))
+			{
+				Confirmed.Add(Prop);
+			}
+			else
+			{
+				NewSuspects.Add(Prop);
+			}
+		}
+	}
+	SuspectProps = MoveTemp(NewSuspects);
+	for (ALTTInteractableBase* Prop : Confirmed)
+	{
+		// A prop that keeps coming back stuck is a false positive (odd collision), not a real one: stop moving it.
+		int32& Count = LTTRescueCountsPrivate::Counts.FindOrAdd(Prop);
+		if (++Count > LTTRescueCountsPrivate::MaxPerProp)
+		{
+			continue;
+		}
+		MoveStuckProp(Prop);
+	}
+}
+
 
 // ---- Cheat ----
 

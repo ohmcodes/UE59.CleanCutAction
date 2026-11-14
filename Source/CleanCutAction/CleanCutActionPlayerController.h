@@ -44,6 +44,11 @@ public:
 	/** Returns true if the player should use UMG touch controls (mobile / touch-first browser, or bForceTouchControls). */
 	bool ShouldUseTouchControls() const;
 
+	/** Unstuck: puts the pawn back where it first spawned (standing, facing the spawn direction, no velocity).
+	 *  A held prop comes along. Called by the pause menu's Unstuck button. */
+	UFUNCTION(BlueprintCallable, Category = "Unstuck")
+	void TeleportToSpawn();
+
 	/** Gives input back to the game after a menu closes. Touch keeps Game+UI and the cursor so the touch buttons still take taps. */
 	void RestoreGameInput();
 
@@ -64,6 +69,13 @@ protected:
 	/** Pointer to the mobile controls widget */
 	UPROPERTY()
 	TObjectPtr<UUserWidget> MobileControlsWidget;
+
+	/** Music on/off button shown with the touch controls, left of the pause button (defaults to ULTTMusicToggle). Empty = none. */
+	UPROPERTY(EditAnywhere, Category = "Input|Touch Controls")
+	TSubclassOf<UUserWidget> MusicToggleClass;
+
+	UPROPERTY(Transient)
+	TObjectPtr<UUserWidget> MusicToggleWidget;
 
 	/** If true, the player will use UMG touch controls even if not playing on mobile platforms */
 	UPROPERTY(EditAnywhere, Config, Category = "Input|Touch Controls")
@@ -90,6 +102,13 @@ protected:
 	TObjectPtr<UInputMappingContext> RuntimePauseContext;
 
 	void HandlePauseInput();
+
+	virtual void OnPossess(APawn* InPawn) override;
+
+	/** Where the pawn was when first possessed (TeleportToSpawn target). */
+	FTransform SpawnTransform;
+	FRotator SpawnControlRotation = FRotator::ZeroRotator;
+	bool bHasSpawnTransform = false;
 
 	/** Gameplay initialization */
 	virtual void BeginPlay() override;

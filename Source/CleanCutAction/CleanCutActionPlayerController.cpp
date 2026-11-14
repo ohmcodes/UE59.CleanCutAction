@@ -7,18 +7,24 @@
 #include "InputAction.h"
 #include "Kismet/GameplayStatics.h"
 #include "UI/LTTPauseMenu.h"
+#include "UI/LTTMusicToggle.h"
+#include "UI/LTTUITheme.h"
 #include "Engine/LocalPlayer.h"
 #include "InputMappingContext.h"
 #include "CleanCutActionCameraManager.h"
 #include "Blueprint/UserWidget.h"
 #include "CleanCutAction.h"
 #include "Widgets/Input/SVirtualJoystick.h"
+#include "GameFramework/Character.h"
+#include "GameFramework/CharacterMovementComponent.h"
+#include "GameFramework/GameModeBase.h"
 
 ACleanCutActionPlayerController::ACleanCutActionPlayerController()
 {
 	// set the player camera manager class
 	PlayerCameraManagerClass = ACleanCutActionCameraManager::StaticClass();
 	PauseMenuClass = ULTTPauseMenu::StaticClass();
+	MusicToggleClass = ULTTMusicToggle::StaticClass();
 }
 
 void ACleanCutActionPlayerController::BeginPlay()
@@ -41,6 +47,16 @@ void ACleanCutActionPlayerController::BeginPlay()
 
 			UE_LOG(LogCleanCutAction, Error, TEXT("Could not spawn mobile controls widget."));
 
+		}
+
+		// Music on/off next to the touch pause button (the pause menu has one too, but it's two taps away).
+		if (MusicToggleClass)
+		{
+			MusicToggleWidget = CreateWidget<UUserWidget>(this, LTTTheme::PreferWBP<ULTTMusicToggle>(MusicToggleClass, TEXT("WBP_MusicToggle")));
+			if (MusicToggleWidget)
+			{
+				MusicToggleWidget->AddToPlayerScreen(1);
+			}
 		}
 
 	}
@@ -143,6 +159,62 @@ void ACleanCutActionPlayerController::ClosePauseMenu()
 	PauseMenuWidget = nullptr;
 	UGameplayStatics::SetGamePaused(this, false);
 	RestoreGameInput();
+}
+
+void ACleanCutActionPlayerController::OnPossess(APawn* InPawn)
+{
+	Super::OnPossess(InPawn);
+	if (InPawn && !bHasSpawnTransform)
+	{
+		SpawnTransform = InPawn->GetActorTransform();
+		SpawnControlRotation = FRotator(0.f, InPawn->GetActorRotation().Yaw, 0.f);
+		bHasSpawnTransform = true;
+	}
+}
+
+void ACleanCutActionPlayerController::TeleportToSpawn()
+{
+	APawn* MyPawn = GetPawn();
+	if (!MyPawn)
+	{
+		return;
+	}
+
+	FVector Location;
+	FRotator Rotation;
+	if (bHasSpawnTransform)
+	{
+		Location = SpawnTransform.GetLocation();
+		Rotation = SpawnControlRotation;
+	}
+	else
+	{
+		// Possessed before we could record it: use the level's player start.
+		AGameModeBase* GameMode = GetWorld() ? GetWorld()->GetAuthGameMode() : nullptr;
+		AActor* Start = GameMode ? GameMode->FindPlayerStart(this) : nullptr;
+		if (!Start)
+		{
+			return;
+		}
+		Location = Start->GetActorLocation();
+		Rotation = FRotator(0.f, Start->GetActorRotation().Yaw, 0.f);
+	}
+
+	if (ACharacter* ActionCharacter = Cast<ACharacter>(MyPawn))
+	{
+		ActionCharacter->UnCrouch();
+		if (UCharacterMovementComponent* Move = ActionCharacter->GetCharacterMovement())
+		{
+			Move->StopMovementImmediately();
+			Move->bWantsToCrouch = false;
+		}
+	}
+	// TeleportTo nudges the pawn to a free spot if a prop now sits on the spawn point; force it if there's none.
+	if (!MyPawn->TeleportTo(Location, FRotator(0.f, Rotation.Yaw, 0.f)))
+	{
+		MyPawn->SetActorLocationAndRotation(Location, FRotator(0.f, Rotation.Yaw, 0.f), false, nullptr, ETeleportType::TeleportPhysics);
+	}
+	SetControlRotation(Rotation);
 }
 
 void ACleanCutActionPlayerController::RestoreGameInput()

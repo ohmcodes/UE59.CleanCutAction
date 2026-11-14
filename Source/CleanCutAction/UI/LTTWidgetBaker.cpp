@@ -6,7 +6,11 @@
 #include "Interaction/LTTEndScreen.h"
 #include "Interaction/LTTCleanupHUD.h"
 #include "UI/LTTLeaderboardPanel.h"
+#include "UI/LTTVirtualKeyboard.h"
+#include "UI/LTTMusicToggle.h"
+#include "UI/LTTEndingOverlay.h"
 #include "Components/PanelWidget.h"
+#include "Components/PanelSlot.h"
 #include "Blueprint/WidgetTree.h"
 #include "Components/TextBlock.h"
 #include "Components/Widget.h"
@@ -17,6 +21,20 @@
 #include "WidgetBlueprint.h"
 #include "Kismet2/BlueprintEditorUtils.h"
 #include "Kismet2/KismetEditorUtilities.h"
+#include "Editor.h"
+#endif
+
+#if WITH_EDITOR
+namespace
+{
+	/** True if Native binds a widget called Name (BindWidget / BindWidgetOptional). Plain properties that just
+	 *  cache a widget must NOT become Blueprint variables: the generated variable would clash with them. */
+	bool BakerIsBoundWidget(const UClass* Native, FName Name)
+	{
+		const FObjectPropertyBase* Prop = FindFProperty<FObjectPropertyBase>(Native, Name);
+		return Prop && (Prop->HasMetaData(TEXT("BindWidget")) || Prop->HasMetaData(TEXT("BindWidgetOptional")));
+	}
+}
 #endif
 
 UUserWidget* ULTTWidgetBaker::BuildTempLayout(UObject* WidgetBlueprint, UClass*& OutNative, FString& Error)
@@ -68,6 +86,18 @@ UUserWidget* ULTTWidgetBaker::BuildTempLayout(UObject* WidgetBlueprint, UClass*&
 	{
 		Board->BuildDefaultLayout();
 	}
+	else if (ULTTVirtualKeyboard* Keyboard = Cast<ULTTVirtualKeyboard>(Temp))
+	{
+		Keyboard->BuildDefaultLayout();
+	}
+	else if (ULTTMusicToggle* Music = Cast<ULTTMusicToggle>(Temp))
+	{
+		Music->BuildDefaultLayout();
+	}
+	else if (ULTTEndingOverlay* Ending = Cast<ULTTEndingOverlay>(Temp))
+	{
+		Ending->BuildDefaultLayout();
+	}
 	else
 	{
 		Error = FString::Printf(TEXT("ERROR: %s has no code layout to bake"), *Native->GetName());
@@ -88,6 +118,10 @@ UUserWidget* ULTTWidgetBaker::BuildTempLayout(UObject* WidgetBlueprint, UClass*&
 FString ULTTWidgetBaker::BakeWidgetIntoWidgetBlueprint(UObject* WidgetBlueprint, FName WidgetName, FName InsertBefore, FName ParentPanel)
 {
 #if WITH_EDITOR
+	if (GEditor && GEditor->PlayWorld)
+	{
+		return TEXT("ERROR: stop Play-In-Editor first (recompiling widgets while PIE runs crashes the editor when PIE ends)");
+	}
 	UWidgetBlueprint* WBP = Cast<UWidgetBlueprint>(WidgetBlueprint);
 	if (!WBP || !WBP->WidgetTree)
 	{
@@ -138,6 +172,8 @@ FString ULTTWidgetBaker::BakeWidgetIntoWidgetBlueprint(UObject* WidgetBlueprint,
 	WBP->Modify();
 	WBP->WidgetTree->Modify();
 	Target->Modify();
+	// Keep the code layout's slot settings (anchors, position, padding, alignment...): inserting makes a fresh slot.
+	UPanelSlot* SlotTemplate = Source->Slot ? DuplicateObject<UPanelSlot>(Source->Slot, GetTransientPackage()) : nullptr;
 	Source->RemoveFromParent();
 
 	// Move each widget into the Blueprint's tree (slots are outered to their panel and travel with it).
@@ -166,7 +202,7 @@ FString ULTTWidgetBaker::BakeWidgetIntoWidgetBlueprint(UObject* WidgetBlueprint,
 				Text->SetText(FText::FromString(Text->GetName()));
 			}
 		}
-		const bool bBound = FindFProperty<FObjectPropertyBase>(Native, Widget->GetFName()) != nullptr;
+		const bool bBound = BakerIsBoundWidget(Native, Widget->GetFName());
 		Widget->bIsVariable = bBound;
 		if (bBound)
 		{
@@ -175,13 +211,17 @@ FString ULTTWidgetBaker::BakeWidgetIntoWidgetBlueprint(UObject* WidgetBlueprint,
 		WBP->OnVariableAdded(Widget->GetFName());
 	}
 
-	if (Index != INDEX_NONE)
+	UPanelSlot* NewSlot = Index != INDEX_NONE ? Target->InsertChildAt(Index, Source) : Target->AddChild(Source);
+	if (NewSlot && SlotTemplate && NewSlot->GetClass() == SlotTemplate->GetClass())
 	{
-		Target->InsertChildAt(Index, Source);
-	}
-	else
-	{
-		Target->AddChild(Source);
+		for (TFieldIterator<FProperty> It(NewSlot->GetClass()); It; ++It)
+		{
+			if (It->GetOwnerClass() != UPanelSlot::StaticClass()) // skip Parent / Content
+			{
+				It->CopyCompleteValue_InContainer(NewSlot, SlotTemplate);
+			}
+		}
+		NewSlot->SynchronizeProperties();
 	}
 
 	FBlueprintEditorUtils::MarkBlueprintAsStructurallyModified(WBP);
@@ -196,9 +236,58 @@ FString ULTTWidgetBaker::BakeWidgetIntoWidgetBlueprint(UObject* WidgetBlueprint,
 #endif
 }
 
+FString ULTTWidgetBaker::RemoveWidgetFromWidgetBlueprint(UObject* WidgetBlueprint, FName WidgetName)
+{
+#if WITH_EDITOR
+	if (GEditor && GEditor->PlayWorld)
+	{
+		return TEXT("ERROR: stop Play-In-Editor first (recompiling widgets while PIE runs crashes the editor when PIE ends)");
+	}
+	UWidgetBlueprint* WBP = Cast<UWidgetBlueprint>(WidgetBlueprint);
+	if (!WBP || !WBP->WidgetTree)
+	{
+		return TEXT("ERROR: not a Widget Blueprint");
+	}
+	UWidget* Widget = WBP->WidgetTree->FindWidget(WidgetName);
+	if (!Widget)
+	{
+		return FString::Printf(TEXT("%s: has no %s, nothing removed"), *WBP->GetName(), *WidgetName.ToString());
+	}
+	TArray<UWidget*> Subtree;
+	Subtree.Add(Widget);
+	UWidgetTree::GetChildWidgets(Widget, Subtree);
+
+	WBP->Modify();
+	WBP->WidgetTree->Modify();
+	if (!WBP->WidgetTree->RemoveWidget(Widget))
+	{
+		return FString::Printf(TEXT("ERROR: %s couldn't remove %s"), *WBP->GetName(), *WidgetName.ToString());
+	}
+	for (UWidget* W : Subtree)
+	{
+		const FName OldName = W->GetFName();
+		WBP->OnVariableRemoved(OldName); // drop its variable GUID, or the compiler ensures on the stale entry
+		W->Rename(*MakeUniqueObjectName(GetTransientPackage(), W->GetClass(), *FString::Printf(TEXT("Removed_%s"), *OldName.ToString())).ToString(),
+			GetTransientPackage(), REN_DontCreateRedirectors | REN_NonTransactional);
+		W->ClearFlags(RF_Transactional | RF_Public | RF_Standalone);
+		W->SetFlags(RF_Transient);
+	}
+	FBlueprintEditorUtils::MarkBlueprintAsStructurallyModified(WBP);
+	FKismetEditorUtilities::CompileBlueprint(WBP);
+	WBP->MarkPackageDirty();
+	return FString::Printf(TEXT("%s: removed %s (%d widgets)"), *WBP->GetName(), *WidgetName.ToString(), Subtree.Num());
+#else
+	return TEXT("ERROR: editor only");
+#endif
+}
+
 FString ULTTWidgetBaker::BakeLayoutIntoWidgetBlueprint(UObject* WidgetBlueprint)
 {
 #if WITH_EDITOR
+	if (GEditor && GEditor->PlayWorld)
+	{
+		return TEXT("ERROR: stop Play-In-Editor first (recompiling widgets while PIE runs crashes the editor when PIE ends)");
+	}
 	UWidgetBlueprint* WBP = Cast<UWidgetBlueprint>(WidgetBlueprint);
 	if (!WBP)
 	{
@@ -250,7 +339,7 @@ FString ULTTWidgetBaker::BakeLayoutIntoWidgetBlueprint(UObject* WidgetBlueprint)
 	NewTree->ForEachWidget([&](UWidget* Widget)
 	{
 		++Total;
-		const bool bBound = FindFProperty<FObjectPropertyBase>(Native, Widget->GetFName()) != nullptr;
+		const bool bBound = BakerIsBoundWidget(Native, Widget->GetFName());
 		Widget->bIsVariable = bBound;
 		if (bBound)
 		{

@@ -12,6 +12,7 @@
 #include "Components/CanvasPanelSlot.h"
 #include "Components/TextBlock.h"
 #include "Components/Image.h"
+#include "Components/SizeBox.h"
 #include "Components/HorizontalBox.h"
 #include "Components/HorizontalBoxSlot.h"
 #include "Engine/Texture2D.h"
@@ -22,6 +23,10 @@
 #include "GameFramework/Pawn.h"
 #include "GameFramework/PlayerController.h"
 #include "Rendering/DrawElements.h"
+#include "Interaction/LTTInteractionComponent.h"
+#include "Interaction/LTTInteractable.h"
+#include "Blueprint/WidgetLayoutLibrary.h"
+#include "EngineUtils.h"
 
 #define LOCTEXT_NAMESPACE "LTTCleanupHUD"
 
@@ -31,6 +36,172 @@ void ULTTCleanupHUD::NativeOnInitialized()
 	if (WidgetTree && !WidgetTree->RootWidget)
 	{
 		BuildDefaultLayout();
+	}
+	if (!ControlsLegend)
+	{
+		BuildControlsLegend(); // a WBP_ child baked before the legend existed
+	}
+	SetControlsLegendOpen(bControlsLegendStartsOpen);
+}
+
+UWidget* ULTTCleanupHUD::MakeKeyCap(const FText& Key) const
+{
+	UBorder* Cap = WidgetTree->ConstructWidget<UBorder>(UBorder::StaticClass());
+	LTTTheme::ApplyBrush(Cap, LTTTheme::Rounded(LTTTheme::Hex(0x52, 0x22, 0x08), 6.f, LTTTheme::WoodDark(), 1.5f));
+	Cap->SetPadding(FMargin(7.f, 1.f, 7.f, 2.f));
+	Cap->SetHorizontalAlignment(HAlign_Center);
+	Cap->SetVerticalAlignment(VAlign_Center);
+	UTextBlock* Text = WidgetTree->ConstructWidget<UTextBlock>(UTextBlock::StaticClass());
+	LTTTheme::StyleText(Text, 13, LTTTheme::TitleCream());
+	Text->SetText(Key);
+	Cap->SetContent(Text);
+	return Cap;
+}
+
+UWidget* ULTTCleanupHUD::MakeMouseCap(const TCHAR* IconName) const
+{
+	UBorder* Cap = WidgetTree->ConstructWidget<UBorder>(UBorder::StaticClass());
+	LTTTheme::ApplyBrush(Cap, LTTTheme::Rounded(LTTTheme::Hex(0x52, 0x22, 0x08), 6.f, LTTTheme::WoodDark(), 1.5f));
+	Cap->SetPadding(FMargin(3.f, 1.f));
+	UImage* Icon = WidgetTree->ConstructWidget<UImage>(UImage::StaticClass());
+	Icon->SetBrush(LTTTheme::UIIconBrush(IconName, 18.f));
+	Icon->SetColorAndOpacity(LTTTheme::TitleCream());
+	Cap->SetContent(Icon);
+	return Cap;
+}
+
+void ULTTCleanupHUD::AddLegendRow(UVerticalBox* Box, const TArray<UWidget*>& Caps, const FText& Action) const
+{
+	UHorizontalBox* Row = WidgetTree->ConstructWidget<UHorizontalBox>(UHorizontalBox::StaticClass());
+	// Fixed-width key column so the action names line up.
+	USizeBox* KeyColumn = WidgetTree->ConstructWidget<USizeBox>(USizeBox::StaticClass());
+	KeyColumn->SetMinDesiredWidth(92.f);
+	UHorizontalBox* KeyRow = WidgetTree->ConstructWidget<UHorizontalBox>(UHorizontalBox::StaticClass());
+	KeyColumn->SetContent(KeyRow);
+	for (int32 i = 0; i < Caps.Num(); ++i)
+	{
+		if (i > 0)
+		{
+			UTextBlock* Or = WidgetTree->ConstructWidget<UTextBlock>(UTextBlock::StaticClass());
+			LTTTheme::StyleText(Or, 12, LTTTheme::InkMuted());
+			Or->SetText(LOCTEXT("LegendOr", "/"));
+			if (UHorizontalBoxSlot* S = KeyRow->AddChildToHorizontalBox(Or))
+			{
+				S->SetVerticalAlignment(VAlign_Center);
+				S->SetPadding(FMargin(3.f, 0.f));
+			}
+		}
+		if (UHorizontalBoxSlot* S = KeyRow->AddChildToHorizontalBox(Caps[i]))
+		{
+			S->SetVerticalAlignment(VAlign_Center);
+		}
+	}
+	if (UHorizontalBoxSlot* S = Row->AddChildToHorizontalBox(KeyColumn))
+	{
+		S->SetVerticalAlignment(VAlign_Center);
+		S->SetPadding(FMargin(0.f, 0.f, 10.f, 0.f));
+	}
+	UTextBlock* Label = WidgetTree->ConstructWidget<UTextBlock>(UTextBlock::StaticClass());
+	LTTTheme::StyleText(Label, 14, LTTTheme::Ink());
+	Label->SetText(Action);
+	if (UHorizontalBoxSlot* S = Row->AddChildToHorizontalBox(Label))
+	{
+		S->SetVerticalAlignment(VAlign_Center);
+	}
+	if (UVerticalBoxSlot* S = Box->AddChildToVerticalBox(Row))
+	{
+		S->SetPadding(FMargin(0.f, 2.f));
+	}
+}
+
+void ULTTCleanupHUD::BuildControlsLegend()
+{
+	UCanvasPanel* Root = WidgetTree ? Cast<UCanvasPanel>(WidgetTree->RootWidget) : nullptr;
+	if (!Root)
+	{
+		return;
+	}
+	UBorder* Card = WidgetTree->ConstructWidget<UBorder>(UBorder::StaticClass(), TEXT("ControlsLegend"));
+	LTTTheme::ApplyBrush(Card, LTTTheme::Rounded(LTTTheme::Hex(0xFB, 0xF7, 0xEC, 0.85f), 14.f, LTTTheme::GoldTrim(), 2.f));
+	Card->SetPadding(FMargin(14.f, 10.f, 16.f, 10.f));
+	ControlsLegend = Card;
+	if (UCanvasPanelSlot* S = Root->AddChildToCanvas(Card))
+	{
+		S->SetAnchors(FAnchors(0.f, 1.f));
+		S->SetAlignment(FVector2D(0.f, 1.f));
+		S->SetPosition(FVector2D(32.f, -28.f));
+		S->SetAutoSize(true);
+	}
+
+	UVerticalBox* Column = WidgetTree->ConstructWidget<UVerticalBox>(UVerticalBox::StaticClass());
+	Card->SetContent(Column);
+
+	UVerticalBox* List = WidgetTree->ConstructWidget<UVerticalBox>(UVerticalBox::StaticClass(), TEXT("ControlsList"));
+	ControlsList = List;
+	Column->AddChildToVerticalBox(List);
+	AddLegendRow(List, { MakeKeyCap(LOCTEXT("KeyWASD", "WASD")) }, LOCTEXT("LegendMove", "Move"));
+	AddLegendRow(List, { MakeMouseCap(TEXT("T_Icon_MouseLeft")), MakeKeyCap(LOCTEXT("KeyE", "E")) }, LOCTEXT("LegendGrab", "Pick up / Place"));
+	AddLegendRow(List, { MakeMouseCap(TEXT("T_Icon_MouseRight")) }, LOCTEXT("LegendThrow", "Throw (breaks it!)"));
+	AddLegendRow(List, { MakeKeyCap(LOCTEXT("KeySpace", "Space")) }, LOCTEXT("LegendJump", "Jump"));
+	AddLegendRow(List, { MakeKeyCap(LOCTEXT("KeyC", "C")), MakeKeyCap(LOCTEXT("KeyCtrl", "Ctrl")) }, LOCTEXT("LegendCrouch", "Crouch"));
+	AddLegendRow(List, { MakeKeyCap(LOCTEXT("KeyF", "F")) }, LOCTEXT("LegendHint", "Hint"));
+	AddLegendRow(List, { MakeKeyCap(LOCTEXT("KeyP", "P")), MakeKeyCap(LOCTEXT("KeyEsc", "Esc")) }, LOCTEXT("LegendPause", "Pause / Unstuck"));
+
+	// Footer: "[H] Hide controls", or "[H] Controls" when folded.
+	UHorizontalBox* Footer = WidgetTree->ConstructWidget<UHorizontalBox>(UHorizontalBox::StaticClass());
+	if (UHorizontalBoxSlot* S = Footer->AddChildToHorizontalBox(MakeKeyCap(ToggleControlsKey.GetDisplayName())))
+	{
+		S->SetVerticalAlignment(VAlign_Center);
+		S->SetPadding(FMargin(0.f, 0.f, 8.f, 0.f));
+	}
+	ControlsToggleText = WidgetTree->ConstructWidget<UTextBlock>(UTextBlock::StaticClass(), TEXT("ControlsToggleText"));
+	LTTTheme::StyleText(ControlsToggleText, 12, LTTTheme::InkMuted());
+	if (UHorizontalBoxSlot* S = Footer->AddChildToHorizontalBox(ControlsToggleText))
+	{
+		S->SetVerticalAlignment(VAlign_Center);
+	}
+	if (UVerticalBoxSlot* S = Column->AddChildToVerticalBox(Footer))
+	{
+		S->SetPadding(FMargin(0.f, 6.f, 0.f, 0.f));
+	}
+}
+
+void ULTTCleanupHUD::SetControlsLegendOpen(bool bOpen)
+{
+	bLegendOpen = bOpen;
+	if (!ControlsList)
+	{
+		ControlsList = GetWidgetFromName(TEXT("ControlsList"));
+	}
+	if (!ControlsToggleText)
+	{
+		ControlsToggleText = Cast<UTextBlock>(GetWidgetFromName(TEXT("ControlsToggleText")));
+	}
+	if (ControlsList)
+	{
+		ControlsList->SetVisibility(bOpen ? ESlateVisibility::HitTestInvisible : ESlateVisibility::Collapsed);
+	}
+	if (ControlsToggleText)
+	{
+		ControlsToggleText->SetText(bOpen ? LOCTEXT("HideControls", "Hide controls") : LOCTEXT("ShowControls", "Controls"));
+	}
+}
+
+void ULTTCleanupHUD::UpdateControlsLegend()
+{
+	if (!ControlsLegend)
+	{
+		return;
+	}
+	APlayerController* PC = GetOwningPlayer();
+	const ACleanCutActionPlayerController* CCPC = Cast<ACleanCutActionPlayerController>(PC);
+	const bool bTouch = CCPC && CCPC->ShouldUseTouchControls();
+	const ALTTMessDirector* D = Director.Get();
+	const bool bShow = !bTouch && !(D && (D->IsBriefingOpen() || D->IsSetClean() || D->IsTimeUp()));
+	ControlsLegend->SetVisibility(bShow ? ESlateVisibility::HitTestInvisible : ESlateVisibility::Collapsed);
+	if (bShow && PC && !PC->IsPaused() && ToggleControlsKey.IsValid() && PC->WasInputKeyJustPressed(ToggleControlsKey))
+	{
+		SetControlsLegendOpen(!bLegendOpen);
 	}
 }
 
@@ -144,6 +315,8 @@ void ULTTCleanupHUD::BuildDefaultLayout()
 		HintSlot->SetPosition(FVector2D(0.f, 60.f));
 		HintSlot->SetAutoSize(true);
 	}
+
+	BuildControlsLegend();
 }
 
 void ULTTCleanupHUD::NativeTick(const FGeometry& MyGeometry, float InDeltaTime)
@@ -157,7 +330,9 @@ void ULTTCleanupHUD::NativeTick(const FGeometry& MyGeometry, float InDeltaTime)
 	ArrowPulse += InDeltaTime;
 	UpdateTexts();
 	UpdateTimerIcon();
+	UpdateControlsLegend();
 	UpdateArrow();
+	UpdatePickupRing(InDeltaTime);
 }
 
 void ULTTCleanupHUD::UpdateTexts()
@@ -307,6 +482,113 @@ void ULTTCleanupHUD::UpdateArrow()
 	}
 }
 
+ALTTInteractableBase* ULTTCleanupHUD::FindPickupRingTarget(const FVector& CamLoc, const FVector& CamDir, const AActor* IgnoreActor) const
+{
+	UWorld* World = GetWorld();
+	if (!World)
+	{
+		return nullptr;
+	}
+	const float MaxDistSq = FMath::Square(PickupRingDistance);
+	const float MinDot = FMath::Cos(FMath::DegreesToRadians(PickupRingMaxAngle));
+
+	// Candidates in range and in view, nearest first.
+	TArray<TPair<float, ALTTInteractableBase*>> Candidates;
+	for (TActorIterator<ALTTInteractableBase> It(World); It; ++It)
+	{
+		ALTTInteractableBase* Prop = *It;
+		if (!IsValid(Prop) || Prop->IsBrokenInPlace() || !ILTTInteractable::Execute_CanInteract(Prop, const_cast<AActor*>(IgnoreActor)))
+		{
+			continue;
+		}
+		const FVector Target = Prop->Mesh ? Prop->Mesh->Bounds.Origin : Prop->GetActorLocation();
+		const FVector ToTarget = Target - CamLoc;
+		const float DistSq = static_cast<float>(ToTarget.SizeSquared());
+		if (DistSq > MaxDistSq || DistSq < 1.f)
+		{
+			continue;
+		}
+		if (FVector::DotProduct(ToTarget / FMath::Sqrt(DistSq), CamDir) < MinDot)
+		{
+			continue;
+		}
+		Candidates.Emplace(DistSq, Prop);
+	}
+	Candidates.Sort([](const TPair<float, ALTTInteractableBase*>& A, const TPair<float, ALTTInteractableBase*>& B) { return A.Key < B.Key; });
+
+	// First one not hidden behind a wall or counter (a few traces at most).
+	FCollisionQueryParams Params(SCENE_QUERY_STAT(LTTPickupRing), false, IgnoreActor);
+	const int32 MaxTraces = FMath::Min(Candidates.Num(), 6);
+	for (int32 i = 0; i < MaxTraces; ++i)
+	{
+		ALTTInteractableBase* Prop = Candidates[i].Value;
+		const FVector Target = Prop->Mesh ? Prop->Mesh->Bounds.Origin : Prop->GetActorLocation();
+		FHitResult Hit;
+		if (!World->LineTraceSingleByChannel(Hit, CamLoc, Target, ECC_Visibility, Params) || Hit.GetActor() == Prop)
+		{
+			return Prop;
+		}
+	}
+	return nullptr;
+}
+
+void ULTTCleanupHUD::UpdatePickupRing(float DeltaTime)
+{
+	APlayerController* PC = GetOwningPlayer();
+	APawn* Pawn = PC ? PC->GetPawn() : nullptr;
+	const ULTTCarryComponent* Carry = Pawn ? Pawn->FindComponentByClass<ULTTCarryComponent>() : nullptr;
+	const bool bHolding = Carry && Carry->GetHeldItem();
+	const bool bActive = bShowPickupRing && Pawn && PC->PlayerCameraManager && !bHolding && !PC->IsPaused()
+		&& !(Director.IsValid() && Director->IsBriefingOpen());
+
+	if (!bActive)
+	{
+		RingTarget.Reset();
+	}
+	else
+	{
+		const FVector CamLoc = PC->PlayerCameraManager->GetCameraLocation();
+		const FVector CamDir = PC->PlayerCameraManager->GetCameraRotation().Vector();
+
+		// The prop under the crosshair always wins; otherwise re-pick the nearest a few times a second.
+		const ULTTInteractionComponent* Interaction = Pawn->FindComponentByClass<ULTTInteractionComponent>();
+		ALTTInteractableBase* Focused = Interaction ? Cast<ALTTInteractableBase>(Interaction->GetFocusedActor()) : nullptr;
+		RingSearchTimer -= DeltaTime;
+		if (Focused)
+		{
+			RingTarget = Focused;
+		}
+		else if (RingSearchTimer <= 0.f || !RingTarget.IsValid())
+		{
+			RingSearchTimer = 0.15f;
+			RingTarget = FindPickupRingTarget(CamLoc, CamDir, Pawn);
+		}
+		bRingFocused = Focused != nullptr && RingTarget.Get() == Focused;
+
+		// Drop a target that was picked up, placed, or left range / view since the last search.
+		if (ALTTInteractableBase* Prop = RingTarget.Get())
+		{
+			const FVector Target = Prop->Mesh ? Prop->Mesh->Bounds.Origin : Prop->GetActorLocation();
+			const FVector ToTarget = Target - CamLoc;
+			const bool bStillValid = ILTTInteractable::Execute_CanInteract(Prop, Pawn)
+				&& (bRingFocused || (ToTarget.SizeSquared() <= FMath::Square(PickupRingDistance * 1.1f)
+					&& FVector::DotProduct(ToTarget.GetSafeNormal(), CamDir) > 0.f));
+			FVector2D ScreenPos;
+			if (bStillValid && UWidgetLayoutLibrary::ProjectWorldLocationToWidgetPosition(PC, Target, ScreenPos, true))
+			{
+				RingPos = FVector2f(static_cast<float>(ScreenPos.X), static_cast<float>(ScreenPos.Y));
+			}
+			else
+			{
+				RingTarget.Reset();
+			}
+		}
+	}
+
+	const float Goal = RingTarget.IsValid() ? 1.f : 0.f;
+	RingAlpha = FMath::FInterpConstantTo(RingAlpha, Goal, DeltaTime, 6.f);
+}
+
 void ULTTCleanupHUD::AimArrowAt(const FVector& Target, const FVector& CamLoc, const FRotator& CamRot, const FLinearColor& Color)
 {
 	const FVector Local = CamRot.UnrotateVector(Target - CamLoc); // X forward, Y right, Z up
@@ -336,6 +618,32 @@ int32 ULTTCleanupHUD::NativePaint(const FPaintArgs& Args, const FGeometry& Allot
 	FSlateWindowElementList& OutDrawElements, int32 LayerId, const FWidgetStyle& InWidgetStyle, bool bParentEnabled) const
 {
 	int32 MaxLayer = Super::NativePaint(Args, AllottedGeometry, MyCullingRect, OutDrawElements, LayerId, InWidgetStyle, bParentEnabled);
+
+	// Ring (circle with a hole) over the nearest pickable prop.
+	if (RingAlpha > 0.01f)
+	{
+		const FPaintGeometry RingGeo = AllottedGeometry.ToPaintGeometry();
+		// Pulses while it's just nearby; steady and a bit tighter once the crosshair is on it.
+		const float RingPulse = bRingFocused ? 0.9f : 1.f + 0.1f * FMath::Sin(ArrowPulse * 5.f);
+		const float Radius = PickupRingRadius * RingPulse * (0.6f + 0.4f * RingAlpha);
+		constexpr int32 Segments = 40;
+		TArray<FVector2f> Circle;
+		Circle.Reserve(Segments + 1);
+		for (int32 i = 0; i <= Segments; ++i)
+		{
+			const float A = 2.f * PI * static_cast<float>(i) / static_cast<float>(Segments);
+			Circle.Add(RingPos + FVector2f(FMath::Cos(A), FMath::Sin(A)) * Radius);
+		}
+		FLinearColor RingFill = bRingFocused ? PickupRingFocusColor : PickupRingColor;
+		RingFill.A *= RingAlpha;
+		const FLinearColor RingOutline(0.f, 0.f, 0.f, 0.8f * RingAlpha);
+
+		++MaxLayer;
+		FSlateDrawElement::MakeLines(OutDrawElements, MaxLayer, RingGeo, Circle, ESlateDrawEffect::None, RingOutline, true, PickupRingThickness + 4.f);
+		++MaxLayer;
+		FSlateDrawElement::MakeLines(OutDrawElements, MaxLayer, RingGeo, Circle, ESlateDrawEffect::None, RingFill, true, PickupRingThickness);
+	}
+
 	if (!bArrowVisible)
 	{
 		return MaxLayer;

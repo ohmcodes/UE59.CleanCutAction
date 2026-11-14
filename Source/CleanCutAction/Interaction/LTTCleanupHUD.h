@@ -9,9 +9,12 @@
 
 #include "CoreMinimal.h"
 #include "Blueprint/UserWidget.h"
+#include "InputCoreTypes.h"
 #include "LTTCleanupHUD.generated.h"
 
 class UTextBlock;
+class UVerticalBox;
+class UWidget;
 class UImage;
 class UTexture2D;
 class ALTTMessDirector;
@@ -113,6 +116,51 @@ public:
 	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Cleanup HUD|Home Arrow")
 	float FloorHeight = 220.f;
 
+	// ---- Controls legend (PC / web only; touch has its own buttons) ----
+
+	/** Bottom-left card listing the keys. Built at runtime if the Widget Blueprint has no widget with this name. */
+	UPROPERTY(BlueprintReadOnly, Category = "Cleanup HUD|Controls", meta = (BindWidgetOptional))
+	TObjectPtr<UWidget> ControlsLegend;
+
+	/** Shows / hides the key list (the card folds to a one-line "[H] Controls" tab). */
+	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Cleanup HUD|Controls")
+	FKey ToggleControlsKey = EKeys::H;
+
+	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Cleanup HUD|Controls")
+	bool bControlsLegendStartsOpen = true;
+
+	UFUNCTION(BlueprintCallable, Category = "Cleanup HUD|Controls")
+	void SetControlsLegendOpen(bool bOpen);
+
+	// ---- Nearby pickup ring ----
+
+	/** Draws a ring (a circle with a hole) over the nearest prop the player can pick up while empty-handed. */
+	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Cleanup HUD|Pickup Ring")
+	bool bShowPickupRing = true;
+
+	/** Only props within this distance of the camera get the ring (cm). */
+	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Cleanup HUD|Pickup Ring", meta = (ClampMin = "50"))
+	float PickupRingDistance = 350.f;
+
+	/** Only props within this many degrees of where the camera points get the ring. */
+	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Cleanup HUD|Pickup Ring", meta = (ClampMin = "5", ClampMax = "89"))
+	float PickupRingMaxAngle = 40.f;
+
+	/** Ring radius in pixels (at 1080p DPI scale). */
+	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Cleanup HUD|Pickup Ring", meta = (ClampMin = "4"))
+	float PickupRingRadius = 26.f;
+
+	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Cleanup HUD|Pickup Ring", meta = (ClampMin = "1"))
+	float PickupRingThickness = 5.f;
+
+	/** Ring colour while the prop is near but not under the crosshair. */
+	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Cleanup HUD|Pickup Ring")
+	FLinearColor PickupRingColor = FLinearColor(1.f, 0.85f, 0.25f);
+
+	/** Ring colour when the crosshair is on the prop (pressing Interact picks it up). */
+	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Cleanup HUD|Pickup Ring")
+	FLinearColor PickupRingFocusColor = FLinearColor(0.3f, 1.f, 0.4f);
+
 	/** True while the arrow is drawn. */
 	UFUNCTION(BlueprintPure, Category = "Cleanup HUD|Home Arrow")
 	bool IsHomeArrowVisible() const { return bArrowVisible; }
@@ -131,6 +179,23 @@ protected:
 	UImage* MakeIcon(FName Name, const TCHAR* TextureName, float Size) const;
 	void UpdateTimerIcon();
 
+	void BuildControlsLegend();
+	void UpdateControlsLegend();
+	/** Small dark key cap with cream letters ("E", "Space"). */
+	UWidget* MakeKeyCap(const FText& Key) const;
+	/** Key cap holding a mouse-button icon (T_Icon_MouseLeft / Right). */
+	UWidget* MakeMouseCap(const TCHAR* IconName) const;
+	/** Caps, then the action name. */
+	void AddLegendRow(UVerticalBox* Box, const TArray<UWidget*>& Caps, const FText& Action) const;
+
+	UPROPERTY(Transient)
+	TObjectPtr<UWidget> ControlsList;
+
+	UPROPERTY(Transient)
+	TObjectPtr<UTextBlock> ControlsToggleText;
+
+	bool bLegendOpen = true;
+
 	void UpdateTexts();
 	void UpdateArrow();
 	/** Points the arrow at Target unless it's within ArrowHideAngle of the view. */
@@ -143,4 +208,17 @@ protected:
 	FVector2f ArrowDir = FVector2f(0.f, 1.f);
 	FLinearColor ArrowDrawColor = FLinearColor::White;
 	float ArrowPulse = 0.f;
+
+	/** Picks the ring's prop (a few times a second) and projects it to the screen (every frame). */
+	void UpdatePickupRing(float DeltaTime);
+	/** Nearest visible pickable prop in range and in view, or null. */
+	class ALTTInteractableBase* FindPickupRingTarget(const FVector& CamLoc, const FVector& CamDir, const AActor* IgnoreActor) const;
+
+	TWeakObjectPtr<class ALTTInteractableBase> RingTarget;
+	float RingSearchTimer = 0.f;
+	/** Ring centre in widget space. Kept while the ring fades out. */
+	FVector2f RingPos = FVector2f::ZeroVector;
+	/** 0..1, fades in and out. */
+	float RingAlpha = 0.f;
+	bool bRingFocused = false;
 };
