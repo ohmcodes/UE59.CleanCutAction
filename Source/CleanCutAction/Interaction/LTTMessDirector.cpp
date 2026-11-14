@@ -443,7 +443,8 @@ const bool bShouldStartHidden = bFadeInOnStart && !bIntroDone;
 	{
 		ALTTInteractableBase* Prop = *It;
 		UStaticMeshComponent* M = Prop ? Prop->Mesh.Get() : nullptr;
-		if (!M || Prop->IsPlaced() || Prop->IsHeld())
+		// Set dressing (not a task, starts at home) stays put; it isn't part of the mess.
+		if (!M || Prop->IsPlaced() || Prop->IsHeld() || (Prop->bStartsAtHome && !Prop->bIsCleanupTask))
 		{
 			continue;
 		}
