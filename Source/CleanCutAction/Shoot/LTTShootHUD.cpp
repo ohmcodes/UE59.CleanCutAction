@@ -224,9 +224,10 @@ void ULTTShootHUD::BuildDefaultLayout()
 			S->SetPadding(FMargin(0.f, 0.f, 12.f, 0.f));
 		}
 		BarkLabel = MakeText(TEXT("BarkLabel"), 22, false);
-		BarkLabel->SetAutoWrapText(true);
+		// Fixed wrap width, not auto-wrap: the panel hugs short lines and only long ones wrap.
+		BarkLabel->SetWrapTextAt(1000.f);
 		USizeBox* Wrap = WidgetTree->ConstructWidget<USizeBox>(USizeBox::StaticClass(), TEXT("BarkWrap"));
-		Wrap->SetMaxDesiredWidth(820.f);
+		Wrap->SetMaxDesiredWidth(1000.f);
 		Wrap->SetContent(BarkLabel);
 		if (UHorizontalBoxSlot* S = Row->AddChildToHorizontalBox(Wrap))
 		{
@@ -246,8 +247,8 @@ void ULTTShootHUD::BuildDefaultLayout()
 		Panel->SetPadding(FMargin(28.f, 10.f, 28.f, 14.f));
 		SubtitlePanel = Panel;
 		USizeBox* Wrap = WidgetTree->ConstructWidget<USizeBox>(USizeBox::StaticClass(), TEXT("SubtitleWrap"));
-		Wrap->SetMinDesiredWidth(420.f);
-		Wrap->SetMaxDesiredWidth(980.f);
+		Wrap->SetMinDesiredWidth(1000.f);
+		Wrap->SetMaxDesiredWidth(1000.f);
 		Panel->SetContent(Wrap);
 		UVerticalBox* Box = WidgetTree->ConstructWidget<UVerticalBox>(UVerticalBox::StaticClass(), TEXT("SubtitleBox"));
 		Wrap->SetContent(Box);

@@ -1,12 +1,14 @@
 // Clean! Cut! Action!
 
 #include "Shoot/LTTSceneDirector.h"
+#include "CleanCutActionPlayerController.h"
 #include "Shoot/LTTEffectStation.h"
 #include "Shoot/LTTFilmActor.h"
 #include "Shoot/LTTFilmCamera.h"
 #include "Shoot/LTTShootHUD.h"
 #include "Shoot/LTTShootEndScreen.h"
 #include "Interaction/LTTInteractableBase.h"
+#include "UI/LTTUITheme.h"
 #include "Blueprint/UserWidget.h"
 #include "Camera/PlayerCameraManager.h"
 #include "Components/StaticMeshComponent.h"
@@ -20,6 +22,7 @@
 #include "Materials/MaterialParameterCollection.h"
 #include "Sound/SoundBase.h"
 #include "TimerManager.h"
+#include "UObject/ConstructorHelpers.h"
 
 #define LOCTEXT_NAMESPACE "LTTSceneDirector"
 
@@ -43,6 +46,18 @@ ALTTSceneDirector::ALTTSceneDirector()
 	SetRootComponent(CreateDefaultSubobject<USceneComponent>(TEXT("Root")));
 	HUDClass = ULTTShootHUD::StaticClass();
 	EndScreenClass = ULTTShootEndScreen::StaticClass();
+
+	// Default SFX; any can be swapped or cleared on the level's director.
+	static ConstructorHelpers::FObjectFinder<USoundBase> Call(TEXT("/Game/_CleanCutAction/SFX/SW_notification.SW_notification"));
+	static ConstructorHelpers::FObjectFinder<USoundBase> Good(TEXT("/Game/_CleanCutAction/SFX/SW_success.SW_success"));
+	static ConstructorHelpers::FObjectFinder<USoundBase> Miss(TEXT("/Game/_CleanCutAction/SFX/SW_miss.SW_miss"));
+	static ConstructorHelpers::FObjectFinder<USoundBase> Cut(TEXT("/Game/_CleanCutAction/SFX/SW_cut.SW_cut"));
+	static ConstructorHelpers::FObjectFinder<USoundBase> Wrap(TEXT("/Game/_CleanCutAction/SFX/SW_applause.SW_applause"));
+	CueCallSound = Call.Object;
+	CueGoodSound = Good.Object;
+	CueMissSound = Miss.Object;
+	CutSound = Cut.Object;
+	WrapSound = Wrap.Object;
 }
 
 ALTTSceneDirector* ALTTSceneDirector::Get(const UObject* WorldContext)
@@ -61,6 +76,8 @@ ALTTSceneDirector* ALTTSceneDirector::Get(const UObject* WorldContext)
 void ALTTSceneDirector::BeginPlay()
 {
 	Super::BeginPlay();
+	// Arriving from Phase 1's end screen leaves the viewport in UI-only input with the cursor up.
+	ACleanCutActionPlayerController::ResetGameInput(UGameplayStatics::GetPlayerController(this, 0));
 	Scene = SceneData ? SceneData.Get() : ULTTSceneData::MakeScene42(this);
 	TakeMeter = MeterStart;
 	CreateHUD();
@@ -140,7 +157,7 @@ void ALTTSceneDirector::CreateHUD()
 	APlayerController* PC = UGameplayStatics::GetPlayerController(this, 0);
 	if (PC && PC->IsLocalController())
 	{
-		HUDWidget = CreateWidget<UUserWidget>(PC, HUDClass);
+		HUDWidget = CreateWidget<UUserWidget>(PC, LTTTheme::PreferWBP<ULTTShootHUD>(HUDClass, TEXT("WBP_ShootHUD")));
 		if (HUDWidget)
 		{
 			HUDWidget->AddToViewport(1);
@@ -644,7 +661,7 @@ void ALTTSceneDirector::StartFinale()
 	bFrameChecksPaused = true;
 	bFinale = true;
 	UpcomingCue = ELTTCue::None;
-	SetPlayerInputBlocked(true);
+	// The player keeps moving through the wrap; frame checks are already off, so nothing can cost points now.
 	if (WrapSound)
 	{
 		UGameplayStatics::PlaySound2D(this, WrapSound);
@@ -675,7 +692,7 @@ void ALTTSceneDirector::ShowEndScreen()
 	{
 		return;
 	}
-	EndScreenWidget = CreateWidget<UUserWidget>(PC, EndScreenClass);
+	EndScreenWidget = CreateWidget<UUserWidget>(PC, LTTTheme::PreferWBP<ULTTShootEndScreen>(EndScreenClass, TEXT("WBP_ShootEndScreen")));
 	if (!EndScreenWidget)
 	{
 		return;
@@ -689,12 +706,8 @@ void ALTTSceneDirector::ShowEndScreen()
 	{
 		HUDWidget->SetVisibility(ESlateVisibility::Collapsed);
 	}
-	UGameplayStatics::SetGamePaused(this, true);
-	PC->SetShowMouseCursor(true);
-	FInputModeUIOnly Mode;
-	Mode.SetWidgetToFocus(EndScreenWidget->TakeWidget());
-	Mode.SetLockMouseToViewportBehavior(EMouseLockMode::DoNotLock);
-	PC->SetInputMode(Mode);
+	// Not paused and no UI-only focus: the player can keep walking the set behind the end screen.
+	ACleanCutActionPlayerController::KeepGameInputWithCursor(PC);
 }
 
 // ---- CUT / retake ----

@@ -4,6 +4,8 @@
 #include "AIController.h"
 #include "Animation/AnimInstance.h"
 #include "Animation/AnimMontage.h"
+#include "Animation/AnimSingleNodeInstance.h"
+#include "Animation/BlendSpace.h"
 #include "Components/ArrowComponent.h"
 #include "Components/CapsuleComponent.h"
 #include "Components/SkeletalMeshComponent.h"
@@ -96,6 +98,16 @@ void ALTTFilmActor::FinishMove()
 void ALTTFilmActor::Tick(float DeltaSeconds)
 {
 	Super::Tick(DeltaSeconds);
+
+	// No Anim Blueprint needed: with the mesh in "Use Animation Asset" mode playing a 1D speed blend space
+	// (idle at 0, walk, run), feed it the ground speed.
+	if (UAnimSingleNodeInstance* Single = GetMesh() ? GetMesh()->GetSingleNodeInstance() : nullptr)
+	{
+		if (Cast<UBlendSpace>(Single->GetAnimationAsset()))
+		{
+			Single->SetBlendSpacePosition(FVector(GetVelocity().Size2D(), 0.f, 0.f));
+		}
+	}
 
 	ALTTActorMark* Mark = TargetMark.Get();
 	if (bMovingToMark)

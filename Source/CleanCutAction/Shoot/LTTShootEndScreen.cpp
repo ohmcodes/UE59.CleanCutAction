@@ -2,6 +2,7 @@
 
 #include "Shoot/LTTShootEndScreen.h"
 #include "Shoot/LTTSceneDirector.h"
+#include "CleanCutActionPlayerController.h"
 #include "UI/LTTUITheme.h"
 #include "Blueprint/WidgetTree.h"
 #include "Components/Border.h"
@@ -250,7 +251,7 @@ void ULTTShootEndScreen::HandleCleanupClicked()
 
 void ULTTShootEndScreen::ShootAgain()
 {
-	UGameplayStatics::SetGamePaused(this, false);
+	ACleanCutActionPlayerController::ResetGameInput(GetOwningPlayer());
 	UGameplayStatics::OpenLevel(this, FName(*UGameplayStatics::GetCurrentLevelName(this)));
 }
 
@@ -261,7 +262,7 @@ void ULTTShootEndScreen::BackToCleanup()
 	{
 		return;
 	}
-	UGameplayStatics::SetGamePaused(this, false);
+	ACleanCutActionPlayerController::ResetGameInput(GetOwningPlayer());
 	UGameplayStatics::OpenLevel(this, D->CleanupLevelName);
 }
 

@@ -17,7 +17,7 @@ class CLEANCUTACTION_API ULTTWidgetBaker : public UBlueprintFunctionLibrary
 public:
 	/**
 	 * Replaces WidgetBlueprint's widget tree with the layout its C++ parent class builds in code
-	 * (ULTTBriefingScreen, ULTTPauseMenu, ULTTEndScreen or ULTTCleanupHUD), then compiles it.
+	 * (any LTT widget with a BuildDefaultLayout, Phase 1 and Phase 2), then compiles it.
 	 * Widgets bound by a C++ property are marked as variables. Empty texts get a placeholder so the
 	 * designer shows something. Returns a short report, or an error string starting with "ERROR".
 	 */
