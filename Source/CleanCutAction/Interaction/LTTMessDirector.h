@@ -370,6 +370,15 @@ public:
 	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "End Screen", meta = (ClampMin = "0"))
 	float EndScreenDelay = 1.5f;
 
+	/** Phase 2: the level the end screen's "Shoot the Scene" button opens once the set is clean. None hides the button.
+	 *  The map has to be in MapsToCook (Config/DefaultGame.ini) to be in the packaged game. */
+	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "End Screen")
+	FName NextLevelName = TEXT("/Game/StylizedNewYorkCity/Level/L_NYC_Cafe_Phase2_Michael");
+
+	/** Unpauses and opens NextLevelName. Called by the end screen's "Shoot the Scene" button. */
+	UFUNCTION(BlueprintCallable, Category = "End Screen")
+	void LoadNextLevel();
+
 	/** Pauses the game and opens the end screen. Normally called automatically. */
 	UFUNCTION(BlueprintCallable, Category = "End Screen")
 	void ShowEndScreen(bool bSetClean);

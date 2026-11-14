@@ -12,6 +12,7 @@
 #include "Components/CanvasPanelSlot.h"
 #include "Components/HorizontalBox.h"
 #include "Components/HorizontalBoxSlot.h"
+#include "Components/PanelWidget.h"
 #include "Components/SizeBox.h"
 #include "Components/TextBlock.h"
 #include "Components/VerticalBox.h"
@@ -60,6 +61,21 @@ void ULTTEndScreen::NativeOnInitialized()
 	if (WidgetTree && !WidgetTree->RootWidget)
 	{
 		BuildDefaultLayout();
+	}
+	// A Widget Blueprint layout baked before Phase 2 existed has no "Shoot the Scene" button: add it next to
+	// Play Again. (This runs before the Slate widgets are built, so the new child shows up with the rest.)
+	if (!NextLevelButton && WidgetTree && PlayAgainButton && PlayAgainButton->GetParent())
+	{
+		UPanelWidget* Row = PlayAgainButton->GetParent();
+		NextLevelButton = MakeButton(TEXT("NextLevelButton"), LOCTEXT("ShootTheScene", "Shoot the Scene!"), EndTapeYellow);
+		if (UHorizontalBoxSlot* S = Cast<UHorizontalBoxSlot>(Row->InsertChildAt(Row->GetChildIndex(PlayAgainButton), NextLevelButton)))
+		{
+			S->SetPadding(FMargin(8.f, 0.f));
+		}
+	}
+	if (NextLevelButton)
+	{
+		NextLevelButton->OnClicked.AddDynamic(this, &ULTTEndScreen::HandleNextLevelClicked);
 	}
 	if (PlayAgainButton)
 	{
@@ -195,9 +211,10 @@ void ULTTEndScreen::BuildDefaultLayout()
 	}
 
 	UHorizontalBox* Buttons = WidgetTree->ConstructWidget<UHorizontalBox>(UHorizontalBox::StaticClass(), TEXT("Buttons"));
-	PlayAgainButton = MakeButton(TEXT("PlayAgainButton"), LOCTEXT("PlayAgain", "Play Again"), EndTapeYellow);
+	NextLevelButton = MakeButton(TEXT("NextLevelButton"), LOCTEXT("ShootTheScene", "Shoot the Scene!"), EndTapeYellow);
+	PlayAgainButton = MakeButton(TEXT("PlayAgainButton"), LOCTEXT("PlayAgain", "Play Again"), LTTTheme::ButtonCream());
 	KeepPlayingButton = MakeButton(TEXT("KeepPlayingButton"), LOCTEXT("KeepPlaying", "Keep Playing"), LTTTheme::ButtonCream());
-	for (UButton* Button : { PlayAgainButton.Get(), KeepPlayingButton.Get() })
+	for (UButton* Button : { NextLevelButton.Get(), PlayAgainButton.Get(), KeepPlayingButton.Get() })
 	{
 		if (UHorizontalBoxSlot* S = Buttons->AddChildToHorizontalBox(Button))
 		{
@@ -380,6 +397,12 @@ void ULTTEndScreen::ApplyTexts()
 			? FText::Format(LOCTEXT("TimeBonus", "{0}  ({1} left)"), FText::AsNumber(D->GetTimeBonusPoints(), &Signed), FormatTime(D->GetTimeLeftAtFinish()))
 			: LOCTEXT("NoTimeBonus", "-"));
 	}
+	if (NextLevelButton)
+	{
+		// On to the shoot, but only with a clean set.
+		const bool bOffer = bSetClean && D && !D->NextLevelName.IsNone();
+		NextLevelButton->SetVisibility(bOffer ? ESlateVisibility::Visible : ESlateVisibility::Collapsed);
+	}
 	if (KeepPlayingButton)
 	{
 		// Nothing left to do once the set is clean, but free roam is still nice; keep it either way.
@@ -423,6 +446,19 @@ void ULTTEndScreen::HandlePlayAgainClicked()
 void ULTTEndScreen::HandleKeepPlayingClicked()
 {
 	KeepPlaying();
+}
+
+void ULTTEndScreen::HandleNextLevelClicked()
+{
+	ShootTheScene();
+}
+
+void ULTTEndScreen::ShootTheScene()
+{
+	if (ALTTMessDirector* D = Director.Get())
+	{
+		D->LoadNextLevel();
+	}
 }
 
 void ULTTEndScreen::PlayAgain()
