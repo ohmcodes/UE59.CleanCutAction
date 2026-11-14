@@ -65,6 +65,13 @@ protected:
 	UPROPERTY()
 	TObjectPtr<UUserWidget> MobileControlsWidget;
 
+	/** Music on/off button shown with the touch controls, left of the pause button (defaults to ULTTMusicToggle). Empty = none. */
+	UPROPERTY(EditAnywhere, Category = "Input|Touch Controls")
+	TSubclassOf<UUserWidget> MusicToggleClass;
+
+	UPROPERTY(Transient)
+	TObjectPtr<UUserWidget> MusicToggleWidget;
+
 	/** If true, the player will use UMG touch controls even if not playing on mobile platforms */
 	UPROPERTY(EditAnywhere, Config, Category = "Input|Touch Controls")
 	bool bForceTouchControls = false;

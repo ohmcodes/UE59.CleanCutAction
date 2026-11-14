@@ -17,6 +17,8 @@
 #include "Components/VerticalBox.h"
 #include "Components/VerticalBoxSlot.h"
 #include "Kismet/KismetSystemLibrary.h"
+#include "Kismet/GameplayStatics.h"
+#include "UI/LTTLeaderboardPanel.h"
 
 #define LOCTEXT_NAMESPACE "LTTPauseMenu"
 
@@ -56,6 +58,25 @@ void ULTTPauseMenu::NativeOnInitialized()
 	{
 		QuitButton->OnClicked.AddDynamic(this, &ULTTPauseMenu::HandleQuitClicked);
 	}
+	// WBP_PauseMenu was baked before these existed: add them next to Quit.
+	if (!LeaderboardButton)
+	{
+		LeaderboardButton = MakeButton(TEXT("LeaderboardButton"), LOCTEXT("Leaderboard", "Leaderboard"), PauseButtonGrey);
+		InsertBeforeQuit(LeaderboardButton);
+	}
+	if (!RestartButton)
+	{
+		RestartButton = MakeButton(TEXT("RestartButton"), LOCTEXT("Restart", "Restart"), PauseButtonGrey);
+		InsertBeforeQuit(RestartButton);
+	}
+	if (LeaderboardButton)
+	{
+		LeaderboardButton->OnClicked.AddDynamic(this, &ULTTPauseMenu::HandleLeaderboardClicked);
+	}
+	if (RestartButton)
+	{
+		RestartButton->OnClicked.AddDynamic(this, &ULTTPauseMenu::HandleRestartClicked);
+	}
 	if (!CheatButton)
 	{
 		AddCheatButton(); // WBP_PauseMenu was baked before this existed
@@ -88,6 +109,21 @@ void ULTTPauseMenu::AddCheatButton()
 		S->SetAlignment(FVector2D(1.f, 1.f));
 		S->SetPosition(FVector2D(-20.f, -20.f));
 		S->SetAutoSize(true);
+	}
+}
+
+void ULTTPauseMenu::InsertBeforeQuit(UButton* Button)
+{
+	UVerticalBox* Column = QuitButton ? Cast<UVerticalBox>(QuitButton->GetParent()) : nullptr;
+	if (!Button || !Column)
+	{
+		return;
+	}
+	Button->RemoveFromParent();
+	if (UVerticalBoxSlot* S = Cast<UVerticalBoxSlot>(Column->InsertChildAt(Column->GetChildIndex(QuitButton), Button)))
+	{
+		S->SetHorizontalAlignment(HAlign_Fill);
+		S->SetPadding(FMargin(0.f, 6.f));
 	}
 }
 
@@ -178,8 +214,10 @@ void ULTTPauseMenu::BuildDefaultLayout()
 	MusicButton = MakeButton(TEXT("MusicButton"), FText::GetEmpty(), PauseButtonGrey, &MusicText);
 	MusicText->Rename(TEXT("MusicLabel")); // same name as the property, so a WBP_ child binds it
 	MusicLabel = MusicText;
+	LeaderboardButton = MakeButton(TEXT("LeaderboardButton"), LOCTEXT("Leaderboard", "Leaderboard"), PauseButtonGrey);
+	RestartButton = MakeButton(TEXT("RestartButton"), LOCTEXT("Restart", "Restart"), PauseButtonGrey);
 	QuitButton = MakeButton(TEXT("QuitButton"), LOCTEXT("Quit", "Quit"), PauseQuitRed);
-	for (UButton* Button : { ResumeButton.Get(), MusicButton.Get(), QuitButton.Get() })
+	for (UButton* Button : { ResumeButton.Get(), MusicButton.Get(), LeaderboardButton.Get(), RestartButton.Get(), QuitButton.Get() })
 	{
 		if (UVerticalBoxSlot* S = Column->AddChildToVerticalBox(Button))
 		{
@@ -217,6 +255,7 @@ void ULTTPauseMenu::NativeTick(const FGeometry& MyGeometry, float InDeltaTime)
 		const float E = PauseEaseOutCubic(FMath::Clamp(AnimTime / 0.25f, 0.f, 1.f));
 		Card->SetRenderOpacity(E);
 		Card->SetRenderTranslation(FVector2D(0.f, (1.f - E) * -40.f));
+		LTTTheme::FitToScreen(Card, MyGeometry, 24.f); // short phone screens: all five buttons stay tappable
 	}
 	if (CheatButton)
 	{
@@ -280,6 +319,27 @@ void ULTTPauseMenu::ToggleMusic()
 {
 	ALTTMusicPlayer::SetMusicMuted(!ALTTMusicPlayer::IsMusicMuted());
 	RefreshMusicLabel();
+}
+
+void ULTTPauseMenu::HandleRestartClicked()
+{
+	RestartGame();
+}
+
+void ULTTPauseMenu::HandleLeaderboardClicked()
+{
+	OpenLeaderboard();
+}
+
+void ULTTPauseMenu::RestartGame()
+{
+	UGameplayStatics::SetGamePaused(this, false);
+	UGameplayStatics::OpenLevel(this, FName(*UGameplayStatics::GetCurrentLevelName(this)));
+}
+
+void ULTTPauseMenu::OpenLeaderboard()
+{
+	ULTTLeaderboardPanel::ShowPanel(this);
 }
 
 void ULTTPauseMenu::QuitGame()

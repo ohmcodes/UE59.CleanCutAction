@@ -7,6 +7,8 @@
 #include "InputAction.h"
 #include "Kismet/GameplayStatics.h"
 #include "UI/LTTPauseMenu.h"
+#include "UI/LTTMusicToggle.h"
+#include "UI/LTTUITheme.h"
 #include "Engine/LocalPlayer.h"
 #include "InputMappingContext.h"
 #include "CleanCutActionCameraManager.h"
@@ -19,6 +21,7 @@ ACleanCutActionPlayerController::ACleanCutActionPlayerController()
 	// set the player camera manager class
 	PlayerCameraManagerClass = ACleanCutActionCameraManager::StaticClass();
 	PauseMenuClass = ULTTPauseMenu::StaticClass();
+	MusicToggleClass = ULTTMusicToggle::StaticClass();
 }
 
 void ACleanCutActionPlayerController::BeginPlay()
@@ -41,6 +44,16 @@ void ACleanCutActionPlayerController::BeginPlay()
 
 			UE_LOG(LogCleanCutAction, Error, TEXT("Could not spawn mobile controls widget."));
 
+		}
+
+		// Music on/off next to the touch pause button (the pause menu has one too, but it's two taps away).
+		if (MusicToggleClass)
+		{
+			MusicToggleWidget = CreateWidget<UUserWidget>(this, LTTTheme::PreferWBP<ULTTMusicToggle>(MusicToggleClass, TEXT("WBP_MusicToggle")));
+			if (MusicToggleWidget)
+			{
+				MusicToggleWidget->AddToPlayerScreen(1);
+			}
 		}
 
 	}

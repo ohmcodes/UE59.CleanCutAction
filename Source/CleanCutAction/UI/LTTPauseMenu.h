@@ -1,4 +1,4 @@
-// Clean! Cut! Action! - Pause menu: Resume, Music on/off, Quit. Opened and closed by
+// Clean! Cut! Action! - Pause menu: Resume, Music on/off, Leaderboard, Restart, Quit. Opened and closed by
 // ACleanCutActionPlayerController (P / Escape / gamepad Start); the game is paused while it's up.
 // Builds its own layout in C++; a Widget Blueprint child can restyle it by naming widgets like the ones below.
 
@@ -31,6 +31,14 @@ public:
 	UFUNCTION(BlueprintCallable, Category = "Pause Menu")
 	void QuitGame();
 
+	/** Reloads the level: a fresh mess and a fresh clock (the current run isn't sent to the leaderboard). */
+	UFUNCTION(BlueprintCallable, Category = "Pause Menu")
+	void RestartGame();
+
+	/** Opens the leaderboard panel over the menu. */
+	UFUNCTION(BlueprintCallable, Category = "Pause Menu")
+	void OpenLeaderboard();
+
 	UPROPERTY(BlueprintReadOnly, Category = "Pause Menu", meta = (BindWidgetOptional))
 	TObjectPtr<UTextBlock> TitleText;
 
@@ -46,6 +54,14 @@ public:
 
 	UPROPERTY(BlueprintReadOnly, Category = "Pause Menu", meta = (BindWidgetOptional))
 	TObjectPtr<UButton> QuitButton;
+
+	/** Added at runtime (before Quit) if the Widget Blueprint doesn't have one. */
+	UPROPERTY(BlueprintReadOnly, Category = "Pause Menu", meta = (BindWidgetOptional))
+	TObjectPtr<UButton> LeaderboardButton;
+
+	/** Added at runtime (before Quit) if the Widget Blueprint doesn't have one. */
+	UPROPERTY(BlueprintReadOnly, Category = "Pause Menu", meta = (BindWidgetOptional))
+	TObjectPtr<UButton> RestartButton;
 
 	/** Small coffee icon in the corner: runs the LTT.PlaceAll cheat, but only for the player named "iPoNet" (case-sensitive).
 	 *  Added at runtime if the Widget Blueprint doesn't have one. */
@@ -67,6 +83,8 @@ protected:
 	UButton* MakeButton(FName Name, const FText& Label, const FLinearColor& Color, UTextBlock** OutLabel = nullptr) const;
 	void RefreshMusicLabel();
 	void AddCheatButton();
+	/** Puts Button into the column that holds QuitButton, just above Quit (for WBP_ layouts made before it existed). */
+	void InsertBeforeQuit(UButton* Button);
 
 	UFUNCTION()
 	void HandleResumeClicked();
@@ -79,6 +97,12 @@ protected:
 
 	UFUNCTION()
 	void HandleCheatClicked();
+
+	UFUNCTION()
+	void HandleRestartClicked();
+
+	UFUNCTION()
+	void HandleLeaderboardClicked();
 
 	float AnimTime = 0.f;
 };

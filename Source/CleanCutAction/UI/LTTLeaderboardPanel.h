@@ -31,6 +31,10 @@ public:
 	UFUNCTION(BlueprintCallable, Category = "Leaderboard")
 	void Close();
 
+	/** Creates and opens a panel over From (briefing, pause menu, end screen); focus returns to From on close.
+	 *  Class empty = WBP_Leaderboard if it exists, else the C++ panel. */
+	static ULTTLeaderboardPanel* ShowPanel(UUserWidget* From, TSubclassOf<ULTTLeaderboardPanel> Class = nullptr);
+
 	/** Asks the server again. */
 	UFUNCTION(BlueprintCallable, Category = "Leaderboard")
 	void Refresh();
@@ -63,6 +67,10 @@ public:
 	UPROPERTY(BlueprintReadOnly, Category = "Leaderboard", meta = (BindWidgetOptional))
 	TObjectPtr<UButton> CloseButton;
 
+	/** Round X on the card's top-right corner. Added at runtime when the layout has none. */
+	UPROPERTY(BlueprintReadOnly, Category = "Leaderboard", meta = (BindWidgetOptional))
+	TObjectPtr<UButton> CornerCloseButton;
+
 	/** The card (fades and rises in). */
 	UPROPERTY(BlueprintReadOnly, Category = "Leaderboard", meta = (BindWidgetOptional))
 	TObjectPtr<UWidget> Card;
@@ -82,6 +90,8 @@ protected:
 	/** A plain message line inside the list area (empty board, not ranked yet). */
 	UWidget* MakeMessageRow(const FText& Message) const;
 	void ShowLoading();
+	/** Wraps Card in an overlay with CornerCloseButton hanging over its top-right corner (works for a WBP_ layout too). */
+	void AddCornerCloseButton();
 
 	UFUNCTION()
 	void HandleFetched(const FLTTLeaderboardResult& Result);
@@ -96,6 +106,12 @@ protected:
 	void HandleCloseClicked();
 
 	TWeakObjectPtr<UUserWidget> ReturnFocus;
+	/** The card of the menu underneath, hidden while this panel is open. */
+	TWeakObjectPtr<UWidget> HiddenUnderCard;
+	ESlateVisibility UnderCardVisibility = ESlateVisibility::SelfHitTestInvisible;
+	/** What gets the open animation and the fit-to-screen scale: Card, or the overlay around it. */
+	UPROPERTY(Transient)
+	TObjectPtr<UWidget> CardFrame;
 	/** Rows slide in one after another from RowsShownAt. */
 	UPROPERTY(Transient)
 	TArray<TObjectPtr<UWidget>> AnimatedRows;

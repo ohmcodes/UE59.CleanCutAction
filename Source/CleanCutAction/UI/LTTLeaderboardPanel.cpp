@@ -7,6 +7,8 @@
 #include "Components/Button.h"
 #include "Components/CanvasPanel.h"
 #include "Components/CanvasPanelSlot.h"
+#include "Components/Overlay.h"
+#include "Components/OverlaySlot.h"
 #include "Components/HorizontalBox.h"
 #include "Components/HorizontalBoxSlot.h"
 #include "Components/SizeBox.h"
@@ -77,6 +79,87 @@ void ULTTLeaderboardPanel::NativeOnInitialized()
 	{
 		CloseButton->OnClicked.AddDynamic(this, &ULTTLeaderboardPanel::HandleCloseClicked);
 	}
+	if (!CornerCloseButton)
+	{
+		AddCornerCloseButton();
+	}
+	if (CornerCloseButton)
+	{
+		CornerCloseButton->OnClicked.AddDynamic(this, &ULTTLeaderboardPanel::HandleCloseClicked);
+	}
+	if (!CardFrame)
+	{
+		CardFrame = Card;
+	}
+	// Opened over another menu (briefing / pause / end screen): a darker dim so the two cards don't read as one.
+	if (UBorder* Dim = Cast<UBorder>(GetWidgetFromName(TEXT("Dim"))))
+	{
+		LTTTheme::StyleBackdrop(Dim, 0.78f);
+	}
+}
+
+void ULTTLeaderboardPanel::AddCornerCloseButton()
+{
+	UCanvasPanelSlot* CardSlot = Card ? Cast<UCanvasPanelSlot>(Card->Slot) : nullptr;
+	UCanvasPanel* Root = CardSlot ? Cast<UCanvasPanel>(CardSlot->Parent) : nullptr;
+	if (!Root)
+	{
+		return;
+	}
+	// Keep the card's placement, put an overlay in its place, the card inside it and the X on top.
+	const FAnchors Anchors = CardSlot->GetAnchors();
+	const FVector2D Alignment = CardSlot->GetAlignment();
+	const FMargin Offsets = CardSlot->GetOffsets();
+	const bool bAutoSize = CardSlot->GetAutoSize();
+	const int32 ZOrder = CardSlot->GetZOrder();
+	UOverlay* Frame = WidgetTree->ConstructWidget<UOverlay>(UOverlay::StaticClass(), TEXT("CardFrame"));
+	Card->RemoveFromParent();
+	if (UCanvasPanelSlot* S = Root->AddChildToCanvas(Frame))
+	{
+		S->SetAnchors(Anchors);
+		S->SetAlignment(Alignment);
+		S->SetOffsets(Offsets);
+		S->SetAutoSize(bAutoSize);
+		S->SetZOrder(ZOrder);
+	}
+	if (UOverlaySlot* S = Frame->AddChildToOverlay(Card))
+	{
+		S->SetHorizontalAlignment(HAlign_Fill);
+		S->SetVerticalAlignment(VAlign_Fill);
+	}
+	CornerCloseButton = LTTTheme::MakeRoundIconButton(WidgetTree, TEXT("CornerCloseButton"), TEXT("T_Icon_Close"), 30.f, 12.f);
+	CornerCloseButton->SetToolTipText(LOCTEXT("CloseTip", "Close"));
+	if (UOverlaySlot* S = Frame->AddChildToOverlay(CornerCloseButton))
+	{
+		S->SetHorizontalAlignment(HAlign_Right);
+		S->SetVerticalAlignment(VAlign_Top);
+		S->SetPadding(FMargin(0.f, -22.f, -22.f, 0.f)); // hangs over the corner
+	}
+	CardFrame = Frame;
+}
+
+ULTTLeaderboardPanel* ULTTLeaderboardPanel::ShowPanel(UUserWidget* From, TSubclassOf<ULTTLeaderboardPanel> Class)
+{
+	APlayerController* PC = From ? From->GetOwningPlayer() : nullptr;
+	if (!PC)
+	{
+		return nullptr;
+	}
+	if (!Class)
+	{
+		// The designed panel (cooked: WBP_EndScreen references it), else the code layout.
+		Class = LoadClass<ULTTLeaderboardPanel>(nullptr, TEXT("/Game/_CleanCutAction/Blueprints/Widgets/WBP_Leaderboard.WBP_Leaderboard_C"));
+		if (!Class)
+		{
+			Class = ULTTLeaderboardPanel::StaticClass();
+		}
+	}
+	ULTTLeaderboardPanel* Panel = CreateWidget<ULTTLeaderboardPanel>(PC, Class);
+	if (Panel)
+	{
+		Panel->Open(From);
+	}
+	return Panel;
 }
 
 void ULTTLeaderboardPanel::NativeConstruct()
@@ -350,6 +433,19 @@ UWidget* ULTTLeaderboardPanel::MakeMessageRow(const FText& Message) const
 void ULTTLeaderboardPanel::Open(UUserWidget* ReturnFocusTo)
 {
 	ReturnFocus = ReturnFocusTo;
+	// The menu underneath keeps its backdrop but its card hides, so the two cards never overlap.
+	if (ReturnFocusTo)
+	{
+		if (UWidget* UnderCard = ReturnFocusTo->GetWidgetFromName(TEXT("Card")))
+		{
+			if (UnderCard->IsVisible())
+			{
+				UnderCardVisibility = UnderCard->GetVisibility();
+				UnderCard->SetVisibility(ESlateVisibility::Hidden);
+				HiddenUnderCard = UnderCard;
+			}
+		}
+	}
 	if (!IsInViewport())
 	{
 		AddToViewport(100); // above the end screen (10) and the briefing (20)
@@ -368,6 +464,11 @@ void ULTTLeaderboardPanel::Close()
 {
 	APlayerController* PC = GetOwningPlayer();
 	UUserWidget* Back = ReturnFocus.Get();
+	if (UWidget* UnderCard = HiddenUnderCard.Get())
+	{
+		UnderCard->SetVisibility(UnderCardVisibility);
+		HiddenUnderCard = nullptr;
+	}
 	RemoveFromParent();
 	if (PC && Back && Back->IsInViewport())
 	{
@@ -510,11 +611,12 @@ void ULTTLeaderboardPanel::NativeTick(const FGeometry& MyGeometry, float InDelta
 	Super::NativeTick(MyGeometry, InDeltaTime);
 	AnimTime += InDeltaTime; // real time: runs while the game is paused
 
-	if (Card)
+	if (UWidget* Frame = CardFrame ? CardFrame.Get() : Card.Get())
 	{
 		const float E = LbEaseOutCubic(FMath::Clamp(AnimTime / 0.35f, 0.f, 1.f));
-		Card->SetRenderOpacity(E);
-		Card->SetRenderTranslation(FVector2D(0.f, (1.f - E) * 40.f));
+		Frame->SetRenderOpacity(E);
+		Frame->SetRenderTranslation(FVector2D(0.f, (1.f - E) * 40.f));
+		LTTTheme::FitToScreen(Frame, MyGeometry, 40.f); // phones: the whole card (and its X) stays on screen
 	}
 	// Rows slide in from the right, 40 ms apart.
 	if (RowsShownAt >= 0.f)

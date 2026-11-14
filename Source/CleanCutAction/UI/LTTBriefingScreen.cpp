@@ -22,6 +22,9 @@
 #include "Components/TextBlock.h"
 #include "Components/VerticalBox.h"
 #include "Components/VerticalBoxSlot.h"
+#include "Components/WidgetSwitcher.h"
+#include "UI/LTTLeaderboardPanel.h"
+#include "UI/LTTVirtualKeyboard.h"
 
 #define LOCTEXT_NAMESPACE "LTTBriefingScreen"
 
@@ -43,6 +46,9 @@ namespace
 	// and the smallest the card may shrink to.
 	const float BriefingFitMargin = 56.f;
 	const float BriefingMinFitScale = 0.3f;
+
+	constexpr int32 BriefingPageCount = 3;
+	constexpr float BriefingSwipeDistance = 70.f; // px (local) for a swipe to flip the page
 }
 
 void ULTTBriefingScreen::NativeOnInitialized()
@@ -70,6 +76,48 @@ void ULTTBriefingScreen::NativeOnInitialized()
 		NameInput->OnTextChanged.AddDynamic(this, &ULTTBriefingScreen::HandleNameChanged);
 		NameInput->OnTextCommitted.AddDynamic(this, &ULTTBriefingScreen::HandleNameCommitted);
 	}
+	if (!LeaderboardButton)
+	{
+		// WBP_Briefing was made before this existed: put it at the end of the name row.
+		if (UHorizontalBox* NameRow = Cast<UHorizontalBox>(GetWidgetFromName(TEXT("NameRow"))))
+		{
+			LeaderboardButton = MakeLeaderboardButton();
+			if (UHorizontalBoxSlot* S = NameRow->AddChildToHorizontalBox(LeaderboardButton))
+			{
+				S->SetVerticalAlignment(VAlign_Center);
+				S->SetPadding(FMargin(10.f, 0.f, 0.f, 0.f));
+			}
+		}
+	}
+	if (LeaderboardButton)
+	{
+		LeaderboardButton->OnClicked.AddDynamic(this, &ULTTBriefingScreen::HandleLeaderboardClicked);
+	}
+	if (PrevPageButton)
+	{
+		PrevPageButton->OnClicked.AddDynamic(this, &ULTTBriefingScreen::HandlePrevPageClicked);
+	}
+	if (NextPageButton)
+	{
+		NextPageButton->OnClicked.AddDynamic(this, &ULTTBriefingScreen::HandleNextPageClicked);
+	}
+	// Dots: one per page, made here so a WBP_ layout only needs the empty PageDots box.
+	if (PageDots && PageDots->GetChildrenCount() == 0 && Pages)
+	{
+		for (int32 i = 0; i < Pages->GetNumWidgets(); ++i)
+		{
+			UBorder* Dot = WidgetTree->ConstructWidget<UBorder>(UBorder::StaticClass());
+			USizeBox* DotSize = WidgetTree->ConstructWidget<USizeBox>(USizeBox::StaticClass());
+			DotSize->SetWidthOverride(14.f);
+			DotSize->SetHeightOverride(14.f);
+			DotSize->SetContent(Dot);
+			if (UHorizontalBoxSlot* S = PageDots->AddChildToHorizontalBox(DotSize))
+			{
+				S->SetVerticalAlignment(VAlign_Center);
+				S->SetPadding(FMargin(5.f, 0.f));
+			}
+		}
+	}
 }
 
 void ULTTBriefingScreen::NativeConstruct()
@@ -78,6 +126,8 @@ void ULTTBriefingScreen::NativeConstruct()
 	AnimTime = 0.f;
 	ApplyInputVariant();
 	ApplyTexts();
+	ShowPage(0);
+	PageChangedAt = -1.f; // no slide on the first page
 	if (NameInput)
 	{
 		const ULTTLeaderboardSubsystem* Board = ULTTLeaderboardSubsystem::Get(this);
@@ -297,7 +347,7 @@ void ULTTBriefingScreen::BuildDefaultLayout()
 	AddCornerArt(TEXT("CornerChair"), TEXT("director_chair"), 120.f, HAlign_Right, VAlign_Bottom, FMargin(0.f, 0.f, -50.f, -44.f), -6.f);
 
 	USizeBox* Width = WidgetTree->ConstructWidget<USizeBox>(USizeBox::StaticClass());
-	Width->SetWidthOverride(1080.f);
+	Width->SetWidthOverride(900.f);
 	CardBorder->SetContent(Width);
 
 	UVerticalBox* Column = WidgetTree->ConstructWidget<UVerticalBox>(UVerticalBox::StaticClass());
@@ -334,69 +384,9 @@ void ULTTBriefingScreen::BuildDefaultLayout()
 		S->SetPadding(FMargin(0.f, 0.f, 0.f, 14.f));
 	}
 
-	// ---- Two columns: the story and rules | controls and scoring ----
-	UHorizontalBox* Columns = WidgetTree->ConstructWidget<UHorizontalBox>(UHorizontalBox::StaticClass(), TEXT("Columns"));
-	if (UVerticalBoxSlot* S = Column->AddChildToVerticalBox(Columns))
-	{
-		S->SetHorizontalAlignment(HAlign_Fill);
-	}
-
-	UVerticalBox* Left = WidgetTree->ConstructWidget<UVerticalBox>(UVerticalBox::StaticClass(), TEXT("LeftColumn"));
-	if (UHorizontalBoxSlot* S = Columns->AddChildToHorizontalBox(Left))
-	{
-		FSlateChildSize Size(ESlateSizeRule::Fill);
-		Size.Value = 1.15f;
-		S->SetSize(Size);
-		S->SetPadding(FMargin(0.f, 0.f, 28.f, 0.f));
-	}
-	UVerticalBox* Right = WidgetTree->ConstructWidget<UVerticalBox>(UVerticalBox::StaticClass(), TEXT("RightColumn"));
-	if (UHorizontalBoxSlot* S = Columns->AddChildToHorizontalBox(Right))
-	{
-		S->SetSize(FSlateChildSize(ESlateSizeRule::Fill));
-	}
-
-	// Marlowe's note, on a cream "paper" panel.
-	AddHeader(Left, LOCTEXT("NoteHeader", "A NOTE FROM THE DIRECTOR"), 0.f, TEXT("megaphone"));
-	UBorder* Note = WidgetTree->ConstructWidget<UBorder>(UBorder::StaticClass(), TEXT("NotePaper"));
-	LTTTheme::StyleInset(Note);
-	Note->SetPadding(FMargin(14.f, 10.f));
-	StoryText = MakeText(TEXT("StoryText"), 16, NoteCream, true);
-	Note->SetContent(StoryText);
-	Left->AddChildToVerticalBox(Note);
-
-	AddHeader(Left, LOCTEXT("HowHeader", "HOW TO PLAY"), 14.f, TEXT("checklist"));
-	HowToPlayText = MakeText(TEXT("HowToPlayText"), 15, SoftWhite, true);
-	Left->AddChildToVerticalBox(HowToPlayText);
-
-	AddHeader(Right, LOCTEXT("ControlsHeader", "CONTROLS"), 0.f, TEXT("card"));
-	// Both control lists are built (and named) so a WBP_ child can lay out each; ApplyInputVariant shows one.
-	UVerticalBox* ControlsDesktop = WidgetTree->ConstructWidget<UVerticalBox>(UVerticalBox::StaticClass(), TEXT("ControlsDesktop"));
-	UVerticalBox* ControlsTouch = WidgetTree->ConstructWidget<UVerticalBox>(UVerticalBox::StaticClass(), TEXT("ControlsTouch"));
-	Right->AddChildToVerticalBox(ControlsDesktop);
-	Right->AddChildToVerticalBox(ControlsTouch);
-	ControlsTouch->SetVisibility(ESlateVisibility::Collapsed);
-	// Phone / tablet: the on-screen buttons from UI_TouchSimple.
-	AddTouchRow(ControlsTouch, nullptr, LOCTEXT("TouchMove", "Move"), LOCTEXT("TouchMoveHow", "Left stick (bottom left)"));
-	AddTouchRow(ControlsTouch, nullptr, LOCTEXT("TouchLook", "Look / aim"), LOCTEXT("TouchLookHow", "Right stick (bottom right)"));
-	AddTouchRow(ControlsTouch, TEXT("T_Icon_HandOpen"), LOCTEXT("TouchGrab", "Pick up"), LOCTEXT("TouchGrabHow", "Aim at a prop, tap the hand"));
-	AddTouchRow(ControlsTouch, TEXT("T_Icon_HandClosed"), LOCTEXT("TouchPlace", "Place / Drop"), LOCTEXT("TouchPlaceHow", "Tap the hand again: green = PLACE, red = it will break"));
-	AddTouchRow(ControlsTouch, TEXT("T_Icon_Throw"), LOCTEXT("TouchThrow", "Throw (breaks it!)"), LOCTEXT("TouchThrowHow", "Bottle button, shows while holding"));
-	AddTouchRow(ControlsTouch, TEXT("T_Icon_Jump"), LOCTEXT("TouchJump", "Jump"), LOCTEXT("TouchJumpHow", "Jump button"));
-	AddTouchRow(ControlsTouch, TEXT("T_Icon_Hint"), LOCTEXT("TouchHint", "Hint"), LOCTEXT("TouchHintHow", "Light bulb button"));
-	AddTouchRow(ControlsTouch, TEXT("T_Icon_Pause"), LOCTEXT("TouchPause", "Pause"), LOCTEXT("TouchPauseHow", "Top right corner"));
-	AddControlRow(ControlsDesktop, LOCTEXT("ActionHeader", "Action"), LOCTEXT("KbHeader", "Keyboard"), LOCTEXT("PadHeader", "Gamepad"));
-	AddControlRow(ControlsDesktop, LOCTEXT("Move", "Move"), LOCTEXT("MoveKb", "W A S D / Arrows"), LOCTEXT("MovePad", "Left stick"));
-	AddControlRow(ControlsDesktop, LOCTEXT("Look", "Look"), LOCTEXT("LookKb", "Mouse"), LOCTEXT("LookPad", "Right stick"));
-	AddControlRow(ControlsDesktop, LOCTEXT("Jump", "Jump"), LOCTEXT("JumpKb", "Space"), LOCTEXT("JumpPad", "A"));
-	AddControlRow(ControlsDesktop, LOCTEXT("Grab", "Pick up / Place / Drop"), LOCTEXT("GrabKb", "Left click / E"), LOCTEXT("GrabPad", "X"));
-	AddControlRow(ControlsDesktop, LOCTEXT("Throw", "Throw (breaks it!)"), LOCTEXT("ThrowKb", "Right click"), LOCTEXT("ThrowPad", "Right trigger"));
-	AddControlRow(ControlsDesktop, LOCTEXT("Hint", "Hint"), LOCTEXT("HintKb", "F"), LOCTEXT("HintPad", "Y"));
-	AddControlRow(ControlsDesktop, LOCTEXT("Pause", "Pause"), LOCTEXT("PauseKb", "P / Esc"), LOCTEXT("PausePad", "Start"));
-
-	AddHeader(Right, LOCTEXT("ScoringHeader", "SCORING"), 14.f, TEXT("coins"));
-	ScorePlacedText = AddIconTextRow(Right, TEXT("ScorePlacedText"), TEXT("coffee"));
-	ScoreBrokenText = AddIconTextRow(Right, TEXT("ScoreBrokenText"), TEXT("destroyed"));
-	ScoreBonusText = AddIconTextRow(Right, TEXT("ScoreBonusText"), TEXT("timer"));
+	// ---- Carousel: note | how to play | controls and scoring ----
+	AddPages(Column);
+	AddPageNav(Column);
 
 	// ---- Leaderboard name ----
 	AddNameRow(Column);
@@ -443,6 +433,262 @@ void ULTTBriefingScreen::BuildDefaultLayout()
 	}
 }
 
+void ULTTBriefingScreen::AddPages(UVerticalBox* Box)
+{
+	Pages = WidgetTree->ConstructWidget<UWidgetSwitcher>(UWidgetSwitcher::StaticClass(), TEXT("Pages"));
+	if (UVerticalBoxSlot* S = Box->AddChildToVerticalBox(Pages))
+	{
+		S->SetHorizontalAlignment(HAlign_Fill);
+	}
+
+	// Page 1: Marlowe's note, on a darker "paper" panel.
+	UVerticalBox* PageNote = WidgetTree->ConstructWidget<UVerticalBox>(UVerticalBox::StaticClass(), TEXT("PageNote"));
+	Pages->AddChild(PageNote);
+	AddHeader(PageNote, LOCTEXT("NoteHeader", "A NOTE FROM THE DIRECTOR"), 0.f, TEXT("megaphone"));
+	UBorder* Note = WidgetTree->ConstructWidget<UBorder>(UBorder::StaticClass(), TEXT("NotePaper"));
+	LTTTheme::StyleInset(Note);
+	Note->SetPadding(FMargin(18.f, 14.f));
+	StoryText = MakeText(TEXT("StoryText"), 18, NoteCream, true);
+	Note->SetContent(StoryText);
+	PageNote->AddChildToVerticalBox(Note);
+
+	// Page 2: how to play.
+	UVerticalBox* PageHowTo = WidgetTree->ConstructWidget<UVerticalBox>(UVerticalBox::StaticClass(), TEXT("PageHowTo"));
+	Pages->AddChild(PageHowTo);
+	AddHeader(PageHowTo, LOCTEXT("HowHeader", "HOW TO PLAY"), 0.f, TEXT("checklist"));
+	UBorder* HowPaper = WidgetTree->ConstructWidget<UBorder>(UBorder::StaticClass(), TEXT("HowToPaper"));
+	LTTTheme::StyleInset(HowPaper);
+	HowPaper->SetPadding(FMargin(18.f, 14.f));
+	HowToPlayText = MakeText(TEXT("HowToPlayText"), 17, SoftWhite, true);
+	HowToPlayText->SetLineHeightPercentage(1.15f);
+	HowPaper->SetContent(HowToPlayText);
+	PageHowTo->AddChildToVerticalBox(HowPaper);
+
+	// Page 3: controls | scoring, side by side.
+	UHorizontalBox* PageRules = WidgetTree->ConstructWidget<UHorizontalBox>(UHorizontalBox::StaticClass(), TEXT("PageRules"));
+	Pages->AddChild(PageRules);
+	UVerticalBox* Left = WidgetTree->ConstructWidget<UVerticalBox>(UVerticalBox::StaticClass(), TEXT("ControlsColumn"));
+	if (UHorizontalBoxSlot* S = PageRules->AddChildToHorizontalBox(Left))
+	{
+		FSlateChildSize Size(ESlateSizeRule::Fill);
+		Size.Value = 1.25f;
+		S->SetSize(Size);
+		S->SetPadding(FMargin(0.f, 0.f, 24.f, 0.f));
+	}
+	UVerticalBox* Right = WidgetTree->ConstructWidget<UVerticalBox>(UVerticalBox::StaticClass(), TEXT("ScoringColumn"));
+	if (UHorizontalBoxSlot* S = PageRules->AddChildToHorizontalBox(Right))
+	{
+		S->SetSize(FSlateChildSize(ESlateSizeRule::Fill));
+	}
+
+	AddHeader(Left, LOCTEXT("ControlsHeader", "CONTROLS"), 0.f, TEXT("card"));
+	// Both control lists are built (and named) so a WBP_ child can lay out each; ApplyInputVariant shows one.
+	UVerticalBox* ControlsDesktop = WidgetTree->ConstructWidget<UVerticalBox>(UVerticalBox::StaticClass(), TEXT("ControlsDesktop"));
+	UVerticalBox* ControlsTouch = WidgetTree->ConstructWidget<UVerticalBox>(UVerticalBox::StaticClass(), TEXT("ControlsTouch"));
+	Left->AddChildToVerticalBox(ControlsDesktop);
+	Left->AddChildToVerticalBox(ControlsTouch);
+	ControlsTouch->SetVisibility(ESlateVisibility::Collapsed);
+	// Phone / tablet: the on-screen buttons from UI_TouchSimple.
+	AddTouchRow(ControlsTouch, nullptr, LOCTEXT("TouchMove", "Move"), LOCTEXT("TouchMoveHow", "Left stick (bottom left)"));
+	AddTouchRow(ControlsTouch, nullptr, LOCTEXT("TouchLook", "Look / aim"), LOCTEXT("TouchLookHow", "Right stick (bottom right)"));
+	AddTouchRow(ControlsTouch, TEXT("T_Icon_HandOpen"), LOCTEXT("TouchGrab", "Pick up"), LOCTEXT("TouchGrabHow", "Aim at a prop, tap the hand"));
+	AddTouchRow(ControlsTouch, TEXT("T_Icon_HandClosed"), LOCTEXT("TouchPlace", "Place / Drop"), LOCTEXT("TouchPlaceHow", "Tap the hand again: green = PLACE, red = it will break"));
+	AddTouchRow(ControlsTouch, TEXT("T_Icon_Throw"), LOCTEXT("TouchThrow", "Throw (breaks it!)"), LOCTEXT("TouchThrowHow", "Bottle button, shows while holding"));
+	AddTouchRow(ControlsTouch, TEXT("T_Icon_Jump"), LOCTEXT("TouchJump", "Jump"), LOCTEXT("TouchJumpHow", "Jump button"));
+	AddTouchRow(ControlsTouch, TEXT("T_Icon_Hint"), LOCTEXT("TouchHint", "Hint"), LOCTEXT("TouchHintHow", "Light bulb button"));
+	AddTouchRow(ControlsTouch, TEXT("T_Icon_Pause"), LOCTEXT("TouchPause", "Pause"), LOCTEXT("TouchPauseHow", "Top right corner"));
+	AddTouchRow(ControlsTouch, TEXT("T_Icon_MusicOn"), LOCTEXT("TouchMusic", "Music on / off"), LOCTEXT("TouchMusicHow", "Speaker, next to pause"));
+	AddControlRow(ControlsDesktop, LOCTEXT("ActionHeader", "Action"), LOCTEXT("KbHeader", "Keyboard"), LOCTEXT("PadHeader", "Gamepad"));
+	AddControlRow(ControlsDesktop, LOCTEXT("Move", "Move"), LOCTEXT("MoveKb", "W A S D / Arrows"), LOCTEXT("MovePad", "Left stick"));
+	AddControlRow(ControlsDesktop, LOCTEXT("Look", "Look"), LOCTEXT("LookKb", "Mouse"), LOCTEXT("LookPad", "Right stick"));
+	AddControlRow(ControlsDesktop, LOCTEXT("Jump", "Jump"), LOCTEXT("JumpKb", "Space"), LOCTEXT("JumpPad", "A"));
+	AddControlRow(ControlsDesktop, LOCTEXT("Grab", "Pick up / Place / Drop"), LOCTEXT("GrabKb", "Left click / E"), LOCTEXT("GrabPad", "X"));
+	AddControlRow(ControlsDesktop, LOCTEXT("Throw", "Throw (breaks it!)"), LOCTEXT("ThrowKb", "Right click"), LOCTEXT("ThrowPad", "Right trigger"));
+	AddControlRow(ControlsDesktop, LOCTEXT("Hint", "Hint"), LOCTEXT("HintKb", "F"), LOCTEXT("HintPad", "Y"));
+	AddControlRow(ControlsDesktop, LOCTEXT("Pause", "Pause"), LOCTEXT("PauseKb", "P / Esc"), LOCTEXT("PausePad", "Start"));
+
+	AddHeader(Right, LOCTEXT("ScoringHeader", "SCORING"), 0.f, TEXT("coins"));
+	ScorePlacedText = AddIconTextRow(Right, TEXT("ScorePlacedText"), TEXT("coffee"));
+	ScoreBrokenText = AddIconTextRow(Right, TEXT("ScoreBrokenText"), TEXT("destroyed"));
+	ScoreBonusText = AddIconTextRow(Right, TEXT("ScoreBonusText"), TEXT("timer"));
+}
+
+void ULTTBriefingScreen::AddPageNav(UVerticalBox* Box)
+{
+	UHorizontalBox* Nav = WidgetTree->ConstructWidget<UHorizontalBox>(UHorizontalBox::StaticClass(), TEXT("PageNav"));
+	if (UVerticalBoxSlot* S = Box->AddChildToVerticalBox(Nav))
+	{
+		S->SetHorizontalAlignment(HAlign_Fill);
+		S->SetPadding(FMargin(0.f, 12.f, 0.f, 0.f));
+	}
+	auto MakeNavButton = [this](FName Name, const FText& Label)
+	{
+		UButton* Button = WidgetTree->ConstructWidget<UButton>(UButton::StaticClass(), Name);
+		LTTTheme::StyleButton(Button, LTTTheme::ButtonCream());
+		UTextBlock* Text = MakeText(*(Name.ToString() + TEXT("_Label")), 20, LTTTheme::Ink());
+		Text->SetText(Label);
+		Button->SetContent(Text);
+		return Button;
+	};
+	PrevPageButton = MakeNavButton(TEXT("PrevPageButton"), LOCTEXT("PrevPage", "<  BACK"));
+	NextPageButton = MakeNavButton(TEXT("NextPageButton"), LOCTEXT("NextPage", "NEXT  >"));
+
+	UVerticalBox* Middle = WidgetTree->ConstructWidget<UVerticalBox>(UVerticalBox::StaticClass(), TEXT("PageIndicator"));
+	PageDots = WidgetTree->ConstructWidget<UHorizontalBox>(UHorizontalBox::StaticClass(), TEXT("PageDots"));
+	if (UVerticalBoxSlot* S = Middle->AddChildToVerticalBox(PageDots))
+	{
+		S->SetHorizontalAlignment(HAlign_Center);
+	}
+	PageLabel = MakeText(TEXT("PageLabel"), 14, Muted);
+	PageLabel->SetJustification(ETextJustify::Center);
+	if (UVerticalBoxSlot* S = Middle->AddChildToVerticalBox(PageLabel))
+	{
+		S->SetHorizontalAlignment(HAlign_Center);
+		S->SetPadding(FMargin(0.f, 4.f, 0.f, 0.f));
+	}
+
+	if (UHorizontalBoxSlot* S = Nav->AddChildToHorizontalBox(PrevPageButton))
+	{
+		S->SetVerticalAlignment(VAlign_Center);
+	}
+	if (UHorizontalBoxSlot* S = Nav->AddChildToHorizontalBox(Middle))
+	{
+		S->SetSize(FSlateChildSize(ESlateSizeRule::Fill));
+		S->SetVerticalAlignment(VAlign_Center);
+	}
+	if (UHorizontalBoxSlot* S = Nav->AddChildToHorizontalBox(NextPageButton))
+	{
+		S->SetVerticalAlignment(VAlign_Center);
+	}
+}
+
+UButton* ULTTBriefingScreen::MakeLeaderboardButton()
+{
+	UButton* Button = WidgetTree->ConstructWidget<UButton>(UButton::StaticClass(), TEXT("LeaderboardButton"));
+	LTTTheme::StyleButton(Button, LTTTheme::ButtonCream());
+	Button->SetToolTipText(LOCTEXT("LeaderboardTip", "See the top Rookies"));
+	UHorizontalBox* Content = WidgetTree->ConstructWidget<UHorizontalBox>(UHorizontalBox::StaticClass());
+	if (UHorizontalBoxSlot* S = Content->AddChildToHorizontalBox(LTTTheme::MakeArtIcon(WidgetTree, TEXT("LeaderboardButton_Icon"), TEXT("diamond"), 28.f)))
+	{
+		S->SetVerticalAlignment(VAlign_Center);
+		S->SetPadding(FMargin(0.f, 0.f, 8.f, 0.f));
+	}
+	UTextBlock* Label = MakeText(TEXT("LeaderboardButton_Label"), 16, LTTTheme::Ink());
+	Label->SetText(LOCTEXT("Leaderboard", "Leaderboard"));
+	if (UHorizontalBoxSlot* S = Content->AddChildToHorizontalBox(Label))
+	{
+		S->SetVerticalAlignment(VAlign_Center);
+	}
+	Button->SetContent(Content);
+	return Button;
+}
+
+FText ULTTBriefingScreen::GetPageTitle(int32 Index) const
+{
+	switch (Index)
+	{
+	case 0: return LOCTEXT("PageNote", "DIRECTOR'S NOTE");
+	case 1: return LOCTEXT("PageHowTo", "HOW TO PLAY");
+	default: return LOCTEXT("PageRules", "CONTROLS & SCORING");
+	}
+}
+
+void ULTTBriefingScreen::ShowPage(int32 Index)
+{
+	if (!Pages)
+	{
+		return;
+	}
+	const int32 Count = FMath::Max(Pages->GetNumWidgets(), 1);
+	const int32 NewIndex = FMath::Clamp(Index, 0, Count - 1);
+	if (NewIndex != PageIndex)
+	{
+		PageSlideDir = NewIndex > PageIndex ? 1.f : -1.f;
+		PageChangedAt = AnimTime;
+	}
+	PageIndex = NewIndex;
+	Pages->SetActiveWidgetIndex(PageIndex);
+	RefreshPageNav();
+}
+
+void ULTTBriefingScreen::RefreshPageNav()
+{
+	const int32 Count = Pages ? FMath::Max(Pages->GetNumWidgets(), 1) : BriefingPageCount;
+	if (PrevPageButton)
+	{
+		PrevPageButton->SetIsEnabled(PageIndex > 0);
+	}
+	if (NextPageButton)
+	{
+		NextPageButton->SetIsEnabled(PageIndex < Count - 1);
+	}
+	if (PageLabel)
+	{
+		PageLabel->SetText(FText::Format(LOCTEXT("PageLabelFmt", "{0} / {1}  -  {2}"), FText::AsNumber(PageIndex + 1), FText::AsNumber(Count), GetPageTitle(PageIndex)));
+	}
+	if (PageDots)
+	{
+		for (int32 i = 0; i < PageDots->GetChildrenCount(); ++i)
+		{
+			USizeBox* DotSize = Cast<USizeBox>(PageDots->GetChildAt(i));
+			UBorder* Dot = DotSize ? Cast<UBorder>(DotSize->GetContent()) : Cast<UBorder>(PageDots->GetChildAt(i));
+			if (!Dot)
+			{
+				continue;
+			}
+			const bool bOn = i == PageIndex;
+			LTTTheme::ApplyBrush(Dot, LTTTheme::Rounded(bOn ? LTTTheme::ButtonGold() : LTTTheme::PaperDeep(), -1.f, bOn ? LTTTheme::WoodDark() : LTTTheme::ButtonEdge(), 2.f));
+			if (DotSize)
+			{
+				DotSize->SetWidthOverride(bOn ? 30.f : 14.f); // the current page is a wider pill
+			}
+		}
+	}
+}
+
+void ULTTBriefingScreen::HandlePrevPageClicked()
+{
+	ShowPage(PageIndex - 1);
+}
+
+void ULTTBriefingScreen::HandleNextPageClicked()
+{
+	ShowPage(PageIndex + 1);
+}
+
+void ULTTBriefingScreen::OpenLeaderboard()
+{
+	CommitName(); // the panel marks "YOU" by player id; the name shown should be the one typed
+	ULTTLeaderboardPanel::ShowPanel(this);
+}
+
+void ULTTBriefingScreen::HandleLeaderboardClicked()
+{
+	OpenLeaderboard();
+}
+
+void ULTTBriefingScreen::OpenNameKeyboard()
+{
+	if (NameKeyboard || !NameInput)
+	{
+		return;
+	}
+	NameKeyboard = ULTTVirtualKeyboard::Open(GetOwningPlayer(), NameInput, ULTTLeaderboardSubsystem::MaxNameLength, LOCTEXT("KeyboardTitle", "YOUR NAME"), KeyboardClass);
+	if (NameKeyboard)
+	{
+		NameKeyboard->ReturnFocus = this;
+		NameKeyboard->OnClosed.AddDynamic(this, &ULTTBriefingScreen::HandleKeyboardClosed);
+	}
+}
+
+void ULTTBriefingScreen::HandleKeyboardClosed(const FString& FinalText)
+{
+	NameKeyboard = nullptr;
+	KeyboardClosedAt = AnimTime;
+	CommitName(); // empty = a new random name
+	SetKeyboardFocus();
+}
+
 void ULTTBriefingScreen::AddNameRow(UVerticalBox* Box)
 {
 	UHorizontalBox* Row = WidgetTree->ConstructWidget<UHorizontalBox>(UHorizontalBox::StaticClass(), TEXT("NameRow"));
@@ -452,7 +698,7 @@ void ULTTBriefingScreen::AddNameRow(UVerticalBox* Box)
 		S->SetPadding(FMargin(0.f, 0.f, 10.f, 0.f));
 	}
 	UTextBlock* Label = MakeText(TEXT("NameLabel"), 18, TapeYellow);
-	Label->SetText(LOCTEXT("NameLabel", "YOUR NAME ON THE LEADERBOARD"));
+	Label->SetText(LOCTEXT("NameLabel", "YOUR NAME"));
 	if (UHorizontalBoxSlot* S = Row->AddChildToHorizontalBox(Label))
 	{
 		S->SetVerticalAlignment(VAlign_Center);
@@ -462,7 +708,7 @@ void ULTTBriefingScreen::AddNameRow(UVerticalBox* Box)
 	LTTTheme::StyleTextBox(NameInput, 18);
 	NameInput->SetJustification(ETextJustify::Center);
 	USizeBox* InputWidth = WidgetTree->ConstructWidget<USizeBox>(USizeBox::StaticClass(), TEXT("NameInputWidth"));
-	InputWidth->SetWidthOverride(320.f);
+	InputWidth->SetWidthOverride(280.f);
 	InputWidth->SetContent(NameInput);
 	if (UHorizontalBoxSlot* S = Row->AddChildToHorizontalBox(InputWidth))
 	{
@@ -475,6 +721,12 @@ void ULTTBriefingScreen::AddNameRow(UVerticalBox* Box)
 	RandomLabel->SetText(LOCTEXT("Random", "Random"));
 	RandomNameButton->SetContent(RandomLabel);
 	if (UHorizontalBoxSlot* S = Row->AddChildToHorizontalBox(RandomNameButton))
+	{
+		S->SetVerticalAlignment(VAlign_Center);
+		S->SetPadding(FMargin(10.f, 0.f, 0.f, 0.f));
+	}
+	LeaderboardButton = MakeLeaderboardButton();
+	if (UHorizontalBoxSlot* S = Row->AddChildToHorizontalBox(LeaderboardButton))
 	{
 		S->SetVerticalAlignment(VAlign_Center);
 		S->SetPadding(FMargin(10.f, 0.f, 0.f, 0.f));
@@ -626,6 +878,19 @@ void ULTTBriefingScreen::NativeTick(const FGeometry& MyGeometry, float InDeltaTi
 		Card->SetRenderTransformPivot(FVector2D(0.5f, 0.5f));
 		Card->SetRenderScale(FVector2D(Fit, Fit));
 	}
+	// Page flip: the new page slides in from the side it came from (0.25 s).
+	if (Pages)
+	{
+		const float T = PageChangedAt >= 0.f ? FMath::Clamp((AnimTime - PageChangedAt) / 0.25f, 0.f, 1.f) : 1.f;
+		const float E = EaseOutCubic(T);
+		Pages->SetRenderTranslation(FVector2D((1.f - E) * 70.f * PageSlideDir, 0.f));
+		Pages->SetRenderOpacity(0.35f + 0.65f * E);
+	}
+	// Touch: the browser never brings up the phone's keyboard for a Slate text box, so ours opens instead.
+	if (NameInput && !NameKeyboard && NameInput->HasKeyboardFocus() && IsTouch() && AnimTime - KeyboardClosedAt > 0.3f)
+	{
+		OpenNameKeyboard();
+	}
 	// Start buttons breathe (out of step) so it's obvious what to do.
 	if (StartButton)
 	{
@@ -656,7 +921,54 @@ FReply ULTTBriefingScreen::NativeOnKeyDown(const FGeometry& InGeometry, const FK
 		StartGame(false);
 		return FReply::Handled();
 	}
+	if (Key == EKeys::Right || Key == EKeys::D || Key == EKeys::Gamepad_DPad_Right || Key == EKeys::Gamepad_RightShoulder)
+	{
+		ShowPage(PageIndex + 1);
+		return FReply::Handled();
+	}
+	if (Key == EKeys::Left || Key == EKeys::A || Key == EKeys::Gamepad_DPad_Left || Key == EKeys::Gamepad_LeftShoulder)
+	{
+		ShowPage(PageIndex - 1);
+		return FReply::Handled();
+	}
+	if (!InKeyEvent.IsRepeat() && (Key == EKeys::L || Key == EKeys::Gamepad_Special_Left))
+	{
+		OpenLeaderboard();
+		return FReply::Handled();
+	}
 	return Super::NativeOnKeyDown(InGeometry, InKeyEvent);
+}
+
+FReply ULTTBriefingScreen::NativeOnMouseButtonDown(const FGeometry& InGeometry, const FPointerEvent& InMouseEvent)
+{
+	// A press that no button or text box took (on the page text, the card...): maybe the start of a swipe.
+	// Touches arrive here too: Slate turns an unhandled touch into a mouse press.
+	if (Pages)
+	{
+		SwipeStart = InGeometry.AbsoluteToLocal(InMouseEvent.GetScreenSpacePosition());
+		bSwipeTracking = true;
+		if (TSharedPtr<SWidget> Slate = GetCachedWidget())
+		{
+			return FReply::Handled().CaptureMouse(Slate.ToSharedRef());
+		}
+		return FReply::Handled();
+	}
+	return Super::NativeOnMouseButtonDown(InGeometry, InMouseEvent);
+}
+
+FReply ULTTBriefingScreen::NativeOnMouseButtonUp(const FGeometry& InGeometry, const FPointerEvent& InMouseEvent)
+{
+	if (!bSwipeTracking)
+	{
+		return Super::NativeOnMouseButtonUp(InGeometry, InMouseEvent);
+	}
+	bSwipeTracking = false;
+	const FVector2D Delta = InGeometry.AbsoluteToLocal(InMouseEvent.GetScreenSpacePosition()) - SwipeStart;
+	if (FMath::Abs(Delta.X) > BriefingSwipeDistance && FMath::Abs(Delta.X) > FMath::Abs(Delta.Y) * 1.5f)
+	{
+		ShowPage(PageIndex + (Delta.X < 0.f ? 1 : -1)); // swipe left = next page
+	}
+	return FReply::Handled().ReleaseMouseCapture();
 }
 
 void ULTTBriefingScreen::HandleStartClicked()

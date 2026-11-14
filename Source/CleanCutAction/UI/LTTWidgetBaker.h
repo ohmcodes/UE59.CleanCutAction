@@ -33,6 +33,14 @@ public:
 	UFUNCTION(BlueprintCallable, Category = "LTT|Editor", meta = (DevelopmentOnly))
 	static FString BakeWidgetIntoWidgetBlueprint(UObject* WidgetBlueprint, FName WidgetName, FName InsertBefore, FName ParentPanel);
 
+	/**
+	 * Removes ONE named widget and everything under it from a Widget Blueprint (to swap an old section for a new
+	 * code-built one with BakeWidgetIntoWidgetBlueprint). The removed widgets are renamed away so their names are
+	 * free again. Returns a short report, or an error string starting with "ERROR".
+	 */
+	UFUNCTION(BlueprintCallable, Category = "LTT|Editor", meta = (DevelopmentOnly))
+	static FString RemoveWidgetFromWidgetBlueprint(UObject* WidgetBlueprint, FName WidgetName);
+
 private:
 	/** A transient instance of WBP's native parent with its code layout built, or nullptr (Error says why). */
 	static class UUserWidget* BuildTempLayout(UObject* WidgetBlueprint, UClass*& OutNative, FString& Error);

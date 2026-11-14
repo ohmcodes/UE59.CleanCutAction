@@ -6,6 +6,9 @@
 #include "Interaction/LTTEndScreen.h"
 #include "Interaction/LTTCleanupHUD.h"
 #include "UI/LTTLeaderboardPanel.h"
+#include "UI/LTTVirtualKeyboard.h"
+#include "UI/LTTMusicToggle.h"
+#include "UI/LTTEndingOverlay.h"
 #include "Components/PanelWidget.h"
 #include "Blueprint/WidgetTree.h"
 #include "Components/TextBlock.h"
@@ -17,6 +20,7 @@
 #include "WidgetBlueprint.h"
 #include "Kismet2/BlueprintEditorUtils.h"
 #include "Kismet2/KismetEditorUtilities.h"
+#include "Editor.h"
 #endif
 
 UUserWidget* ULTTWidgetBaker::BuildTempLayout(UObject* WidgetBlueprint, UClass*& OutNative, FString& Error)
@@ -68,6 +72,18 @@ UUserWidget* ULTTWidgetBaker::BuildTempLayout(UObject* WidgetBlueprint, UClass*&
 	{
 		Board->BuildDefaultLayout();
 	}
+	else if (ULTTVirtualKeyboard* Keyboard = Cast<ULTTVirtualKeyboard>(Temp))
+	{
+		Keyboard->BuildDefaultLayout();
+	}
+	else if (ULTTMusicToggle* Music = Cast<ULTTMusicToggle>(Temp))
+	{
+		Music->BuildDefaultLayout();
+	}
+	else if (ULTTEndingOverlay* Ending = Cast<ULTTEndingOverlay>(Temp))
+	{
+		Ending->BuildDefaultLayout();
+	}
 	else
 	{
 		Error = FString::Printf(TEXT("ERROR: %s has no code layout to bake"), *Native->GetName());
@@ -88,6 +104,10 @@ UUserWidget* ULTTWidgetBaker::BuildTempLayout(UObject* WidgetBlueprint, UClass*&
 FString ULTTWidgetBaker::BakeWidgetIntoWidgetBlueprint(UObject* WidgetBlueprint, FName WidgetName, FName InsertBefore, FName ParentPanel)
 {
 #if WITH_EDITOR
+	if (GEditor && GEditor->PlayWorld)
+	{
+		return TEXT("ERROR: stop Play-In-Editor first (recompiling widgets while PIE runs crashes the editor when PIE ends)");
+	}
 	UWidgetBlueprint* WBP = Cast<UWidgetBlueprint>(WidgetBlueprint);
 	if (!WBP || !WBP->WidgetTree)
 	{
@@ -196,9 +216,58 @@ FString ULTTWidgetBaker::BakeWidgetIntoWidgetBlueprint(UObject* WidgetBlueprint,
 #endif
 }
 
+FString ULTTWidgetBaker::RemoveWidgetFromWidgetBlueprint(UObject* WidgetBlueprint, FName WidgetName)
+{
+#if WITH_EDITOR
+	if (GEditor && GEditor->PlayWorld)
+	{
+		return TEXT("ERROR: stop Play-In-Editor first (recompiling widgets while PIE runs crashes the editor when PIE ends)");
+	}
+	UWidgetBlueprint* WBP = Cast<UWidgetBlueprint>(WidgetBlueprint);
+	if (!WBP || !WBP->WidgetTree)
+	{
+		return TEXT("ERROR: not a Widget Blueprint");
+	}
+	UWidget* Widget = WBP->WidgetTree->FindWidget(WidgetName);
+	if (!Widget)
+	{
+		return FString::Printf(TEXT("%s: has no %s, nothing removed"), *WBP->GetName(), *WidgetName.ToString());
+	}
+	TArray<UWidget*> Subtree;
+	Subtree.Add(Widget);
+	UWidgetTree::GetChildWidgets(Widget, Subtree);
+
+	WBP->Modify();
+	WBP->WidgetTree->Modify();
+	if (!WBP->WidgetTree->RemoveWidget(Widget))
+	{
+		return FString::Printf(TEXT("ERROR: %s couldn't remove %s"), *WBP->GetName(), *WidgetName.ToString());
+	}
+	for (UWidget* W : Subtree)
+	{
+		const FName OldName = W->GetFName();
+		WBP->OnVariableRemoved(OldName); // drop its variable GUID, or the compiler ensures on the stale entry
+		W->Rename(*MakeUniqueObjectName(GetTransientPackage(), W->GetClass(), *FString::Printf(TEXT("Removed_%s"), *OldName.ToString())).ToString(),
+			GetTransientPackage(), REN_DontCreateRedirectors | REN_NonTransactional);
+		W->ClearFlags(RF_Transactional | RF_Public | RF_Standalone);
+		W->SetFlags(RF_Transient);
+	}
+	FBlueprintEditorUtils::MarkBlueprintAsStructurallyModified(WBP);
+	FKismetEditorUtilities::CompileBlueprint(WBP);
+	WBP->MarkPackageDirty();
+	return FString::Printf(TEXT("%s: removed %s (%d widgets)"), *WBP->GetName(), *WidgetName.ToString(), Subtree.Num());
+#else
+	return TEXT("ERROR: editor only");
+#endif
+}
+
 FString ULTTWidgetBaker::BakeLayoutIntoWidgetBlueprint(UObject* WidgetBlueprint)
 {
 #if WITH_EDITOR
+	if (GEditor && GEditor->PlayWorld)
+	{
+		return TEXT("ERROR: stop Play-In-Editor first (recompiling widgets while PIE runs crashes the editor when PIE ends)");
+	}
 	UWidgetBlueprint* WBP = Cast<UWidgetBlueprint>(WidgetBlueprint);
 	if (!WBP)
 	{
