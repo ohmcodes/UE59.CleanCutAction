@@ -165,7 +165,9 @@ void ACleanCutActionCharacter::Tick(float DeltaSeconds)
 	if (!FMath::IsNearlyEqual(CrouchViewOffset, CrouchViewTarget))
 	{
 		CrouchViewOffset = FMath::FInterpConstantTo(CrouchViewOffset, CrouchViewTarget, DeltaSeconds, CrouchViewSpeed);
-		FirstPersonMesh->SetRelativeLocation(FirstPersonMeshBaseLocation + FVector(0.f, 0.f, CrouchViewOffset));
+		// The first person mesh is parented to the body mesh, which may be scaled; keep the offset in world cm.
+		const float ParentScaleZ = FMath::Max(KINDA_SMALL_NUMBER, GetMesh()->GetComponentScale().Z);
+		FirstPersonMesh->SetRelativeLocation(FirstPersonMeshBaseLocation + FVector(0.f, 0.f, CrouchViewOffset / ParentScaleZ));
 	}
 }
 
