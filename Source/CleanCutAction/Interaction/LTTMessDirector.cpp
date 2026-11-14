@@ -650,6 +650,17 @@ void ALTTMessDirector::CloseEndScreen()
 	SetPlayerInputBlocked(false);
 }
 
+void ALTTMessDirector::LoadNextLevel()
+{
+	if (NextLevelName.IsNone())
+	{
+		return;
+	}
+	UE_LOG(LogTemp, Log, TEXT("MessDirector: set is clean, opening %s."), *NextLevelName.ToString());
+	UGameplayStatics::SetGamePaused(this, false);
+	UGameplayStatics::OpenLevel(this, NextLevelName);
+}
+
 // ---- Briefing ----
 
 void ALTTMessDirector::ShowBriefing()

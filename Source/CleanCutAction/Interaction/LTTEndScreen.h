@@ -35,6 +35,10 @@ public:
 	UFUNCTION(BlueprintCallable, Category = "End Screen")
 	void PlayAgain();
 
+	/** Phase 2: opens the mess director's NextLevelName (the shoot). Only offered once the set is clean. */
+	UFUNCTION(BlueprintCallable, Category = "End Screen")
+	void ShootTheScene();
+
 	/** Closes the screen and unpauses. After time's up the countdown is switched off and play continues. */
 	UFUNCTION(BlueprintCallable, Category = "End Screen")
 	void KeepPlaying();
@@ -69,6 +73,11 @@ public:
 
 	UPROPERTY(BlueprintReadOnly, Category = "End Screen", meta = (BindWidgetOptional))
 	TObjectPtr<UButton> KeepPlayingButton;
+
+	/** "Shoot the Scene": on to Phase 2. Shown only when the set is clean. A Widget Blueprint layout without it
+	 *  gets one added in front of Play Again at runtime. */
+	UPROPERTY(BlueprintReadOnly, Category = "End Screen", meta = (BindWidgetOptional))
+	TObjectPtr<UButton> NextLevelButton;
 
 	/** Leaderboard place after the run was sent ("#4 of 27 - new best score!"), or the sending / offline note. */
 	UPROPERTY(BlueprintReadOnly, Category = "End Screen", meta = (BindWidgetOptional))
@@ -113,6 +122,9 @@ protected:
 
 	UFUNCTION()
 	void HandleKeepPlayingClicked();
+
+	UFUNCTION()
+	void HandleNextLevelClicked();
 
 	UFUNCTION()
 	void HandleLeaderboardClicked();
