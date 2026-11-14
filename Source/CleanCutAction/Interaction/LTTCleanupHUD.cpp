@@ -22,6 +22,10 @@
 #include "GameFramework/Pawn.h"
 #include "GameFramework/PlayerController.h"
 #include "Rendering/DrawElements.h"
+#include "Interaction/LTTInteractionComponent.h"
+#include "Interaction/LTTInteractable.h"
+#include "Blueprint/WidgetLayoutLibrary.h"
+#include "EngineUtils.h"
 
 #define LOCTEXT_NAMESPACE "LTTCleanupHUD"
 
@@ -158,6 +162,7 @@ void ULTTCleanupHUD::NativeTick(const FGeometry& MyGeometry, float InDeltaTime)
 	UpdateTexts();
 	UpdateTimerIcon();
 	UpdateArrow();
+	UpdatePickupRing(InDeltaTime);
 }
 
 void ULTTCleanupHUD::UpdateTexts()
@@ -307,6 +312,113 @@ void ULTTCleanupHUD::UpdateArrow()
 	}
 }
 
+ALTTInteractableBase* ULTTCleanupHUD::FindPickupRingTarget(const FVector& CamLoc, const FVector& CamDir, const AActor* IgnoreActor) const
+{
+	UWorld* World = GetWorld();
+	if (!World)
+	{
+		return nullptr;
+	}
+	const float MaxDistSq = FMath::Square(PickupRingDistance);
+	const float MinDot = FMath::Cos(FMath::DegreesToRadians(PickupRingMaxAngle));
+
+	// Candidates in range and in view, nearest first.
+	TArray<TPair<float, ALTTInteractableBase*>> Candidates;
+	for (TActorIterator<ALTTInteractableBase> It(World); It; ++It)
+	{
+		ALTTInteractableBase* Prop = *It;
+		if (!IsValid(Prop) || Prop->IsBrokenInPlace() || !ILTTInteractable::Execute_CanInteract(Prop, const_cast<AActor*>(IgnoreActor)))
+		{
+			continue;
+		}
+		const FVector Target = Prop->Mesh ? Prop->Mesh->Bounds.Origin : Prop->GetActorLocation();
+		const FVector ToTarget = Target - CamLoc;
+		const float DistSq = static_cast<float>(ToTarget.SizeSquared());
+		if (DistSq > MaxDistSq || DistSq < 1.f)
+		{
+			continue;
+		}
+		if (FVector::DotProduct(ToTarget / FMath::Sqrt(DistSq), CamDir) < MinDot)
+		{
+			continue;
+		}
+		Candidates.Emplace(DistSq, Prop);
+	}
+	Candidates.Sort([](const TPair<float, ALTTInteractableBase*>& A, const TPair<float, ALTTInteractableBase*>& B) { return A.Key < B.Key; });
+
+	// First one not hidden behind a wall or counter (a few traces at most).
+	FCollisionQueryParams Params(SCENE_QUERY_STAT(LTTPickupRing), false, IgnoreActor);
+	const int32 MaxTraces = FMath::Min(Candidates.Num(), 6);
+	for (int32 i = 0; i < MaxTraces; ++i)
+	{
+		ALTTInteractableBase* Prop = Candidates[i].Value;
+		const FVector Target = Prop->Mesh ? Prop->Mesh->Bounds.Origin : Prop->GetActorLocation();
+		FHitResult Hit;
+		if (!World->LineTraceSingleByChannel(Hit, CamLoc, Target, ECC_Visibility, Params) || Hit.GetActor() == Prop)
+		{
+			return Prop;
+		}
+	}
+	return nullptr;
+}
+
+void ULTTCleanupHUD::UpdatePickupRing(float DeltaTime)
+{
+	APlayerController* PC = GetOwningPlayer();
+	APawn* Pawn = PC ? PC->GetPawn() : nullptr;
+	const ULTTCarryComponent* Carry = Pawn ? Pawn->FindComponentByClass<ULTTCarryComponent>() : nullptr;
+	const bool bHolding = Carry && Carry->GetHeldItem();
+	const bool bActive = bShowPickupRing && Pawn && PC->PlayerCameraManager && !bHolding && !PC->IsPaused()
+		&& !(Director.IsValid() && Director->IsBriefingOpen());
+
+	if (!bActive)
+	{
+		RingTarget.Reset();
+	}
+	else
+	{
+		const FVector CamLoc = PC->PlayerCameraManager->GetCameraLocation();
+		const FVector CamDir = PC->PlayerCameraManager->GetCameraRotation().Vector();
+
+		// The prop under the crosshair always wins; otherwise re-pick the nearest a few times a second.
+		const ULTTInteractionComponent* Interaction = Pawn->FindComponentByClass<ULTTInteractionComponent>();
+		ALTTInteractableBase* Focused = Interaction ? Cast<ALTTInteractableBase>(Interaction->GetFocusedActor()) : nullptr;
+		RingSearchTimer -= DeltaTime;
+		if (Focused)
+		{
+			RingTarget = Focused;
+		}
+		else if (RingSearchTimer <= 0.f || !RingTarget.IsValid())
+		{
+			RingSearchTimer = 0.15f;
+			RingTarget = FindPickupRingTarget(CamLoc, CamDir, Pawn);
+		}
+		bRingFocused = Focused != nullptr && RingTarget.Get() == Focused;
+
+		// Drop a target that was picked up, placed, or left range / view since the last search.
+		if (ALTTInteractableBase* Prop = RingTarget.Get())
+		{
+			const FVector Target = Prop->Mesh ? Prop->Mesh->Bounds.Origin : Prop->GetActorLocation();
+			const FVector ToTarget = Target - CamLoc;
+			const bool bStillValid = ILTTInteractable::Execute_CanInteract(Prop, Pawn)
+				&& (bRingFocused || (ToTarget.SizeSquared() <= FMath::Square(PickupRingDistance * 1.1f)
+					&& FVector::DotProduct(ToTarget.GetSafeNormal(), CamDir) > 0.f));
+			FVector2D ScreenPos;
+			if (bStillValid && UWidgetLayoutLibrary::ProjectWorldLocationToWidgetPosition(PC, Target, ScreenPos, true))
+			{
+				RingPos = FVector2f(static_cast<float>(ScreenPos.X), static_cast<float>(ScreenPos.Y));
+			}
+			else
+			{
+				RingTarget.Reset();
+			}
+		}
+	}
+
+	const float Goal = RingTarget.IsValid() ? 1.f : 0.f;
+	RingAlpha = FMath::FInterpConstantTo(RingAlpha, Goal, DeltaTime, 6.f);
+}
+
 void ULTTCleanupHUD::AimArrowAt(const FVector& Target, const FVector& CamLoc, const FRotator& CamRot, const FLinearColor& Color)
 {
 	const FVector Local = CamRot.UnrotateVector(Target - CamLoc); // X forward, Y right, Z up
@@ -336,6 +448,32 @@ int32 ULTTCleanupHUD::NativePaint(const FPaintArgs& Args, const FGeometry& Allot
 	FSlateWindowElementList& OutDrawElements, int32 LayerId, const FWidgetStyle& InWidgetStyle, bool bParentEnabled) const
 {
 	int32 MaxLayer = Super::NativePaint(Args, AllottedGeometry, MyCullingRect, OutDrawElements, LayerId, InWidgetStyle, bParentEnabled);
+
+	// Ring (circle with a hole) over the nearest pickable prop.
+	if (RingAlpha > 0.01f)
+	{
+		const FPaintGeometry RingGeo = AllottedGeometry.ToPaintGeometry();
+		// Pulses while it's just nearby; steady and a bit tighter once the crosshair is on it.
+		const float RingPulse = bRingFocused ? 0.9f : 1.f + 0.1f * FMath::Sin(ArrowPulse * 5.f);
+		const float Radius = PickupRingRadius * RingPulse * (0.6f + 0.4f * RingAlpha);
+		constexpr int32 Segments = 40;
+		TArray<FVector2f> Circle;
+		Circle.Reserve(Segments + 1);
+		for (int32 i = 0; i <= Segments; ++i)
+		{
+			const float A = 2.f * PI * static_cast<float>(i) / static_cast<float>(Segments);
+			Circle.Add(RingPos + FVector2f(FMath::Cos(A), FMath::Sin(A)) * Radius);
+		}
+		FLinearColor RingFill = bRingFocused ? PickupRingFocusColor : PickupRingColor;
+		RingFill.A *= RingAlpha;
+		const FLinearColor RingOutline(0.f, 0.f, 0.f, 0.8f * RingAlpha);
+
+		++MaxLayer;
+		FSlateDrawElement::MakeLines(OutDrawElements, MaxLayer, RingGeo, Circle, ESlateDrawEffect::None, RingOutline, true, PickupRingThickness + 4.f);
+		++MaxLayer;
+		FSlateDrawElement::MakeLines(OutDrawElements, MaxLayer, RingGeo, Circle, ESlateDrawEffect::None, RingFill, true, PickupRingThickness);
+	}
+
 	if (!bArrowVisible)
 	{
 		return MaxLayer;

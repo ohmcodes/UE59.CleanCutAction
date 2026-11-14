@@ -113,6 +113,35 @@ public:
 	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Cleanup HUD|Home Arrow")
 	float FloorHeight = 220.f;
 
+	// ---- Nearby pickup ring ----
+
+	/** Draws a ring (a circle with a hole) over the nearest prop the player can pick up while empty-handed. */
+	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Cleanup HUD|Pickup Ring")
+	bool bShowPickupRing = true;
+
+	/** Only props within this distance of the camera get the ring (cm). */
+	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Cleanup HUD|Pickup Ring", meta = (ClampMin = "50"))
+	float PickupRingDistance = 350.f;
+
+	/** Only props within this many degrees of where the camera points get the ring. */
+	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Cleanup HUD|Pickup Ring", meta = (ClampMin = "5", ClampMax = "89"))
+	float PickupRingMaxAngle = 40.f;
+
+	/** Ring radius in pixels (at 1080p DPI scale). */
+	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Cleanup HUD|Pickup Ring", meta = (ClampMin = "4"))
+	float PickupRingRadius = 26.f;
+
+	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Cleanup HUD|Pickup Ring", meta = (ClampMin = "1"))
+	float PickupRingThickness = 5.f;
+
+	/** Ring colour while the prop is near but not under the crosshair. */
+	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Cleanup HUD|Pickup Ring")
+	FLinearColor PickupRingColor = FLinearColor(1.f, 0.85f, 0.25f);
+
+	/** Ring colour when the crosshair is on the prop (pressing Interact picks it up). */
+	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Cleanup HUD|Pickup Ring")
+	FLinearColor PickupRingFocusColor = FLinearColor(0.3f, 1.f, 0.4f);
+
 	/** True while the arrow is drawn. */
 	UFUNCTION(BlueprintPure, Category = "Cleanup HUD|Home Arrow")
 	bool IsHomeArrowVisible() const { return bArrowVisible; }
@@ -143,4 +172,17 @@ protected:
 	FVector2f ArrowDir = FVector2f(0.f, 1.f);
 	FLinearColor ArrowDrawColor = FLinearColor::White;
 	float ArrowPulse = 0.f;
+
+	/** Picks the ring's prop (a few times a second) and projects it to the screen (every frame). */
+	void UpdatePickupRing(float DeltaTime);
+	/** Nearest visible pickable prop in range and in view, or null. */
+	class ALTTInteractableBase* FindPickupRingTarget(const FVector& CamLoc, const FVector& CamDir, const AActor* IgnoreActor) const;
+
+	TWeakObjectPtr<class ALTTInteractableBase> RingTarget;
+	float RingSearchTimer = 0.f;
+	/** Ring centre in widget space. Kept while the ring fades out. */
+	FVector2f RingPos = FVector2f::ZeroVector;
+	/** 0..1, fades in and out. */
+	float RingAlpha = 0.f;
+	bool bRingFocused = false;
 };
