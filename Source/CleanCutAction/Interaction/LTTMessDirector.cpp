@@ -30,6 +30,8 @@
 #include "Camera/CameraShakeBase.h"
 #include "GameFramework/PlayerController.h"
 #include "Kismet/GameplayStatics.h"
+#include "Sound/SoundBase.h"
+#include "UObject/ConstructorHelpers.h"
 #include "EngineUtils.h"
 #include "Engine/World.h"
 #include "TimerManager.h"
@@ -57,6 +59,11 @@ ALTTMessDirector::ALTTMessDirector()
 	EndScreenClass = ULTTEndScreen::StaticClass();
 	BriefingClass = ULTTBriefingScreen::StaticClass();
 	EndingOverlayClass = ULTTEndingOverlay::StaticClass();
+
+	static ConstructorHelpers::FObjectFinder<USoundBase> NextPhase(TEXT("/Game/_CleanCutAction/SFX/SW_next_phase.SW_next_phase"));
+	static ConstructorHelpers::FObjectFinder<USoundBase> Miss(TEXT("/Game/_CleanCutAction/SFX/SW_miss.SW_miss"));
+	SetReadySound = NextPhase.Object;
+	TimeUpSound = Miss.Object;
 }
 
 ALTTMessDirector* ALTTMessDirector::Get(const UObject* WorldContext)
@@ -630,6 +637,10 @@ void ALTTMessDirector::ShowEndScreen(bool bSetClean)
 		Screen->Setup(this, bSetClean);
 	}
 	EndScreenWidget->AddToViewport(10);
+	if (USoundBase* Sting = bSetClean ? SetReadySound.Get() : TimeUpSound.Get())
+	{
+		UGameplayStatics::PlaySound2D(this, Sting);
+	}
 	if (HUDWidget)
 	{
 		HUDWidget->SetVisibility(ESlateVisibility::Collapsed);

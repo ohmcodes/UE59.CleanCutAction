@@ -22,15 +22,37 @@ Keep the itch.io 200 MB limit in mind: short mono SFX (OGG/WAV, 22–44 kHz), lo
 | `Station_RainRig` | Rain | Rain loop (loopable, starts and stays on) | Drizzle / single drip |
 | `Station_PropTable2F` | Umbrella / Roses | Whoosh + umbrella pop | Bonk |
 
-### Director (`LTTSceneDirector` actor)
+### Freesound picks for the stations (all CC0, no attribution needed)
+
+Trim long recordings to the part described; import as mono. `+` = layer the two clips.
+
+| Station | EffectSound | MissSound |
+|---|---|---|
+| Slate | [JM_MOVIE_Clapperboard](https://freesound.org/people/Julien_Matthey/sounds/484323/) 0.5 s (alt [Clapboard sound](https://freesound.org/people/uEffects/sounds/207867/)) | – |
+| CarRail | [passing car](https://freesound.org/people/NachtmahrTV/sounds/553259/) 13.7 s, trim to ~3 s + [Car horn beep beep](https://freesound.org/people/AmishRob/sounds/423990/) 0.7 s | [bicycle-bell_19](https://freesound.org/people/newagesoup/sounds/383631/) 3.4 s |
+| DoorBell | [shop_door_bell](https://freesound.org/people/3bagbrew/sounds/57743/) 8 s, trim (alt [Shop door bell](https://freesound.org/people/775noise/sounds/494565/)) | [Cowbell2](https://freesound.org/people/Neotone/sounds/75339/) 0.35 s |
+| Espresso | [Coffee Maker – Water Pour, Steam Hiss](https://freesound.org/people/MegaPenguin13/sounds/118202/) 9.7 s, take the hiss (alt [Steaming Milk](https://freesound.org/people/Sounds_by_Cois/sounds/553927/)) | [Coffee machine brewing, boiling](https://freesound.org/people/TRP/sounds/717444/) 6 min, cut a 1–2 s sputter |
+| PropTable1F | [PaperSlide](https://freesound.org/people/eyesonlegs/sounds/464302/) 1.6 s | [Comedic Loud Bonk](https://freesound.org/people/cb9382/sounds/871191/) 0.45 s |
+| Thunder | [Thunder Clap](https://freesound.org/people/DaniloSFX/sounds/672776/) 16 s, trim to ~5 s (alt [Thunder Clap OWB](https://freesound.org/people/Dave%20Welsh/sounds/194364/)) | [Sheet-metal wobble](https://freesound.org/people/Oldome/sounds/862785/) 44 s, cut ~1.5 s |
+| LightRig | [Light Switch ON / OFF](https://freesound.org/people/FillSoko/sounds/257958/) 12.8 s, one click + [Fluorescent hum](https://freesound.org/people/soundandmelodies/sounds/776265/) | [Wrong Answer Buzzer](https://freesound.org/people/-Andreas/sounds/650842/) 0.3 s (or [electric hum buzz short](https://freesound.org/people/kyles/sounds/451860/)) |
+| WindFan | [Electric mini fan turn on](https://freesound.org/people/lokmansalikoon/sounds/735113/) 28 s, take the spin-up + [Wind Gust](https://freesound.org/people/crashoverride6/sounds/146932/) 7.7 s | [electric fan + shut off](https://freesound.org/people/kyles/sounds/452485/) 1:47, cut the spin-down |
+| BoomMic | [short creaks](https://freesound.org/people/HowardV/sounds/393800/) 15 s, one creak | [Tapping the Microphone](https://freesound.org/people/qubodup/sounds/741035/) 1.6 s or [Microphone feedback](https://freesound.org/people/JavierSerrat/sounds/470111/), cut ~1 s |
+| RainRig | [Light Rain](https://freesound.org/people/soundrecorder7/sounds/167034/) 26 s, loop it (alt [Rain LOOP](https://freesound.org/people/speakwithanimals/sounds/525046/), 14 min, cut 20 s) | [Drop – Water](https://freesound.org/people/mattfinarelli/sounds/533146/) 0.6 s |
+| PropTable2F | [Whoosh](https://freesound.org/people/qubodup/sounds/60013/) 0.4 s + [Umbrella open/close](https://freesound.org/people/ValentinPetiteau/sounds/628659/), one open | [Bonk.wav](https://freesound.org/people/Harrisando/sounds/466202/) 1.8 s (or reuse the 1F bonk) |
+
+### Director (`LTTSceneDirector` actor) – done
+
+Defaults set in the `ALTTSceneDirector` constructor (`/Game/_CleanCutAction/SFX/`); override per level in Details.
 
 | Slot | Sound |
 |---|---|
-| `CueCallSound` | Megaphone squawk / short whistle |
-| `CueGoodSound` | Positive ding |
-| `CueMissSound` | Comedic "womp" |
-| `CutSound` | "CUT!" stinger / record scratch |
-| `WrapSound` | Applause + "That's a wrap" sting |
+| `CueCallSound` | `SW_notification` |
+| `CueGoodSound` | `SW_success` |
+| `CueMissSound` | `SW_miss` |
+| `CutSound` | `SW_cut` |
+| `WrapSound` | `SW_applause` |
+
+Phase 1 (`LTTMessDirector`): `SetReadySound` = `SW_next_phase`, `TimeUpSound` = `SW_miss`, played when the end screen opens.
 
 ### Optional, no slot yet (would need a small hook)
 

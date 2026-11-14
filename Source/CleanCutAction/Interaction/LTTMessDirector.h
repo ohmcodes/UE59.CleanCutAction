@@ -22,6 +22,7 @@ class ULevelSequencePlayer;
 class ALevelSequenceActor;
 class ACameraActor;
 class ULTTEndingOverlay;
+class USoundBase;
 
 DECLARE_DYNAMIC_MULTICAST_DELEGATE_TwoParams(FLTTOnCleanProgress, int32, Placed, int32, Total);
 DECLARE_DYNAMIC_MULTICAST_DELEGATE(FLTTOnAllPlaced);
@@ -369,6 +370,14 @@ public:
 	/** Seconds between the last prop locking in (or time running out) and the end screen. */
 	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "End Screen", meta = (ClampMin = "0"))
 	float EndScreenDelay = 1.5f;
+
+	/** Plays when the end screen comes up with the set clean ("SET READY!", on to Phase 2). Defaults to SW_next_phase. */
+	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "End Screen")
+	TObjectPtr<USoundBase> SetReadySound;
+
+	/** Plays when the end screen comes up because the countdown ran out ("TIME'S UP!"). Defaults to SW_miss. */
+	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "End Screen")
+	TObjectPtr<USoundBase> TimeUpSound;
 
 	/** Phase 2: the level the end screen's "Shoot the Scene" button opens once the set is clean. None hides the button.
 	 *  The map has to be in MapsToCook (Config/DefaultGame.ini) to be in the packaged game. */

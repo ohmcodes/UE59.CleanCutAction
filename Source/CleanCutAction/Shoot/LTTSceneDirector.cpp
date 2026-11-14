@@ -22,6 +22,7 @@
 #include "Materials/MaterialParameterCollection.h"
 #include "Sound/SoundBase.h"
 #include "TimerManager.h"
+#include "UObject/ConstructorHelpers.h"
 
 #define LOCTEXT_NAMESPACE "LTTSceneDirector"
 
@@ -45,6 +46,18 @@ ALTTSceneDirector::ALTTSceneDirector()
 	SetRootComponent(CreateDefaultSubobject<USceneComponent>(TEXT("Root")));
 	HUDClass = ULTTShootHUD::StaticClass();
 	EndScreenClass = ULTTShootEndScreen::StaticClass();
+
+	// Default SFX; any can be swapped or cleared on the level's director.
+	static ConstructorHelpers::FObjectFinder<USoundBase> Call(TEXT("/Game/_CleanCutAction/SFX/SW_notification.SW_notification"));
+	static ConstructorHelpers::FObjectFinder<USoundBase> Good(TEXT("/Game/_CleanCutAction/SFX/SW_success.SW_success"));
+	static ConstructorHelpers::FObjectFinder<USoundBase> Miss(TEXT("/Game/_CleanCutAction/SFX/SW_miss.SW_miss"));
+	static ConstructorHelpers::FObjectFinder<USoundBase> Cut(TEXT("/Game/_CleanCutAction/SFX/SW_cut.SW_cut"));
+	static ConstructorHelpers::FObjectFinder<USoundBase> Wrap(TEXT("/Game/_CleanCutAction/SFX/SW_applause.SW_applause"));
+	CueCallSound = Call.Object;
+	CueGoodSound = Good.Object;
+	CueMissSound = Miss.Object;
+	CutSound = Cut.Object;
+	WrapSound = Wrap.Object;
 }
 
 ALTTSceneDirector* ALTTSceneDirector::Get(const UObject* WorldContext)
