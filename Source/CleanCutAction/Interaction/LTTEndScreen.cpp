@@ -20,6 +20,8 @@
 #include "GameFramework/PlayerController.h"
 #include "Kismet/GameplayStatics.h"
 
+#include "UI/LTTInputDevice.h"
+
 #define LOCTEXT_NAMESPACE "LTTEndScreen"
 
 namespace
@@ -414,6 +416,9 @@ void ULTTEndScreen::NativeTick(const FGeometry& MyGeometry, float InDeltaTime)
 {
 	Super::NativeTick(MyGeometry, InDeltaTime);
 	AnimTime += InDeltaTime; // UMG ticks with real time, so this runs while the game is paused
+
+	// Gamepad: put focus on a button (Shoot the scene first) so the left stick / d-pad and A drive the screen.
+	ULTTInputDeviceSubsystem::EnsureGamepadFocus(this, NextLevelButton ? NextLevelButton.Get() : PlayAgainButton.Get());
 
 	// Title slams down (scale 2.5 -> 1, out-bounce, 0.45 s).
 	if (TitleText)

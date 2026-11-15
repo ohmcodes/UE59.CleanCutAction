@@ -5,6 +5,7 @@
 #include "CoreMinimal.h"
 #include "GameFramework/PlayerController.h"
 #include "InputCoreTypes.h"
+#include "UI/LTTInputDevice.h"
 #include "CleanCutActionPlayerController.generated.h"
 
 class UInputMappingContext;
@@ -43,6 +44,11 @@ public:
 
 	/** Returns true if the player should use UMG touch controls (mobile / touch-first browser, or bForceTouchControls). */
 	bool ShouldUseTouchControls() const;
+
+	/** Touch controls are on screen: a touch device that isn't currently being played with a gamepad
+	 *  (a Steam Deck or tablet with a controller shows the gamepad prompts instead). */
+	UFUNCTION(BlueprintPure, Category = "Input|Touch Controls")
+	bool IsShowingTouchControls() const;
 
 	/** Unstuck: puts the pawn back where it first spawned (standing, facing the spawn direction, no velocity).
 	 *  A held prop comes along. Called by the pause menu's Unstuck button. */
@@ -109,6 +115,15 @@ protected:
 	TObjectPtr<UInputMappingContext> RuntimePauseContext;
 
 	void HandlePauseInput();
+
+	/** Hides the touch overlay while a gamepad is used and swaps the interact prompt's key labels. */
+	UFUNCTION()
+	void HandleInputDeviceChanged(ELTTInputDevice NewDevice);
+
+	/** Applies the current device to the touch overlay and WBP_InteractPrompt (also re-run on a timer for widgets made later). */
+	void ApplyInputDevice();
+
+	FTimerHandle InputDeviceTimer;
 
 	virtual void OnPossess(APawn* InPawn) override;
 

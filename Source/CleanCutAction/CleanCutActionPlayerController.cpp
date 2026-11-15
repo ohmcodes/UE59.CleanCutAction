@@ -18,6 +18,14 @@
 #include "GameFramework/Character.h"
 #include "GameFramework/CharacterMovementComponent.h"
 #include "GameFramework/GameModeBase.h"
+#include "Blueprint/WidgetBlueprintLibrary.h"
+#include "Blueprint/WidgetTree.h"
+#include "Components/Border.h"
+#include "Components/HorizontalBox.h"
+#include "Components/HorizontalBoxSlot.h"
+#include "Components/TextBlock.h"
+#include "Engine/GameInstance.h"
+#include "TimerManager.h"
 
 ACleanCutActionPlayerController::ACleanCutActionPlayerController()
 {
@@ -59,6 +67,132 @@ void ACleanCutActionPlayerController::BeginPlay()
 			}
 		}
 
+	}
+
+	// Keyboard / gamepad / touch prompts follow the device the player last used.
+	if (IsLocalPlayerController())
+	{
+		if (ULTTInputDeviceSubsystem* Devices = GetGameInstance() ? GetGameInstance()->GetSubsystem<ULTTInputDeviceSubsystem>() : nullptr)
+		{
+			Devices->OnInputDeviceChanged.AddUniqueDynamic(this, &ACleanCutActionPlayerController::HandleInputDeviceChanged);
+		}
+		// Also on a timer: the interact prompt and touch overlay are made by Blueprint after this runs.
+		GetWorldTimerManager().SetTimer(InputDeviceTimer, this, &ACleanCutActionPlayerController::ApplyInputDevice, 0.25f, true, 0.f);
+	}
+}
+
+bool ACleanCutActionPlayerController::IsShowingTouchControls() const
+{
+	return ShouldUseTouchControls() && !ULTTInputDeviceSubsystem::IsGamepad();
+}
+
+void ACleanCutActionPlayerController::HandleInputDeviceChanged(ELTTInputDevice NewDevice)
+{
+	ApplyInputDevice();
+}
+
+namespace
+{
+	void LTTSetVisibilityIfChanged(UWidget* Widget, ESlateVisibility Visibility)
+	{
+		if (Widget && Widget->GetVisibility() != Visibility)
+		{
+			Widget->SetVisibility(Visibility);
+		}
+	}
+
+	void LTTSetTextIfChanged(UTextBlock* Text, const FText& Value)
+	{
+		if (Text && !Text->GetText().EqualTo(Value))
+		{
+			Text->SetText(Value);
+		}
+	}
+}
+
+void ACleanCutActionPlayerController::ApplyInputDevice()
+{
+	if (!IsLocalPlayerController())
+	{
+		return;
+	}
+	const bool bPad = ULTTInputDeviceSubsystem::IsGamepad();
+	const bool bTouchUI = IsShowingTouchControls();
+
+	// Touch overlay: hidden while a gamepad drives the game on a touch device (Steam Deck browser, tablet + controller).
+	if (ShouldUseTouchControls())
+	{
+		const ESlateVisibility TouchVis = bTouchUI ? ESlateVisibility::SelfHitTestInvisible : ESlateVisibility::Collapsed;
+		const bool bChanged = MobileControlsWidget && MobileControlsWidget->GetVisibility() != TouchVis;
+		LTTSetVisibilityIfChanged(MobileControlsWidget, TouchVis);
+		LTTSetVisibilityIfChanged(MusicToggleWidget, TouchVis);
+		if (bChanged && !IsPaused() && !PauseMenuWidget)
+		{
+			SetShowMouseCursor(bTouchUI);
+		}
+	}
+
+	// WBP_InteractPrompt (made by BP_FirstPersonPlayerController): "E / mouse" or "X", and "RT" for throw.
+	static const FSoftClassPath PromptClassPath(TEXT("/Game/_CleanCutAction/Blueprints/Widgets/WBP_InteractPrompt.WBP_InteractPrompt_C"));
+	UClass* PromptClass = PromptClassPath.ResolveClass();
+	if (!PromptClass)
+	{
+		return;
+	}
+	TArray<UUserWidget*> Prompts;
+	UWidgetBlueprintLibrary::GetAllWidgetsOfClass(this, Prompts, PromptClass, false);
+	for (UUserWidget* Prompt : Prompts)
+	{
+		if (!Prompt || Prompt->GetOwningPlayer() != this)
+		{
+			continue;
+		}
+		// The prompt hides itself in touch mode (UI_TouchSimple sets the flag); a gamepad on a touch device needs it back.
+		if (FBoolProperty* TouchFlag = FindFProperty<FBoolProperty>(Prompt->GetClass(), TEXT("bTouchMode")))
+		{
+			TouchFlag->SetPropertyValue_InContainer(Prompt, bTouchUI);
+		}
+		const ESlateVisibility MouseVis = bPad ? ESlateVisibility::Collapsed : ESlateVisibility::HitTestInvisible;
+		LTTSetTextIfChanged(Cast<UTextBlock>(Prompt->GetWidgetFromName(TEXT("KeyText"))),
+			bPad ? ULTTInputDeviceSubsystem::GamepadKeyLabel(EKeys::Gamepad_FaceButton_Left) : FText::FromString(TEXT("E")));
+		LTTSetVisibilityIfChanged(Prompt->GetWidgetFromName(TEXT("OrText")), MouseVis);
+		LTTSetVisibilityIfChanged(Prompt->GetWidgetFromName(TEXT("MouseLeftIcon")), MouseVis);
+		LTTSetVisibilityIfChanged(Prompt->GetWidgetFromName(TEXT("MouseRightIcon")), MouseVis);
+
+		// Throw row: an "RT" key cap in the same style as the E cap, made here if the WBP doesn't have one.
+		UWidget* ThrowCap = Prompt->GetWidgetFromName(TEXT("ThrowPadCap"));
+		UHorizontalBox* RowThrow = Cast<UHorizontalBox>(Prompt->GetWidgetFromName(TEXT("RowThrow")));
+		if (!ThrowCap && bPad && RowThrow && Prompt->WidgetTree)
+		{
+			UBorder* NewCap = Prompt->WidgetTree->ConstructWidget<UBorder>(UBorder::StaticClass(), TEXT("ThrowPadCap"));
+			UTextBlock* CapText = Prompt->WidgetTree->ConstructWidget<UTextBlock>(UTextBlock::StaticClass(), TEXT("ThrowPadText"));
+			if (const UBorder* ECap = Cast<UBorder>(Prompt->GetWidgetFromName(TEXT("KeyCapE"))))
+			{
+				NewCap->SetBrush(ECap->Background);
+				NewCap->SetPadding(ECap->GetPadding());
+				NewCap->SetHorizontalAlignment(ECap->GetHorizontalAlignment());
+				NewCap->SetVerticalAlignment(ECap->GetVerticalAlignment());
+			}
+			if (const UTextBlock* EText = Cast<UTextBlock>(Prompt->GetWidgetFromName(TEXT("KeyText"))))
+			{
+				CapText->SetFont(EText->GetFont());
+				CapText->SetColorAndOpacity(EText->GetColorAndOpacity());
+			}
+			CapText->SetText(ULTTInputDeviceSubsystem::GamepadKeyLabel(EKeys::Gamepad_RightTrigger));
+			NewCap->SetContent(CapText);
+			UHorizontalBoxSlot* NewSlot = Cast<UHorizontalBoxSlot>(RowThrow->InsertChildAt(0, NewCap));
+			const UWidget* MouseRight = Prompt->GetWidgetFromName(TEXT("MouseRightIcon"));
+			if (const UHorizontalBoxSlot* MouseSlot = MouseRight ? Cast<UHorizontalBoxSlot>(MouseRight->Slot) : nullptr)
+			{
+				if (NewSlot)
+				{
+					NewSlot->SetPadding(MouseSlot->GetPadding());
+					NewSlot->SetVerticalAlignment(MouseSlot->GetVerticalAlignment());
+				}
+			}
+			ThrowCap = NewCap;
+		}
+		LTTSetVisibilityIfChanged(ThrowCap, bPad ? ESlateVisibility::HitTestInvisible : ESlateVisibility::Collapsed);
 	}
 }
 
@@ -219,7 +353,7 @@ void ACleanCutActionPlayerController::TeleportToSpawn()
 
 void ACleanCutActionPlayerController::RestoreGameInput()
 {
-	if (ShouldUseTouchControls())
+	if (IsShowingTouchControls())
 	{
 		// Same mode UI_TouchSimple sets on Construct: GameOnly would stop the touch buttons taking taps.
 		FInputModeGameAndUI Mode;
