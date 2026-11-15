@@ -61,6 +61,6 @@ Check only what is verified in the packaged build:
 
 ### Optional: How did you use the NVIDIA features you checked above
 
-**Draft. Delete any sentence for a feature that didn't make it into the build:**
+**Final paste-ready version (with the 5.9 plugin port): `AI_Usage.md`.** Earlier draft:
 
 > **NVIDIA DLSS 4.5 (Windows build):** DLSS Super Resolution (Quality by default) upscales the two-floor New York cafe set, so the Windows build can run hardware ray-traced Lumen global illumination and reflections, with hit lighting for reflections, at Cinematic settings while holding a smooth frame rate during the Phase 2 shoot, when the player sprints between effect stations while rain, steam and thunder-flash effects run. DLSS Frame Generation is on by default on RTX 40/50 GPUs (Auto: 2x on RTX 40, Multi Frame Generation on RTX 50), with NVIDIA Reflex on to keep input responsive. DLSS Ray Reconstruction replaces the denoiser for the ray-traced Lumen reflections on the cafe's windows and glossy surfaces. All three can be toggled live in the pause menu (**NVIDIA DLSS**: Off (TSR) / DLAA / Quality / Balanced / Performance, **Frame Generation** On/Off, **Ray Reconstruction** On/Off), so judges can compare against TSR. The buttons only appear on GPUs that support each feature; on other GPUs the game falls back to TSR.
