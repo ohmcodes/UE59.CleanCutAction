@@ -1,42 +1,52 @@
 # 01 — Windows "Go Big" (RTX Showcase)
 
-**Goal:** the highest-fidelity build of CleanCutAction. Hardware ray tracing, Lumen HW RT, Nanite, Virtual Shadow Maps, and **NVIDIA DLSS** (for the NVIDIA RTX Award). Every Windows-only feature must stay out of the other platforms.
+**Goal:** the highest-fidelity build of CleanCutAction: hardware ray tracing, Lumen HW RT, Virtual Shadow Maps, and (for the NVIDIA RTX Award) **NVIDIA DLSS**. Every Windows-only setting stays out of the other platforms.
 
-Branch: `packaging/windows`
+Branch: `windows`. Checkout: `F:\UE5 Projects\CCA_Windows`. Award plan and form answers: `Docs/Submission/NVIDIA_RTX_Award.md`.
+
+## Status (2026-11-15)
+
+| Item | State |
+|---|---|
+| DX12 + SM6 | **Done**, but in `Config/DefaultEngine.ini` (it only affects Windows, since it's the Windows target section) |
+| TSR anti-aliasing | **Done**: `Config/Windows/WindowsEngine.ini` (`r.AntiAliasingMethod=4`; the default is 0 = none) |
+| HW ray tracing, Lumen HW RT, hit-lighting reflections, translucent front-layer reflections, bloom | **Done**: `Config/Windows/WindowsEngine.ini` |
+| Device profile (Epic/Cinematic) | **Done**: `Config/Windows/WindowsDeviceProfiles.ini` |
+| `Config/Windows/` committed | **No**: the folder is untracked |
+| Nanite | **Off** project-wide (`r.Nanite.ProjectEnabled=False`). Not turned on for Windows |
+| DLSS / Streamline plugin | **Not installed**. No `Plugins/` folder in the project; nothing in the engine |
+| NVIDIA Reflex | Engine plugin exists (`Engine/Plugins/Runtime/Nvidia/Reflex`, Win64-only, off by default). **Not enabled** |
+| In-game graphics menu | **None**. The pause menu has no graphics settings |
+| Windows package | **Not built yet** |
 
 ---
 
 ## 1. Prerequisites
 
-- [ ] Visual Studio with the C++ game development workload (versions per the 5.9 source build's requirements).
-- [ ] An NVIDIA RTX GPU on the test machine (needed to verify DLSS).
+- [ ] Visual Studio with the C++ game development workload (the editor module already builds on this machine: `Binaries/Win64/UnrealEditor-CleanCutAction.dll`).
+- [ ] An NVIDIA RTX GPU on the test machine (needed to verify ray tracing and DLSS).
 - [ ] Latest NVIDIA driver.
-- [ ] NVIDIA DLSS Unreal Engine plugin downloaded (see section 1.5; the user does this, not the agent).
+- [ ] DLSS plugin downloaded by the user (section 1.5), only if the DLSS award is still the plan.
 
 ---
 
 ## 1.5 Download the NVIDIA DLSS plugin (user step)
 
-The agent must not download this. It requires accepting NVIDIA's license agreement, which only the user can do.
+The agent must not download this. It needs NVIDIA's license accepted by the user.
 
-1. Go to **https://developer.nvidia.com/rtx/dlss** and find **"DLSS 4.5 Plugin for Unreal Engine"**. NVIDIA may ask you to sign in with a free NVIDIA Developer account.
-2. Accept the license agreement and pick the download for your engine version.
-   - UE 5.9 MegaJam Preview is days old and probably not listed. Download the **newest version listed** (5.8 or 5.7). The plugin ships with source code, so it recompiles against 5.9 inside our C++ project (section 4).
-   - Older versions are on NVIDIA's "DLSS: Unreal Engine Plugin Archive" page, linked from the same site.
-3. Unzip. Expect:
-   - plugin folders (DLSS / Super Resolution, Streamline for Frame Generation + Reflex, and their dependencies)
-   - a `Samples/` folder with a test project
-   - Quick Start Guide PDFs. **Keep these. The agent reads them for the correct cvar and Blueprint names (section 5).**
-4. Write down the package version in `BUILD_LOG.md`. The October 2026 package lists Streamline 2.14.16 / NGX 310.9.16; yours may be newer.
-5. Copy the unzipped folder into `CleanCutAction\ThirdParty\NVIDIA_DLSS_Download\` so the agent can find the plugins and PDFs, then tell the agent to continue with section 4.
+1. Go to **https://developer.nvidia.com/rtx/dlss** and find **"DLSS 4.5 Plugin for Unreal Engine"** (free NVIDIA Developer account).
+2. Accept the license and take the newest UE version listed (5.9 Preview won't be listed; the plugin ships with source and recompiles against 5.9 in our C++ project).
+3. Unzip. Keep the Quick Start Guide PDFs: the agent reads them for the cvar and Blueprint names (section 5).
+4. Note the package version in the build records (README).
+5. Copy the unzipped folder into `CCA_Windows\ThirdParty\NVIDIA_DLSS_Download\` and tell the agent to continue with section 4.
 
-**Git note:** the plugin contains large `.dll` files. Track them with Git LFS (`*.dll`, `*.lib`, `*.pdb` in `.gitattributes`) and keep the repo private, since redistribution is governed by NVIDIA's license.
+**Git note:** the plugin has large `.dll` files. Track `*.dll`, `*.lib`, `*.pdb` with Git LFS and keep the repo private (NVIDIA's license governs redistribution).
 
 ---
 
-## 2. Windows RHI and shader model
+## 2. Windows RHI and shader model — done
 
-Write to `Config/Windows/WindowsEngine.ini` (create if missing):
+Already in `Config/DefaultEngine.ini`:
 
 ```ini
 [/Script/WindowsTargetPlatform.WindowsTargetSettings]
@@ -45,134 +55,145 @@ DefaultGraphicsRHI=DefaultGraphicsRHI_DX12
 +D3D12TargetedShaderFormats=PCD3D_SM6
 ```
 
+(`DefaultGraphicsRHI` is listed twice there; harmless.) No need to repeat it in `WindowsEngine.ini`.
+
 ---
 
-## 3. Ray tracing, Lumen, Nanite, shadows
+## 3. Ray tracing, Lumen, shadows — done (Windows ini)
 
-These are renderer settings. Put them in `Config/Windows/WindowsEngine.ini` so they apply only to Windows.
+Project defaults in `DefaultEngine.ini` (all platforms): Lumen GI and reflections (`r.DynamicGlobalIlluminationMethod=1`, `r.ReflectionMethod=1`) in **software** mode, `r.RayTracing=False`, VSM on, `r.Nanite.ProjectEnabled=False`, `r.SkinCache.CompileShaders=1`, MegaLights off, Substrate on, `r.AntiAliasingMethod=0`, bloom off by default, `TargetedHardwareClass=Mobile` / `Scalable`.
+
+`Config/Windows/WindowsEngine.ini` overrides for Windows only:
 
 ```ini
 [/Script/Engine.RendererSettings]
-r.RayTracing=True
-r.SkinCache.CompileShaders=True
-r.DynamicGlobalIlluminationMethod=1
-r.ReflectionMethod=1
+r.AntiAliasingMethod=4                                   ; TSR
+r.RayTracing=True                                        ; non-RT GPUs fall back to software Lumen
+r.RayTracing.Shadows=False                               ; VSM stays the shadow method
 r.Lumen.HardwareRayTracing=True
-r.Shadow.Virtual.Enable=1
-r.Nanite.ProjectEnabled=True
+r.Lumen.HardwareRayTracing.LightingMode=2                ; hit lighting for reflections
+r.Lumen.TranslucencyReflections.FrontLayer.EnableForProject=True
+r.DefaultFeature.Bloom=True
 ```
 
-- `r.RayTracing` and `r.SkinCache.CompileShaders` need an editor restart and shader recompile. **Warn the user before applying.**
-- **VERIFY:** if any of these keys already exist in `Config/DefaultEngine.ini` with different values, do not edit the Default file. The Windows file overrides it.
+- Changing `r.RayTracing` or `r.Lumen.HardwareRayTracing` recompiles Windows shaders and needs an editor restart.
+- **Nanite is not enabled.** Turning on `r.Nanite.ProjectEnabled` would also need meshes converted to Nanite (asset change). Ask the user before doing either.
 
 ---
 
-## 4. DLSS plugin install (ask the user before starting)
+## 4. DLSS plugin install — not started (ask the user first)
 
-1. Copy the plugin folders from `ThirdParty\NVIDIA_DLSS_Download\` (DLSS, Streamline, and their dependencies, exactly as shipped) into `CleanCutAction/Plugins/`. Follow the Quick Start Guide PDF if its steps differ from these.
-2. Regenerate project files and build the editor target from Visual Studio.
-3. If it fails to compile against 5.9 Preview:
-   - Report the first errors to the user.
-   - Do not patch plugin or engine source without permission.
-   - Agree on a time-box (suggested: one hour) before abandoning DLSS.
-4. Open every `.uplugin` that was added and confirm each module has:
-   ```json
-   "PlatformAllowList": [ "Win64" ]
-   ```
-   If missing, ask the user before adding it.
-5. Enable the plugins in the editor (Edit → Plugins). Restart.
-6. NVIDIA recommends using the Reflex bundled with the Streamline plugin instead of UE's built-in Reflex plugin. If both are present, **ask the user** before disabling the built-in one.
-7. When Frame Generation is on, disable VSync (`r.vsync 0`). NVIDIA notes VSync can misbehave with Frame Generation active.
+1. Copy the plugin folders from `ThirdParty\NVIDIA_DLSS_Download\` (DLSS, Streamline and their dependencies, as shipped) into `CCA_Windows/Plugins/` (create it). Follow the Quick Start PDF if it differs.
+2. Regenerate project files and build the editor target.
+3. If it fails to compile against 5.9 Preview: report the first errors; don't patch plugin or engine source without permission; time-box (about one hour) before dropping DLSS.
+4. Each added `.uplugin` module must have `"PlatformAllowList": [ "Win64" ]`. Ask before adding it if missing.
+5. Enable the plugins (Edit → Plugins), restart.
+6. NVIDIA recommends the Reflex bundled with Streamline over the engine's Reflex plugin. The engine one is off, so leave it off.
+7. With Frame Generation on, disable VSync (`r.vsync 0`).
+
+**Branch note:** `Plugins/` must exist only on the `windows` branch. Don't merge it into `wasm`, `linux` or `android`.
 
 ---
 
-## 5. DLSS runtime setup
+## 5. DLSS runtime setup — not started
 
-**VERIFY:** cvar and Blueprint function names change between plugin versions. Read the documentation PDF bundled with the plugin and use the names it gives. The names below are a starting point only.
-
-Default-on settings in `Config/Windows/WindowsEngine.ini`:
+**VERIFY:** cvar and Blueprint names change between plugin versions. Use the names in the plugin's PDF; these are a starting point only.
 
 ```ini
+; Config/Windows/WindowsEngine.ini
 [SystemSettings]
 r.NGX.DLSS.Enable=1
-; Frame Generation via Streamline (DX12 only)
-r.Streamline.DLSSG.Enable=1
+r.Streamline.DLSSG.Enable=1   ; Frame Generation, DX12 only
 ```
 
-Gameplay code:
-
-- All C++ that references DLSS types or headers must be wrapped:
-  ```cpp
-  #if PLATFORM_WINDOWS
-  // DLSS calls here
-  #endif
-  ```
-- Add the DLSS module to `CleanCutAction.Build.cs` only for Win64:
+- Wrap all C++ that touches DLSS in `#if PLATFORM_WINDOWS`.
+- Add the DLSS module to `Source/CleanCutAction/CleanCutAction.Build.cs` only for Win64:
   ```csharp
   if (Target.Platform == UnrealTargetPlatform.Win64)
   {
       PrivateDependencyModuleNames.Add("VERIFY_DLSSBlueprintModuleName");
   }
   ```
-- In Blueprint, branch on `Get Platform Name == "Windows"` before calling DLSS nodes.
 
 ---
 
-## 6. In-game graphics menu (makes the feature visible to judges)
+## 6. In-game graphics menu — not started
 
-Add a Windows-only section in the graphics settings UI:
+The game has no graphics settings yet (pause menu: Resume, Leaderboard, Unstuck, Restart, Music, Quit). For the award, add a Windows-only section to the pause menu (`Source/CleanCutAction/UI/LTTPauseMenu.*`):
 
-- **DLSS Super Resolution mode:** Off / Quality / Balanced / Performance / DLAA (use the modes the plugin reports as supported).
+- **DLSS Super Resolution:** Off / DLAA / Quality / Balanced / Performance (modes the plugin reports as supported).
 - **Frame Generation:** On / Off.
-- **Ray Reconstruction:** On / Off (needs HW ray tracing).
-- Hide the whole section when the plugin reports DLSS is not supported (non-RTX GPU). TSR is then the upscaler.
+- **Ray Reconstruction:** On / Off (needs HW ray tracing, which is now on).
+- Hide the section when DLSS isn't supported (non-RTX GPU); TSR is then the upscaler.
+- Must be reachable with a gamepad (use `ULTTInputDeviceSubsystem::EnsureGamepadFocus`, like the rest of the pause menu).
 
 ---
 
-## 7. Extras (optional, cheap)
+## 7. Extras (optional)
 
-- **NVIDIA Reflex:** built into UE5. Enable it in Edit → Plugins if available and expose a toggle.
-- **Photo mode with the Path Tracer:** a key that switches the viewport to path tracing for screenshots.
+- **NVIDIA Reflex:** engine plugin, off. Not on the award list.
+- **Photo mode with the Path Tracer:** not done. `r.PathTracing=False` project-wide, and `NNEDenoiser` is disabled to keep the package small, so this would need both turned back on for Windows only.
 
 ---
 
-## 8. Device profile
+## 8. Device profile — done
 
-In `Config/DefaultDeviceProfiles.ini`:
+`Config/Windows/WindowsDeviceProfiles.ini`:
 
 ```ini
 [Windows DeviceProfile]
-DeviceType=Windows
-BaseProfileName=
-+CVars=sg.ShadowQuality=3
-+CVars=sg.GlobalIlluminationQuality=3
-+CVars=sg.ReflectionQuality=3
++CVars=sg.ViewDistanceQuality=3
++CVars=sg.AntiAliasingQuality=4
++CVars=sg.ShadowQuality=4
++CVars=sg.GlobalIlluminationQuality=4
++CVars=sg.ReflectionQuality=4
++CVars=sg.PostProcessQuality=4
 +CVars=sg.TextureQuality=3
++CVars=sg.EffectsQuality=3
++CVars=sg.FoliageQuality=3
++CVars=sg.ShadingQuality=4
 ```
 
-No texture caps here. Windows cooks at full resolution.
+No texture caps: Windows cooks full resolution. Device profile cvars override the scalability level; fine while there is no graphics menu.
 
 ---
 
-## 9. Build
+## 9. Input
 
-```
-Scripts\Build_Platform.bat Win64
-```
-
-Output: `Builds\Windows\`
+- Keyboard/mouse and gamepad (XInput; Xbox-layout prompts). The prompts follow the last device used (`Source/CleanCutAction/UI/LTTInputDevice.h`). Mouse clicks or keys only switch away from the gamepad after 1.5 s with no gamepad input.
+- Touch controls only appear on touch devices (`ShouldUseTouchControls`), not on a desktop.
+- Gamepad layout: see `04_Linux_SteamDeck.md` section 5.
 
 ---
 
-## 10. Checklist
+## 10. Online leaderboard
 
-- [ ] DX12 + SM6 set in the Windows ini only
-- [ ] HW ray tracing, Lumen HW RT, VSM, Nanite on (Windows ini)
-- [ ] DLSS plugin downloaded by the user, version recorded in BUILD_LOG.md
+Desktop builds post runs to `https://cca.ohmcodes.com` through `FHttpModule` (the `HTTP` module is in `CleanCutAction.Build.cs`). The player id and name are kept in a save slot (`ULTTPlayerProfileSave`). Override the server with `-LeaderboardUrl=...` or `BaseUrl` in `DefaultGame.ini`. Firewalls may prompt on first run.
+
+---
+
+## 11. Build
+
+```
+Docs\PackagingGuide\Build_Platform.bat Win64
+```
+
+Output: `Packaged\Windows\`. Ship it to itch.io as a **downloadable** (zip) next to the browser build; only the Windows build can enter the RTX award.
+
+---
+
+## 12. Checklist
+
+- [x] DX12 + SM6 set (`DefaultEngine.ini`, Windows target section)
+- [x] TSR, HW ray tracing, Lumen HW RT, VSM on (Windows ini)
+- [ ] Nanite (off; ask before enabling)
+- [x] Windows device profile (Epic/Cinematic, full-res textures)
+- [ ] `Config/Windows/` committed
+- [ ] DLSS plugin downloaded by the user, version recorded
 - [ ] DLSS plugin compiles; `.uplugin` modules restricted to Win64
-- [ ] DLSS SR verified in-game (`stat unit` before/after, or the plugin's on-screen indicator)
+- [ ] DLSS SR verified in-game (`stat unit` before/after, or the plugin's indicator)
 - [ ] Frame Generation verified on an RTX 40/50 GPU, or noted as untested
-- [ ] Graphics menu shows DLSS options only when supported
-- [ ] Packaged build launches on an RTX machine and a non-RTX machine (falls back cleanly)
+- [ ] Graphics menu shows DLSS options only when supported, and works with a gamepad
+- [ ] Packaged build launches on an RTX machine and a non-RTX machine (falls back to software Lumen + TSR)
 - [ ] Common verification in README done
-- [ ] Note for submission: list exactly which DLSS features are active and where the toggles are
+- [ ] Submission note lists exactly which DLSS features are active and where the toggles are

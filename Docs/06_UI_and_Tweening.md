@@ -1,252 +1,183 @@
-# UI & Tweening
+# UI & Animation
 
-Covers checklist **P8, P11**. Plain UMG. Every animated widget uses `ULTTTweenSubsystem` with `ELTTTweenClock::Real` (so it animates while paused) or UMG Widget Animations where noted. **Set every animated widget's Render Transform Pivot to (0.5, 0.5)** unless stated, so scales bounce from the center.
+Describes the UI as built at `windows` HEAD (87eadcc). Plain UMG, no CommonUI. Source of truth: `Source/CleanCutAction/UI/`, `Interaction/LTTCleanupHUD*`, `Interaction/LTTEndScreen*`, `Shoot/LTTShootHUD*`, `Shoot/LTTShootEndScreen*`.
 
 ---
 
-## 1. Style Guide
+## 1. How the widgets are built
 
-**Theme:** a film production's paperwork and gear: clapperboards, call sheets, tape marks, film strips, REC lights.
+- **C++ layouts.** Every `ULTT*` widget has a `BuildDefaultLayout()` that builds its tree in code when the widget has no designer tree, so the bare C++ class works on its own.
+- **`WBP_` children.** Each class has a Widget Blueprint child in `/Game/_CleanCutAction/Blueprints/Widgets/` whose tree was copied from the C++ layout by `ULTTWidgetBaker` (editor-only: `BakeLayoutIntoWidgetBlueprint`, `BakeWidgetIntoWidgetBlueprint`, `RemoveWidgetFromWidgetBlueprint`). Widgets keep the names the C++ `BindWidgetOptional` properties expect, so designers can restyle without breaking code. When a newer C++ part is missing from an older `WBP_`, the code adds it at runtime (e.g. pause menu Leaderboard/Restart/Unstuck buttons, briefing crouch rows, HUD gamepad legend).
+- **Which class is used.** `LTTTheme::PreferWBP<T>(Class, "WBP_Name")` swaps an unset or bare C++ class for the `WBP_` (music toggle, ending overlay, shoot HUD, shoot end screen, virtual keyboard). The leaderboard panel loads `WBP_Leaderboard` by path. The pause menu class is set on `BP_FirstPersonPlayerController`; the briefing, cleanup HUD and end screen classes are set on the mess director placed in `L_NYC_Cafe_Michael`. Widgets loaded only by path are listed in `MapsToCook` (`Config/DefaultGame.ini`).
+- **Animation.** No tween subsystem and no UMG widget animations. Each widget keeps an `AnimTime` and eases in `NativeTick` with small inline functions (OutCubic, OutBounce, etc.). UMG ticks in real time, so menus animate while the game is paused.
+
+### Widget list
+
+| Widget asset | C++ class | Created by | Shown |
+|---|---|---|---|
+| `WBP_Briefing` | `ULTTBriefingScreen` | `ALTTMessDirector` (`BriefingClass`) | Phase 1 start, over black |
+| `WBP_CleanupHUD` | `ULTTCleanupHUD` | `ALTTMessDirector` (`HUDClass`) | Phase 1 play |
+| `WBP_InteractPrompt` | Blueprint only | `BP_FirstPersonPlayerController` | Both phases; labels set by the PC (§3) |
+| (code layout) | `ULTTBarkWidget` | `ALTTCleanupBarker` | Phase 1 Marlowe lines |
+| `WBP_EndingOverlay` | `ULTTEndingOverlay` | `ALTTMessDirector` | Phase 1 ending shots + confetti |
+| `WBP_EndScreen` | `ULTTEndScreen` | `ALTTMessDirector` (`EndScreenClass`) | Phase 1 end |
+| `WBP_ShootHUD` | `ULTTShootHUD` | `ALTTSceneDirector` | Phase 2 play |
+| `WBP_ShootEndScreen` | `ULTTShootEndScreen` | `ALTTSceneDirector` | Phase 2 end |
+| `WBP_PauseMenu` | `ULTTPauseMenu` | `ACleanCutActionPlayerController` | Both phases |
+| `WBP_Leaderboard` | `ULTTLeaderboardPanel` | Briefing, pause menu, Phase 1 end screen | Over the menu that opened it |
+| `WBP_VirtualKeyboard` | `ULTTVirtualKeyboard` | Briefing name box on touch | Over everything |
+| `WBP_MusicToggle` | `ULTTMusicToggle` | `ACleanCutActionPlayerController` | Touch HUD only |
+| `UI_TouchSimple` (`/Game/Input/Touch/`) | Blueprint | PC `MobileControlsWidgetClass` | Touch, hidden while a gamepad is used |
+
+`/Game/_CleanCutAction/UI/` also holds older copies of `WBP_Briefing`, `WBP_CleanupHUD`, `WBP_EndScreen` and `WBP_InteractPrompt`. The maps and the controller reference the `Blueprints/Widgets/` versions.
+
+---
+
+## 2. Style (`UI/LTTUITheme.h`)
+
+The shipped look is a **"cozy cafe"** theme, not the clapperboard/call-sheet look first planned: cream paper panels with gold trim, a wooden ribbon banner behind titles, beige pill buttons, warm brown text. Colours are sRGB hex in `LTTTheme`:
 
 | Token | Hex | Use |
 |---|---|---|
-| `Ink` | `#1B1B1F` | Text, clapper black |
-| `Paper` | `#F4EEDF` | Call-sheet panels |
-| `TapeYellow` | `#F2C230` | Highlights, tape marks, progress fill |
-| `RecRed` | `#E5383B` | REC, warnings, frame violations |
-| `Gold` | `#E8B04B` | Placement, stars, golden reels |
-| `Cyan` | `#4CC9F0` | Director's Eye, info |
-| `CueGreen` | `#57CC99` | Active cue, Perfect |
-| `Slate` | `#2E3440` | Dark panels |
-| `White` | `#FFFFFF` | Clapper stripes |
+| `Paper` | `#FBF7EC` | Panel fill |
+| `PaperDeep` | `#F2E9D6` | Insets (notes, rows, HUD chips) |
+| `GoldTrim` | `#C9A15A` | Panel outline, ornaments |
+| `Wood` / `WoodDark` | `#9A6633` / `#5A3415` | Title banner / its outline and title text outline |
+| `Ink` / `InkMuted` | `#4A3018` / `#8C7356` | Body / secondary text |
+| `TitleCream` | `#FFF8E6` | Title letters |
+| `HeaderBrown` | `#7A4E22` | Section headers |
+| `ButtonCream` / `ButtonGold` / `ButtonRed` | `#F5EAD3` / `#F4C45A` / `#E88B72` | Normal / primary / quit buttons |
+| `ButtonEdge` | `#B08248` | Button outline |
+| `Good` / `Bad` / `Coin` | `#5E943C` / `#C04A30` / `#C88A10` | Positive numbers / broken props, time up / points |
+| `Backdrop` | `#2B1A0C` @ 60% | Dim behind menus |
 
-**Fonts (verify licenses; OFL suggested):** Headings in a condensed bold display face (e.g. Bebas Neue), body and subtitles in a typewriter face (e.g. Courier Prime). Subtitle sizes: 22 / 28 / 34 pt (Small/Medium/Large) at 1080p, with a 60% black backing box.
-
-**Motifs:** clapperboard stripe borders on headers, paper-clip on panels, hand-drawn tape strips holding cards, film-strip bars for meters, rubber stamps for results.
-
----
-
-## 2. Global Tween Specs (apply everywhere)
-
-| Element | Event | Tween |
-|---|---|---|
-| Button | Hover | scale 1 → 1.06, 0.12 s OutBack; tape-strip underline width 0 → 100%, 0.15 s OutCubic; SFX hover tick |
-| Button | Unhover | scale → 1, 0.1 s OutCubic; underline → 0 |
-| Button | Press | scale → 0.94, 0.05 s OutCubic |
-| Button | Release / click | scale 0.94 → 1.08 → 1, 0.25 s OutElastic; SFX click |
-| Button | Disabled click | Wobble: render angle Punch ±6°, 0.3 s; SFX denied |
-| Panel / card | Open | opacity 0 → 1 (0.15 s) + scale 0.85 → 1, 0.3 s OutBack; slight translation Y +30 → 0 |
-| Panel / card | Close | scale 1 → 0.9 + opacity → 0, 0.15 s InBack; remove on complete |
-| List items | Open stagger | each item: translation X −40 → 0 + opacity, 0.2 s OutCubic, stagger 0.04 s |
-| Toast | Show | slide from top Y −80 → 0, 0.35 s OutBack; hold 2.5 s; slide out Y → −80, 0.25 s InBack |
-| Counter (numbers) | Value change | roll up via TweenFloat over 0.4 s OutCubic, text updates per frame; on finish scale 1 → 1.2 → 1, 0.2 s OutBack |
-| Icon | Gain / ready | scale 0 → 1.25 → 1, 0.35 s OutElastic |
-| Star | Stamp | scale 2.2 → 1, 0.18 s InBack… then 1 → 1.12 → 1, 0.2 s OutBack; rotation −12° → random(−6°, 6°); opacity 0 → 1; SFX stamp thunk pitched +2 semitones per star; tiny screen shake |
-| Prompt | Focus gained | opacity 0 → 1 + scale 0.8 → 1, 0.15 s OutBack |
-| Prompt | Text change | quick squash X 1 → 0.9 → 1, 0.12 s |
-| Crosshair | Focus | dot scale 1 → 1.8, 0.12 s OutBack; color → white |
-| Crosshair | Can place | color → Gold; ring pulse loop (scale 1 → 1.3, opacity 1 → 0, 0.8 s) |
-| Crosshair | Hold progress | radial fill material param 0 → 1 |
-| Meter | Change | fill width tween 0.25 s OutCubic, and a "ghost" trailing fill that catches up after 0.3 s delay (shows the loss/gain) |
-
-Implementation helper: `UWBP_LTTButton` (C++ `ULTTButtonWidget` subclass of UUserWidget wrapping a UButton) implements all button tweens and sounds once; every menu uses it.
+Helpers: `StylePanel`, `StyleInset`, `StyleRibbonBanner` + `FillRibbonBanner`, `StyleBackdrop`, `StyleText`, `StyleTitle`, `StyleOverlayText` (cream with brown outline over the 3D view), `ButtonStyle` / `StyleButton`, `StyleTextBox`, `FitToScreen` (shrinks a card to fit small screens). Cartoon icons come from `/Game/_CleanCutAction/UI/Widget/` (clapperboard, megaphone, coffee, timer, lightbulb...), button icons from `/Game/_CleanCutAction/UI/Icons/` (`T_Icon_*`).
 
 ---
 
-## 3. Main Menu (`WBP_MainMenu`, map `L_MainMenu`)
+## 3. Input-device-aware prompts
 
-### Layout
-- **Background:** live 3D view of the clean cafe set. A CineCameraActor slowly dollies along a spline (60 s loop, InOutSine) past table 3 and up toward the terrace. Soft music. Marlowe's empty director's chair in view.
-- **Left:** a clipboard holding a call sheet (Paper panel, tilted −3°), with the buttons as "call sheet lines".
-- **Top-right:** title logo as a clapperboard: "Clean! Cut! Action!" on the slate, with "Scene 42 · Take 2 · Dir. M. Finch".
-- **Bottom:** random Marlowe quip (`05 §3`) in small italic.
+All screens follow `ULTTInputDeviceSubsystem` (see `02 §4.3`): keyboard/mouse, gamepad (Xbox / Steam Deck names) or touch.
 
-### Buttons (top to bottom)
-
-| Button | Visible when | Action |
-|---|---|---|
-| **Continue** | `HasAnyProgress()` | Phase 1 complete → `GoToPhase2()`; else → `GoToPhase1()` |
-| **New Game** | always | If progress exists → confirm "Start over? Your progress will be lost (settings are kept)." → `NewGame()` → `GoToPhase1()` |
-| **Clean the Set** | Phase 1 complete | Replay Phase 1 |
-| **Shoot the Scene** | always (locked until Phase 1 complete) | `GoToPhase2()`; locked: padlock + red tape "CLOSED SET", tooltip "Clean the set first, Rookie.", click = wobble |
-| **Settings** | always | Open `WBP_Settings` |
-| **Credits** | always | Open `WBP_Credits` (menu version, skippable) |
-| **Quit** | always | Confirm → `QuitGame` |
-
-Best results under Continue: "Set: ★★☆ 17:42 · Scene: ★★★" (small).
-
-### Intro animation on open (≈ 1.6 s, skippable by any key)
-1. Black → fade in the 3D background (0.6 s).
-2. Clapperboard logo drops in from above: translation Y −400 → 0, 0.45 s OutBounce.
-3. Clapper arm opens (rotation 0 → −25°, 0.2 s OutCubic) then **snaps shut** (−25 → 0, 0.08 s InBack) with CLAP SFX and a white flash overlay (opacity 0.6 → 0, 0.15 s); logo squash.
-4. Clipboard slides in from the left (X −600 → 0, 0.4 s OutBack), buttons stagger in.
-5. Quip types on (typewriter, 30 chars/s with tick sounds).
-
-Input mode UI-only, mouse visible, first button focused (for keyboard/gamepad).
-
----
-
-## 4. Pause (`WBP_PauseMenu`)
-
-- **Open:** game paused, background blur widget (strength 0 → 6, 0.2 s), dark tint 0 → 45%, clipboard slides up from the bottom (Y +500 → 0, 0.35 s OutBack), "PAUSED - TAKING FIVE" header stamp (Star stamp tween, no shake). Audio: tape-stop "wow" SFX + pause low-pass on.
-- **Buttons:** Resume · Settings · Main Menu · Quit Game.
-  - Main Menu → `WBP_ConfirmDialog`: "Return to the main menu? Cleanup progress in this session will be lost." (Phase 1) / "Leave the shoot? This take will be lost." (Phase 2). Yes → `GoToMainMenu()`.
-  - Quit → confirm "Quit the game?" → `QuitGame`.
-- **Close:** reverse tweens (0.2 s), tape-start SFX, low-pass off over 0.3 s.
-- Esc toggles. Esc inside Settings or a confirm dialog closes that first.
-- Random Marlowe pause quip under the header.
-
-### Confirm dialog (`WBP_ConfirmDialog`)
-A small paper card taped on a dark tint. Open: scale 0.7 → 1 OutBack 0.25 s. Buttons Yes (RecRed) / No (Slate); default focus No. Callback delegate.
-
----
-
-## 5. Phase 1 HUD (`WBP_HUD_Phase1`)
-
-| Element | Position | Behavior |
-|---|---|---|
-| Crosshair | Center | See §2; turns into a radial fill for holds |
-| Interaction prompt | Below center | "[LMB] Pick up · Chair", "[LMB] Place", "[E] Hold - Right the table", "[RMB] Throw" |
-| Carry stack | Bottom-right | Icons of carried items (top item largest), "3 / 5" capacity; bounce on change; shakes red when full and you try to pick up |
-| Set Ready % | Top-center | Mini clapperboard whose stripes fill left→right with TapeYellow; % text with counter roll; clapperboard icon appears when found |
-| Zone strip | Under Set Ready | 7 small zone pips (grey → gold when done), pip pops when complete |
-| Crew Credits | Top-right | Film-reel coin icon + number; credit icons fly in from world positions |
-| Golden reels | Top-right under credits | 3 slots, filled gold when found |
-| Ability bar | Bottom-center | 3 slots (1/2/3), icon + radial cooldown overlay + key label; locked slots show a padlock; ready → Icon gain tween + ping |
-| Combo | Right of crosshair | "COMBO ×5" pop (scale 0 → 1.3 → 1) then fades after 1.5 s |
-| Subtitles | Bottom-center above ability bar | Speaker name colored (Marlowe = TapeYellow, Dash = brown `#C08552`, Juniper = blue `#7FA7E0`, walkie = grey with 📻 icon); slide up 20 px + fade in 0.2 s; megaphone icon pulses while Marlowe speaks |
-| Tutorial card | Top-left | Slide in from left, 4 s, slide out |
-| Toasts | Top-center | Zone complete ("SEATING - SET!"), ability unlocked, golden reel |
-| Hint list | Right edge | Only at ≥ 95%: "Remaining: Kitchen (1), Crew (1)" |
-
-**Zone-complete toast** is special: a full-width clapperboard bar slams down from the top (0.25 s OutBounce) with the zone name, holds 1.8 s, flies up.
-
----
-
-## 6. Notebook (`WBP_Notebook`, Tab)
-
-- Opens as a spiral notebook filling 70% of the screen (open: scale 0.6 → 1 + rotation −8° → 0, 0.35 s OutBack, page-flip SFX). Game is **not** paused (it's a cozy game, but time passes) - show a small "Time's ticking!" note; *alternative if testers dislike it: pause.*
-- **Tabs (sticky notes on the edge):** Skills · Set Map · Stats.
-- **Skills page:** three columns (Hustle / Prop Master / Special FX) drawn as hand-written lists with doodle icons. Each node: name, rank pips, cost, description. States: Locked (pencil grey), Available (ink, pulsing border), Owned (stamped "GOT IT").
-  - Buy: click → node stamp tween + "ka-ching" film-reel SFX + credits counter roll down; Save.
-  - Can't afford: wobble + "Need 2 more credits".
-- **Set Map page:** both floors as drawn blueprints; zones shaded by completion; pin icons on golden reels found.
-- **Stats page:** time, props placed, trash, swishes, piles, longest combo.
-- Close with Tab/Esc: reverse tween, page-close SFX.
-
----
-
-## 7. Phase 1 End Screen (`WBP_EndScreen_Phase1`)
-
-Sequence (≈ 6 s, any key skips to the final state):
-1. Screen darkens to 60%; a big slate slams down: "SET READY!" (OutBounce 0.4 s, CLAP SFX, shake).
-2. Call-sheet results card slides in from the right (OutBack 0.35 s).
-3. Stat rows type in one by one with counter rolls (0.3 s stagger):
-   - Time on set ........ 17:42
-   - Props returned ........ 80
-   - Trash binned ........ 54 (swishes 12)
-   - Floor swept ........ 12 piles
-   - Golden reels ........ 2 / 3
-   - Crew credits earned ........ 46
-4. Stars stamp in one at a time (§2 Star stamp, 0.35 s apart). Missing stars show as faint outlines.
-5. "NEW BEST!" ribbon if applicable (rotation wiggle loop).
-6. Marlowe's quote for the star count (`05 §1.21`) types on.
-7. Buttons slide in: **Roll Camera!** (primary, TapeYellow, pulses gently) → `GoToPhase2()`; **Main Menu**.
-
----
-
-## 8. Phase 2 HUD (`WBP_HUD_Phase2`)
-
-| Element | Position | Behavior |
-|---|---|---|
-| Letterbox bars | Top & bottom | Slide in 0 → 8% height, 0.6 s InOutSine on ACTION; out on CUT/wrap |
-| REC + timecode | Top-left (inside the bar) | Red dot blinking 1 Hz, "REC 00:01:23:14", "SC 42 · TK 1" |
-| Take meter | Top-center | Film-strip bar 0–100 (§2 meter with ghost trail); <25 flashes red; gain shows sprocket sparkle |
-| Cue card | Center-top, large | On call: card spins in (rotation 25° → 0, scale 0 → 1.15 → 1, 0.35 s OutBack), icon + "RAIN!" + floor badge "2F ↑"; countdown ring around the icon (green → yellow → red by Perfect/Good/Late thresholds); while the player is in station mode, it shrinks to the corner (0.25 s) |
-| Off-screen arrow | Screen edge | Points to the active station when not on screen; bob animation; distance "12 m" |
-| Grade popup | Center | "PERFECT!" (CueGreen) / "GOOD" (TapeYellow) / "LATE" (orange) / "MISS" (RecRed): scale 0 → 1.4 → 1 OutElastic 0.4 s, float up 40 px and fade over 0.8 s; points "+100" small below |
-| Next cue (Cue Sense) | Top-right | "NEXT: THUNDER · 2F", slides in |
-| Frame warning | Full-screen edge | Red vignette pulse 2 Hz + "⚠ IN SHOT" replacing REC |
-| Patience button | Bottom-center | Icon with "1" key; used = greyed with a "USED" stamp |
-| Station widget | Bottom-center | Swapped per station (see below) |
-| Act title card | Center | "ACT II - THE TERRACE": typewriter on, hold 1.5 s, fade |
-| Subtitles | Bottom-center | As Phase 1; off-script lines in italics + "(off-script)" tag |
-
-### Station widgets
-
-| Station | Widget |
+| Widget | What changes |
 |---|---|
-| Car Rail | Horizontal speed meter with green band, needle wobble, progress "A ▶▶▶ B" |
-| Door Bell | Timing ring closing on a target ring |
-| Espresso | Semicircle pressure gauge with green/yellow arcs, needle shake by pressure |
-| Toss | Arc preview in-world + charge bar near crosshair |
-| Thunder | Rumble meter (vertical) → "FLASH! [F]" big prompt bounce |
-| Light Rig | Three gel swatches (1/2/3), selected pops up 10 px |
-| Fan | RPM dial with sweet spot, "3.0 s" sustain counter filling |
-| Boom | Vertical bar showing frame line (red) and audio band (green), mic marker; sustain counter |
-| Rain | Valve ring fill → coverage % meter + sustain counter |
-
-Each widget opens with the Panel Open tween and closes with Panel Close.
+| `WBP_InteractPrompt` | PC `ApplyInputDevice`: `KeyText` "E" ↔ "X", mouse icons hidden on gamepad, an "RT" cap (`ThrowPadCap`) added to `RowThrow`; `bTouchMode` cleared when a gamepad drives a touch device |
+| `ULTTCleanupHUD` | Controls card shows `ControlsList` (keyboard) or `ControlsListPad` (gamepad, baked into `WBP_CleanupHUD` in 87eadcc); hint prompt "[F] Hint" ↔ "[Y] Hint"; hidden on touch (touch has a hint button) |
+| `ULTTBriefingScreen` | Controls page shows `ControlsDesktop` (Action / Keyboard / Gamepad columns) or `ControlsTouch` (icon rows); start hint text per device |
+| `ULTTPauseMenu` | Footer "P / Esc to resume" ↔ "Menu / B to resume     A to select" |
+| Menus | `EnsureGamepadFocus` puts focus on a button when a gamepad is used, so D-pad / stick + A work; B closes panels |
+| Touch overlay | Hidden (with the music toggle) while a gamepad is used on a touch device |
 
 ---
 
-## 9. CUT, Phase 2 End & Credits
+## 4. Briefing (`WBP_Briefing`, `ULTTBriefingScreen`)
 
-### 9.1 CUT interstitial (`WBP_CutInterstitial`)
-- Freeze-frame effect (post: desaturate 0 → 1, 0.2 s).
-- Clapperboard slams in from the top (OutBounce) with "CUT!" and "TAKE 3" chalk text, CLAP SFX, shake.
-- Marlowe CUT line subtitle.
-- After 2.5 s: wipe to black (horizontal bar wipe 0.3 s), reset happens behind it, wipe out.
+The start screen of the game (there is no main menu). Shown over black while the mess is made behind it.
 
-### 9.2 Phase 2 End Screen (`WBP_EndScreen_Phase2`)
-1. Final thunder flash fades to black. Big slate: "THAT'S A WRAP!" (OutBounce + clap + confetti Niagara in UI or world).
-2. "Dailies" card (paper) slides in. Cue list: each row = cue icon + name + grade stamp, revealed 0.15 s apart with a little stamp sound per row.
-3. Totals: Score (counter roll), Takes used, Time in frame, Perfects ×N.
-4. Stars stamp in. "NEW BEST!" if applicable.
-5. The final clapperboard flips over (scaleX 1 → 0 → 1 trick with a texture swap at 0) to reveal **"DIRECTOR'S CUT"**.
-6. Marlowe quote (`05 §2.6`).
-7. Buttons: **Roll Credits** (primary) · **Retake Scene** (`GoToPhase2()`) · **Main Menu**.
+- **Card** fades and rises in. Ribbon title, then a three-page **carousel** (`Pages` widget switcher): 1 "DIRECTOR'S NOTE" (Marlowe's story note), 2 "HOW TO PLAY", 3 "CONTROLS & SCORING" (controls table + scoring rows with coffee / broken cup / stopwatch icons, values from the mess director). Flip with the arrow buttons, Left/Right, the D-pad, or a swipe; page dots and "2 / 3  -  HOW TO PLAY" label.
+- **Name row**: `NameInput` (starts as a random name), dice button (`RandomNameButton`) for a new random name, and a **Leaderboard** button. On touch, focusing the name box opens the virtual keyboard (§9).
+- **Start buttons**: `StartButton` = time trial with the countdown (Enter / gamepad A); `NoTimerButton` = play without a clock (N / gamepad Y).
 
-### 9.3 Credits (`WBP_Credits`)
-- Black with film grain; credits scroll upward (constant speed tween, 45 s), names in typewriter font. Sections: Made by, Tools, Audio, Fonts, Third-party assets (from `CREDITS.md`), Special thanks, then the jokey roles (`05 §3`).
-- Hold Space / click to speed up ×4; Esc skips.
-- End card: "Clean! Cut! Action! - a Director's Cut" + "Thanks for playing, Assistant Director." → Main Menu after 4 s.
+Controls listed (keyboard / gamepad): Move WASD/Arrows / left stick · Look mouse / right stick · Jump Space / A · Pick up/Place/Drop LMB or E / X · Throw RMB / RT · Crouch C or Ctrl / R3 · Hint F / Y · Dance G / D-pad Up · Pause P or Esc / Menu.
 
 ---
 
-## 10. Settings (`WBP_Settings`)
+## 5. Phase 1 HUD (`WBP_CleanupHUD`, `ULTTCleanupHUD`)
 
-| Section | Controls |
-|---|---|
-| Audio | Master, Music, SFX, Voice, UI volume sliders (0–100, step 5) with a preview sound on release |
-| Controls | Mouse sensitivity (0.2–3.0), Invert Y |
-| Display | Field of view (75–110), Quality preset (Low / Medium / High / Epic), Head bob, Screen shake |
-| Accessibility | Subtitles on/off, Subtitle size, Show camera frame (Phase 2) |
+| Element | Position | Behaviour |
+|---|---|---|
+| Stats chip | Top-left | `PlacedText` (placed / total), `DestroyedText`, `PointsText`, each with an icon |
+| Countdown | Top-centre | `TimerText` + `TimerIcon`; the icon beats once a second, twice and bigger in the last `LowTimeSeconds`, and turns red when low. Hidden with No Timer |
+| Hint prompt | Top-left, last row of the stats chip | `HintKeyText` "[F] Hint" ("[Y] Hint" on gamepad) with the `HintIcon` bulb, greyed with the seconds left while cooling down |
+| Hint line | Under the crosshair | Prop name, distance and floor ("upstairs" / "downstairs") while a hint is up |
+| Home arrow | Ring around the crosshair | Chevron toward the held prop's home, the hinted prop, the nearest puddle (holding the mop), or the electric box while the breaker is off; hidden when the target is in view |
+| Pickup ring | Over a prop | Circle over the nearest pickable prop in range and view; pulses when near, steady when under the crosshair |
+| Controls card | Bottom-left | Key list (keyboard or gamepad version); H / D-pad Down folds it to a "[H] Controls" tab |
 
-- Changes apply live; **Back** saves (`ApplySettings()` + `Save()`); **Reset to defaults** with confirm.
-- Slider handle bounces slightly on release (scale 1.2 → 1, 0.2 s OutBack) with a tick per step.
+The arrow, ring and countdown beat are painted in `NativePaint` / ticked in C++. The interact prompt (`WBP_InteractPrompt`) is a separate Blueprint widget.
 
----
-
-## 11. Shared Widgets
-
-| Widget | Notes |
-|---|---|
-| `WBP_Fade` | Full-screen black image, opacity tween, Z 1000, used by level flow |
-| `WBP_Subtitle` | Queue of 1 visible + 1 fading line; supports italics; respects size setting |
-| `WBP_Toast` | Generic toast with icon + title + subtitle |
-| `WBP_Prompt` | Key glyph + verb + object name |
-| `WBP_LTTButton` | All button tweens + sounds (§2) |
-| `WBP_StarRow` | Three stars with stamp sequence API `PlayStamp(NumStars, Delay)` |
-| `WBP_Counter` | Number with roll-up API |
+**Bark widget** (`ULTTBarkWidget`, code layout): Marlowe's line in a gold pill at the bottom centre with a megaphone icon and speaker label ("MARLOWE", "JUNIPER (walkie)"); pops in on a new line and fades out when it ends. Restylable via `BarkPanel`, `BarkLabel`, `SpeakerLabel`.
 
 ---
 
-## 12. Implementation Notes
+## 6. Pause (`WBP_PauseMenu`, `ULTTPauseMenu`)
 
-- Create HUD widgets in the GameMode/PlayerController BeginPlay; keep references; never recreate per frame.
-- All UI tweens use `Real` clock so pause menus animate. Gameplay world tweens use `Game` clock.
-- Before starting a tween on a widget property, cancel the previous tween on that property (`CancelAllFor`) to avoid fighting (rapid hover/unhover).
-- Mouse cursor: hidden in gameplay; visible in pause, menus, notebook, end screens. Restore focus to the first button when a panel opens.
-- Test at 1280×720, 1920×1080, 2560×1440, 3840×2160 using DPI scaling rules (Shortest Side, default curve).
-- No raw `Print String` in Shipping; route debug text through the debug HUD only.
+- Opened by the player controller (P / Esc / gamepad Menu, touch pause button); the game is paused and input is UI-only (`02 §10`).
+- Card fades and drops in. Title "CUT!", subtitle "Game paused".
+- Buttons: **Resume** (gold) · **Music: On/Off** · **Leaderboard** · **Unstuck (back to start)** · **Restart** · **Quit** (red). Small coffee icon (`CheatButton`) runs `LTT.PlaceAll` only for the player named `iPoNet`.
+- P / Esc / Menu / B resume. Restart reloads the map without submitting the run.
+
+---
+
+## 7. Phase 1 ending and end screen
+
+**Ending overlay** (`WBP_EndingOverlay`, `ULTTEndingOverlay`): a **SKIP** button while the ending camera shots play (Space / Enter / Esc / gamepad A / Menu also skip), then a confetti burst (`ConfettiCount` 220, `ConfettiLifetime` 4.5 s) from both bottom corners plus a shower from the top. Confetti is drawn in `NativePaint` (no textures, no Niagara) and keeps falling over the end screen.
+
+**End screen** (`WBP_EndScreen`, `ULTTEndScreen`):
+- Title "SET READY!" (set clean, `SW_next_phase`) or "TIME'S UP!" (`SW_miss`), with a subtitle line. The title drops in with a bounce (scale 2.5 → 1) and the points count up.
+- Rows: Time on set · Props returned (placed / total) · Props destroyed (with points) · Hints used · Time bonus (+N, seconds left) · Points.
+- `RankText`: "Sending …'s take to the leaderboard...", then "Leaderboard: #4 of 27 - New best score!" or an offline note. The run is submitted when the screen opens.
+- Buttons: **Shoot the Scene!** (gold, set clean only → Phase 2) · **Play Again** (reload) · **Keep Playing** (close; after time's up the clock is switched off) · **Leaderboard** · **Full Leaderboard** (website).
+- The game is **not** paused: `KeepGameInputWithCursor` lets the player walk the set with the cursor up for the buttons.
+
+---
+
+## 8. Leaderboard panel (`WBP_Leaderboard`, `ULTTLeaderboardPanel`)
+
+Opened with `ShowPanel(From)` from the briefing, pause menu or end screen; hides the card underneath and returns focus to it on close.
+- Card fades and rises in; rows slide in one after another.
+- `StatusText` ("Loading...", "Top 10 of N Rookies", or the error), top `RowCount` (10) rows (rank chip, name, score, best time; your row highlighted), and `YouBox` with your own place when you're outside the top 10.
+- Buttons: **Full Leaderboard** (opens the website in a new tab), **Retry**, **Close**, plus a round corner X (`CornerCloseButton`).
+
+---
+
+## 9. Virtual keyboard (`WBP_VirtualKeyboard`, `ULTTVirtualKeyboard`)
+
+The Wasm build gets no phone keyboard when a Slate text box is tapped, so the briefing's name box opens this on touch.
+- `ULTTVirtualKey` buttons (a `UButton` subclass with a `Value`; specials `{SHIFT}` `{BACK}` `{SPACE}` `{DONE}` `{CLEAR}`). Any key placed in the WBP is found at runtime.
+- Types live into the target text box and shows its own preview line with a blinking caret (keys can cover the box). Shift starts on for the first capital; max 24 characters.
+- The key panel slides up (`SlideDistance` 300, `SlideTime` 0.2 s). Done or a tap outside closes it and fires `OnClosed`. Physical keys work; on a gamepad a highlight cursor moves to the nearest key in the stick / D-pad direction.
+
+---
+
+## 10. Music toggle (`WBP_MusicToggle`, `ULTTMusicToggle`)
+
+Touch only: a round speaker button left of `UI_TouchSimple`'s pause button (`T_Icon_MusicOn` / `T_Icon_MusicOff`, 70% opacity when muted). Follows `ALTTMusicPlayer::IsMusicMuted()`, so it stays in step with the pause menu's Music button.
+
+---
+
+## 11. Phase 2 HUD (`WBP_ShootHUD`, `ULTTShootHUD`)
+
+| Element | Position | Widgets / behaviour |
+|---|---|---|
+| In-shot tint | Full screen | `Vignette`: red tint pulsing at 2 Hz while the player is in the camera's frame; `WarningText` |
+| REC block | Top-left | `RecText` (REC light blinks once a second + timecode), `TakeText`, `ScoreText` |
+| Take meter | Top-centre | `MeterBar` |
+| Cue card | Top-right | `CuePanel`, `CueTitleText`, `CueWhereText`, `CueBar` countdown; "CUE: RAIN!" while active, "NEXT: …" while coming up |
+| Centre texts | Centre | `ActCardText` (act titles), `CutText` (CUT interstitial), `ToastText` (grade + points) |
+| Station | Centre / below crosshair | `InstructionText` and a painted mini-game meter (needle, band, sustain progress); `StationHintText` shows the station's name, distance and floor, with an arrow, while you're not at it |
+| Bark + subtitles | Bottom | `BarkPanel` / `BarkLabel` (Marlowe, gold pill), then `SubtitlePanel` with `SpeakerText` / `LineText`; off-script lines are dimmer |
+
+The station mini-games (Press, Timing, HoldRelease, Sustain, Shake, Choice, Toss) are in `ALTTEffectStation` (see `04`).
+
+---
+
+## 12. Phase 2 end screen (`WBP_ShootEndScreen`, `ULTTShootEndScreen`)
+
+- "THAT'S A WRAP!", `StarsText` ("{n} / 3 STARS", "DIRECTOR'S CUT - 3 / 3 STARS" at three stars), Marlowe's `QuoteText`.
+- Rows: cue grades (`CuesValue`), CUTs (`CutsValue`), time in shot (`FrameValue`), points (`PointsValue`).
+- Buttons: **Shoot Again** (reload the shoot) · **Back to Cleanup** (`CleanupLevelName`; hidden if empty). No leaderboard submission.
+- Not paused; same `KeepGameInputWithCursor` behaviour as Phase 1.
+
+---
+
+## 13. Planned but not built (cut for the jam)
+
+Checked against `Source/` and the widget folder; none of these exist:
+
+- Main menu (`WBP_MainMenu`, `L_MainMenu`, 3D dolly background, Continue / New Game). The briefing is the start screen.
+- Notebook (`WBP_Notebook`: skills, set map, stats), Settings (`WBP_Settings`: volumes, sensitivity, FOV, quality, subtitles), Credits (`WBP_Credits`).
+- `WBP_ConfirmDialog` (Restart and Quit act at once), `WBP_Fade`, `WBP_Toast`, `WBP_Subtitle`, `WBP_Prompt`, `WBP_LTTButton` / `ULTTButtonWidget`, `WBP_StarRow`, `WBP_Counter`, separate `WBP_CutInterstitial` (CUT lives in the shoot HUD), separate station widgets.
+- `ULTTTweenSubsystem` with Real/Game clocks, the global button hover/press tween table, star stamp sequence.
+- Phase 1 HUD items tied to cut systems: carry stack counter, Set Ready % clapperboard, zone strip, Crew Credits, golden reels, ability bar, combo, tutorial cards (tutorial lines are barks instead).
+- Phase 2 HUD items not built: letterbox bars, the screen-edge arrow (replaced by the station hint line + arrow), Cue Sense as an unlockable skill (the cue card always shows the next cue), Patience button.

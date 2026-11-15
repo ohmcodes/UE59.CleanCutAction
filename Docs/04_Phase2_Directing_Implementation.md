@@ -1,340 +1,240 @@
-# Phase 2 - Shooting the Date Scene (Implementation)
+# Phase 2 - Shooting the Date Scene (as built)
 
-Covers checklist **P5, P6, P7**. Map: `L_Phase2_CafeShoot` (the clean master cafe). Target playtime 5–7 minutes per take attempt.
+Covers checklist **P5, P6, P7**. Updated 2026-11-15 from the source; the original plan is summarised under "Planned / cut" at the end of each section.
 
-The scene is **Scene 42: The Cafe**. Dash and Juniper play Leo and Clara on a first date. They're real-life exes and keep going off-script. Marlowe shouts cues; the player operates effects across both floors without walking into the shot.
+Map: `/Game/StylizedNewYorkCity/Level/L_NYC_Cafe_Phase2_Michael` (cooked via `MapsToCook`). Reached from the Phase 1 end screen's **Shoot the Scene** button, which only shows when the set is clean (`ALTTMessDirector::NextLevelName`).
+
+The scene is **Scene 42: The Cafe**. Dash and Juniper play Leo and Clara on a first date. They're real-life exes and keep going off-script. Marlowe shouts cues; the player runs to effect stations on both floors without walking into the shot.
+
+Code lives in `Source/CleanCutAction/Shoot/`:
+
+| Class | File | Role |
+|---|---|---|
+| `ALTTSceneDirector` | `LTTSceneDirector.h/.cpp` | Runs the scene, scoring, take meter, CUTs, HUD and end screen |
+| `ULTTSceneData` | `LTTSceneData.h/.cpp` | Script data (beats, lines, cues) + the built-in Scene 42 |
+| `ALTTEffectStation` | `LTTEffectStation.h/.cpp` | One class for every station; picks a mini-game type |
+| `ALTTFilmCamera` | `LTTFilmCamera.h/.cpp` | Film camera, frame test, see-through cone, act moves |
+| `ALTTFilmActor`, `ALTTActorMark` | `LTTFilmActor.h/.cpp` | Dash and Juniper, and the marks they walk to |
+| `ULTTShootHUD` | `LTTShootHUD.h/.cpp` | Shoot HUD (baked to `WBP_ShootHUD`) |
+| `ULTTShootEndScreen` | `LTTShootEndScreen.h/.cpp` | Wrap screen (baked to `WBP_ShootEndScreen`) |
 
 ---
 
-## 1. Map Setup
+## 1. Level Setup
 
-### 1.1 Stations (placement)
+Everything is placed directly as the C++ classes (there are no `BP_` subclasses for the director, stations or actors). Anything missing is skipped with a log warning.
 
-| Station | Floor | Location | Cue(s) |
+### 1.1 Stations
+
+11 `ALTTEffectStation` actors. Each has a `Station_*_Visual` mesh actor in `HighlightActors` (outlined while its cue is active). The mini-game type per station follows the suggested setup in `LTTEffectStation.h`.
+
+| Actor | Cue(s) | Mini-game | Effect actors / sounds |
 |---|---|---|---|
-| Slate stand | 1F | In front of the film camera, Act A position | `Cue.Slate` (tutorial) |
-| Car Rail | 1F exterior | Behind the street flat, handle visible through the front window | `Cue.Traffic` |
-| Door Bell rope | 1F | Beside the cafe door, inside the crew side of the wall | `Cue.Door` |
-| Espresso Steam lever | 1F | Back of the espresso machine (crew side of the counter) | `Cue.Steam` |
-| Prop Table 1F | 1F | Kitchen pass-through window | `Cue.Napkins` |
-| Thunder Sheet + Flash | 2F | Backstage landing at top of the crew stair | `Cue.Thunder` |
-| Light Rig (gels) | 2F | Mezzanine corner, on a scaffold | `Cue.Sunset`, `Cue.Moonlight` |
-| Wind Fan | 2F | Terrace side, behind a planter | `Cue.Wind` |
-| Boom Mic | 2F | Mezzanine, next to the terrace door | `Cue.Boom` |
-| Rain Rig valve + hose | 2F | Scaffold above the terrace (reached from mezzanine ladder, 3 rungs) | `Cue.Rain` |
-| Prop Table 2F | 2F | Mezzanine bar | `Cue.Umbrella`, `Cue.Roses` |
+| `Station_Slate` | Slate (tutorial) | Press | `SW_ClapperboardClap` |
+| `Station_CarRail` | Traffic | Sustain | `FX_TrafficHeadlights`; `SW_CarBeepBeep` / miss `SW_BicycleBell` |
+| `Station_DoorBell` | Door (opt) | Timing | `SW_ShopDoorBell` / `SW_CowBell` |
+| `Station_Espresso` | Steam | HoldRelease | `FX_Steam` (`NS_Steam`); `SW_Espresso` / `SW_CoffeeSputter` |
+| `Station_PropTable1F` | Napkins | Toss | `SW_PaperSlide` / `SW_LoudBonk` |
+| `Station_Thunder` | Thunder (x2) | Shake | `FX_ThunderFlash`; `SW_ThunderClap` / `SW_SheetWobble` |
+| `Station_LightRig` | Sunset, Moonlight (opt) | Choice | Key light `KeyLight_Gel`; `SW_SwitchOn` / `SW_SwitchOff` |
+| `Station_WindFan` | Wind (opt) | Sustain | `FX_Wind` (`NS_Wind`); `SW_WindFan` / `SW_FanTurnOff` |
+| `Station_BoomMic` | Boom | Sustain | `SW_Creak` / `SW_MicFeedback` |
+| `Station_RainRig` | Rain | Sustain | `FX_Rain` (`NS_Rain`); `SW_LightRain` (loops) / `SW_WaterDrop` |
+| `Station_PropTable2F` | Umbrella, Roses | Toss | `SW_UmbrellaOpen` / `SW_LoudBonk` |
 
-Two staircases (front stair + backstage crew stair) let the player choose routes. The **front stair is inside the Act A frame**, so taking it during Act A costs points; the crew stair is longer but safe. This is the core positioning decision.
+The sound pairings come from the level's references and the asset names. The exact station-to-sound wiring is inside the binary `.umap` and was not checked one by one.
 
-### 1.2 Film camera positions
+All mini-game tuning (bands, times, ranges) uses the C++ defaults. None is overridden in the level.
 
-| Act | Camera position | Frames |
-|---|---|---|
-| A - The Arrival | 1F on dolly, facing the seating area and front window | Table 3, the door, front stair bottom |
-| B - The Terrace | On a crane at the mezzanine edge, facing the terrace | Terrace, terrace door, part of the mezzanine |
-| C - The Rain | Crane lowered/rotated for a wider terrace shot including the railing and street flat | Terrace + railing + backdrop |
+### 1.2 Film camera
 
-Moves between acts: tween the camera actor along an authored spline over 3 s (InOutSine) while the act title card plays. The frame cone moves with it.
+One `ALTTFilmCamera` (BroadcastStudio camera mesh). `ActAnchors` = `CamAnchor_A`, `CamAnchor_B`, `CamAnchor_C`. On an act change it moves in a straight line (location lerp + rotation slerp, InOutSine) over `MoveTime` = 3 s. After a CUT or an act jump it snaps there instantly.
 
 ### 1.3 Actor marks
-`ALTTActorMark` (arrow component + name): `A_LeoTable`, `A_ClaraDoor`, `A_ClaraTable`, `B_ClaraRail`, `B_LeoDoor`, `B_LeoRail`, `C_Center_L`, `C_Center_R`, plus exits. Each beat references marks by name.
 
-### 1.4 Lighting / weather state
-Driven by `MPC_World` parameters (see `08`):
+`ALTTActorMark` (arrow = facing) placed for every mark the script uses: `A_LeoTable`, `A_ClaraDoor`, `A_ClaraTable`, `B_ClaraRail`, `B_LeoRail`, `C_Center_L`, `C_Center_R`. A NavMesh covers both floors.
 
-| Param | Start | Changed by |
-|---|---|---|
-| `BackdropTime` (0 day, 1 sunset, 2 night) | 0.3 | Sunset cue → 1, Moonlight cue → 2 |
-| `RainIntensity` 0–1 | 0 | Rain cue (ramp with valve) |
-| `Wetness` 0–1 | 0 | Follows rain with 4 s lag; never dries in-scene |
-| `LightningFlash` 0–1 | 0 | Thunder flash pulse |
-| `WindStrength` 0–1 | 0 | Fan crank |
+### 1.4 World / weather state
 
-Stage key light color is driven by the Light Rig gel (orange sunset, blue moonlight, **green** for the wrong gel joke).
+When a cue lands, `ALTTSceneDirector::ApplyCueToWorld` tweens the `MPC_World` scalars `RainIntensity`, `Wetness`, `LightningFlash` (double flicker, 0.3 s), `WindStrength` and `BackdropTime` (1 sunset, 2 night). **`MPC_World` doesn't exist and `WorldMPC` is unset**, so this does nothing visible today. The visible weather is all station effect actors: rain/wind/steam Niagara, thunder flash light, headlights, and the gel key light colour.
+
+**Planned / cut:** `MPC_World` and the materials that read it (wet surfaces, sky backdrop time of day), and the `ReceiveCueEffect` / `ReceiveTakeReset` Blueprint hooks (they exist but no Blueprint director implements them).
 
 ---
 
 ## 2. Scene Director
 
-### 2.1 Data
+### 2.1 Data (`LTTSceneData.h`)
 
-```cpp
-UENUM() enum class ELTTGrade : uint8 { None, Perfect, Good, Late, Miss };
-UENUM() enum class ELTTBeatPhase : uint8 { PreDialogue, CueCall, CueActive, PostDialogue, Done };
+- `ELTTCue`: `Slate, Traffic, Door, Steam, Napkins, Thunder, Sunset, Wind, Boom, Rain, Umbrella, Roses, Moonlight` (a C++ enum, not gameplay tags).
+- `ELTTGrade`: `None, Perfect, Good, Late, Miss`.
+- `FLTTDialogueLine`: `Speaker`, `Text`, optional `Voice`, `Montage`, `MoveToMark`, `MoveActor`, `ExtraDelay`, `bOffScript`.
+- `FLTTCueSpec`: `Cue`, `BaseWindow`, `bGradeBySpeed` (+ `PerfectFrac` 0.4 / `GoodFrac` 0.8), `bTutorial`, `CallLine` (the text itself).
+- `FLTTBeat`: `BeatID`, `Act`, `bActCheckpoint`, `DashStartMark` / `JuniperStartMark`, `RestoreEffects`, `bOptional`, `PreDialogue`, `bHasCue`, `CueSpec`, `PostPerfect/Good/Late/Miss` (each falls back to the next better list), `PostAlways`.
+- `ULTTSceneData`: `PreRoll`, `SlateDone`, `Beats`, `Wrap`, `ActTitles`, `RestartLines`.
 
-USTRUCT() struct FLTTDialogueLine {
-  FName Speaker;            // Marlowe, Dash, Juniper, Leo(=Dash in character), Clara(=Juniper in character)
-  FText Text;
-  TSoftObjectPtr<USoundBase> Voice; // optional
-  FName ActorMontage;       // e.g. "Talk2", "Laugh", "Angry"
-  FName MoveToMark;         // optional: start moving when line starts
-  float ExtraDelay = 0.f;
-  bool bOffScript = false;  // subtitle style: italic + "(off-script)" tag, camera-shy glance
-};
+**Scene 42 is built in C++** (`ULTTSceneData::FillWithScene42`, full text in `05 §2`). The level's director has no `SceneData` asset, so it calls `MakeScene42` at BeginPlay. A `DA_` asset can be made and filled with the **Fill With Scene 42** Details button, but none exists.
 
-USTRUCT() struct FLTTCueSpec {
-  FGameplayTag Cue;         // Cue.Rain
-  FGameplayTag Station;     // Station.Rain
-  float BaseWindow = 8.f;   // seconds after the call before Miss (before travel bonus)
-  float PerfectFrac = 0.4f; // first 40% of window = Perfect for timing-graded cues
-  float GoodFrac = 0.8f;
-  bool  bQualityGraded = false; // true → grade from station performance (sustain cues) instead of speed
-  bool  bTutorial = false;      // can't fail, no meter change
-  FName CallLineID;             // Marlowe's call (DT_DirectorLines row)
-};
-
-USTRUCT() struct FLTTBeat {
-  FName BeatID;
-  FName Act;                            // "A", "B", "C"
-  TArray<FLTTDialogueLine> PreDialogue;
-  bool bHasCue = true;
-  FLTTCueSpec CueSpec;
-  TArray<FLTTDialogueLine> PostPerfect; // played on Perfect
-  TArray<FLTTDialogueLine> PostGood;    // on Good (falls back to PostPerfect if empty)
-  TArray<FLTTDialogueLine> PostLate;    // on Late (falls back to PostGood)
-  TArray<FLTTDialogueLine> PostMiss;    // on Miss (comedic recovery)
-  bool bActCheckpoint = false;          // first beat of an act
-  FName CameraPosition;                 // set at act start
-};
-
-UCLASS() class ULTTSceneData : public UPrimaryDataAsset {
-  UPROPERTY(EditAnywhere) TArray<FLTTBeat> Beats;
-  UPROPERTY(EditAnywhere) TMap<FName, FText> ActTitles; // A → "ACT I - THE ARRIVAL"
-};
-```
-
-The full content of `DA_Scene42` is written in `05 §2`. The agent should import it from a JSON file (`Data/Scene42.json`) via a small editor utility or by hand-filling the asset.
-
-### 2.2 Beat state machine (`ALTTSceneDirector`)
+### 2.2 Flow
 
 ```
-PreRoll (Marlowe intro, slate tutorial) ─▶ "ACTION!" ─▶ for each Beat:
-   PreDialogue: play lines in order (actors move/montage per line)
-   CueCall:     Marlowe call line (megaphone) + HUD cue card pops + station highlighted (stencil 5)
-   CueActive:   window timer runs; station reports result → grade
-                (actors loop an idle "waiting" montage: sip coffee, look around)
-   PostDialogue: play PostPerfect/Good/Late/Miss list
-   → next beat
-After last beat ─▶ Finale ─▶ "CUT! That's a wrap!" ─▶ End screen
+BeginPlay: reset game input, build Scene 42, add HUD, (next tick) gather stations/actors/marks/camera,
+           lock Phase 1 props, camera to act A, actors to their A marks
+StartDelay 1.5 s -> PreRoll lines -> Slate cue (no timer) -> SlateDone lines -> rolling
+for each beat (optional beats skipped if bSkipOptionalBeats or no station):
+   checkpoint beat of a new act: camera move + act title card (max(3 s move, 2.5 s card)), frame checks paused
+   PreDialogue -> cue call (megaphone bark + SW_notification, station outlined) -> wait for station / timeout
+   -> grade -> score + meter -> station effect -> Marlowe reaction bark -> Post lines + PostAlways
+after last beat: finale (frame checks off, SW_applause, Wrap lines) -> wrap -> 1 s -> end screen
 ```
 
-- Only **one cue is active at a time**. The next beat's PreDialogue starts as soon as the grade is known.
-- `Cue Sense`: when a cue resolves, the HUD shows "NEXT: <Cue> (<Floor>)" for the next beat's cue during its PreDialogue.
-- Events (multicast): `OnBeatStarted`, `OnCueCalled(Spec, Window)`, `OnCueResolved(Cue, Grade, Points)`, `OnTakeMeterChanged(Value)`, `OnCut(Reason)`, `OnActStarted(Act)`, `OnSceneWrapped(Score, Stars)`.
+- One cue at a time. The HUD shows **NEXT: <cue>** during the beat's PreDialogue.
+- A beat whose cue has no station plays its Good lines and moves on (optional beats are skipped instead).
+- Line timing without voice-over: `0.3 s × words + 0.6 s`, min 1.6 s. No voice files are assigned.
+- Speakers: a line by `Leo`/`Clara` shows as `LEO (Dash)` / `CLARA (Juniper)`; off-script lines show `Dash (off-script)`.
+- Marlowe's per-cue reaction bark (`GetResultBark`, `05 §2.4`) is shown over the Post lines only when those lines have no Marlowe line, and never on the last beat.
+- Events: `OnActStarted`, `OnCueCalled`, `OnCueResolved`, `OnCut`, `OnSceneWrapped`, `OnLineSpoken`.
+- `bLockSetProps` (on): every `ALTTInteractableBase` is frozen and can't be picked up during the shoot.
 
-### 2.3 Rolling state
-The camera "rolls" from ACTION to CUT. While rolling: REC indicator, timecode, `PP_Cinematic` blend weight 1 (tween 0.6 s), letterbox bars slide in (UI), frame-cone checks active. Between acts the camera keeps rolling (no penalty during the 3 s camera move; checks paused).
-
-### 2.4 Cue window & timing grades
+### 2.3 Cue window and grading
 
 ```
-Window = BaseWindow + TravelBonus
-TravelBonus = clamp(PathLength(player → station) / 450 cm/s × 1.15, 0, 12)   // computed at call time, NavMesh path if available
+Window = (BaseWindow + Travel) × WindowScale (1)
+Travel = clamp((2D distance + 2 × height difference) / 450 cm/s × 1.15, 0, 12)   // straight line at call time
 ```
 
-For timing-graded cues, the station reports **completion time t** since the call:
-- t ≤ Window × PerfectFrac × SteadyHandsMult → **Perfect**
-- t ≤ Window × GoodFrac → **Good**
-- t ≤ Window → **Late**
-- else / failed station action → **Miss**
+- The station reports a grade when its mini-game ends. If the window runs out first, `HandleCueTimeout` gives Miss, except: a prop already in the air → Late (Miss if the throw was a miss); a Sustain at ≥ 60% of its in-band time → Late.
+- Speed-graded cues (`bGradeBySpeed`: Napkins, Sunset, Umbrella, Roses, Moonlight): time grade = Perfect within 40% of the window, Good within 80%, else Late. The worse of the station grade and the time grade counts.
+- Sustain stations grade by quality: ≥ 0.85 Perfect, ≥ 0.6 Good, ≥ 0.3 Late, else Miss.
 
-For quality-graded cues, the station reports a **quality 0–1**: ≥ 0.85 Perfect, ≥ 0.6 Good, ≥ 0.3 Late, else Miss (Steady Hands widens station tolerance instead of time).
-
-**Director's Patience** (active, key 1 in Phase 2, once per take): freezes the window timer for 3 s, plays a big "EVERYONE FREEZE!" bark, actors freeze mid-pose (anim play rate 0), desaturated screen tint. Funny and useful.
+**Planned / cut:** NavMesh path length for travel; `ELTTBeatPhase` enum; Director's Patience (freeze), the Steady Hands / Long Throw / Dodge the Shot skills and the pre-shoot notebook; actor "waiting" idles during cues.
 
 ---
 
-## 3. Effect Stations
+## 3. Effect Stations (`ALTTEffectStation`)
 
-### 3.1 Base class - `ALTTEffectStationBase`
-- Implements `ILTTInteractable` (`Kind = Station`). Interactable only when its cue is active (plus the Slate in pre-roll). Otherwise prompt says "Not yet - wait for the cue".
-- Enter station mode (press E): push `IMC_Station`, lock movement, smoothly tween the camera to the station's `ViewPoint` component (0.35 s OutCubic) while keeping first-person feel (it's the player's head moving, ≤ 120 cm from the body), show the station widget.
-- Exit: on success/failure (auto after 0.6 s), or press E/RMB to bail (cue keeps ticking).
-- Virtual hooks: `StartStation()`, `TickStation(float Dt)`, `HandleAxis(FVector2D)`, `HandleAction(bool bPressed)`, `HandleAlt(bool)`, `FinishStation(ELTTGrade or float Quality)`.
-- Each station has a "stand-in" mode for **missed** cues: if the cue misses, the station still plays a weak/funny version of its effect so the scene reads (e.g. a tiny drizzle).
+- Interactable (`ILTTInteractable`, kind `Station`) **only while one of its cues is active**. Then it gets an outline (custom depth stencil 1, `M_PP_Outline`) on itself and its `HighlightActors`. Prompt: "Use <DisplayName>".
+- Entering locks movement and look (look stays free for Toss). The click that opened it is ignored (0.15 s arm).
+- Input is read straight from keys, no Input Actions: **LMB / gamepad RT** = action; **E / RMB / gamepad B** = leave early (Marlowe: "Where are you going? The cue isn't done!"; the cue keeps ticking). Instructions switch to gamepad wording when a pad is in use.
+- On resolve: `EffectActors` are shown and activated (Niagara restarts) for `EffectDuration` (0 = until take reset), `EffectSound` or `MissSound` plays. A looping sound (rain) keeps playing until the effect ends or the take resets. `bShowEffectOnMiss` is off everywhere, so a missed cue only plays its miss sound.
 
-### 3.2 Slate (tutorial, can't fail)
-- Pre-roll. Player grabs the clapperboard (already in hand automatically), stands in the marked spot **inside the frame** (the one time it's allowed - frame cone turns green), presses LMB: clapper arm tween closes (0.08 s InBack) → CLAP SFX → white flash 1 frame on the monitor → Marlowe "ACTION!".
-- Teaches: cue cards, station highlight, and that the cone is visible. After the clap, the cone turns red and Marlowe says "Now get OUT of my shot."
+| Mini-game | Used by | Rules (C++ defaults) |
+|---|---|---|
+| **Press** | Slate | One click → Perfect. Tutorial: no timer, no score. |
+| **Timing** | Door | A marker crosses the bar in 2.2 s; target at 0.75. Error ≤ 0.15 s Perfect, ≤ 0.35 s Good, ≤ 0.7 s Late, else Miss. Reaching the end = Miss. |
+| **HoldRelease** | Steam | Hold to fill (2.2 s, eases out). Release in 0.62–0.78 Perfect, ±0.11 outside Good, ≥ 0.3 Late, else Miss. Holding past 1.2× fill time = over-pressure: "Too much! It's a cafe, not a sauna!", Miss. |
+| **Sustain** | Traffic, Wind, Boom, Rain | Hold LMB / W / stick up to raise the needle (+0.7/s), release to drop (−0.5/s). Spend 3 s in the 0.55–0.75 band. Quality = in-band time / time since first entering the band − 0.5 × time above 0.9 / 3 s. Optional Perlin wobble (`SustainWobble`, 0 in the level). |
+| **Shake** | Thunder | Alternate mouse left/right, A/D, a stick or LB/RB: each direction change +0.12, decays 0.25/s. At full, "FLASH!": click / F / gamepad Y within 0.4 s Perfect, 0.8 s Good, later Late (auto Late after 2.5 s). |
+| **Choice** | Sunset, Moonlight | Gels Orange (Sunset), Blue (Moonlight), Green (never right). Pick with 1–3, wheel, A/D, d-pad or LB/RB; click to slide in. The key light takes the gel colour. Right gel first time → Perfect, after a wrong one → Late. Wrong gel: "<COLOR>?! WRONG GEL! WRONG GEL!" and keep trying. |
+| **Toss** | Napkins, Umbrella, Roses | Aim with the camera at Dash's `CatchPoint`; hold to charge (bar goes up and back down, 1.1 s each way), release. Right power = distance / 1400 cm. Power error ≤ 0.07 and aim ≤ 4° Perfect; ≤ 0.15 and ≤ 8° Good; ≤ 0.28 and ≤ 16° Late (lands at his feet); else Miss (bonks him if roughly aimed, else flies off). The prop flies on an arc; the grade is reported when it lands. |
 
-### 3.3 Traffic - Car Rail (quality-graded)
-- Grab the handle; the cardboard car must travel from mark A to mark B (6 m) along the rail.
-- Hold **W** (or move mouse forward) to push; speed meter on HUD with a green band (target 180–260 cm/s; Steady Hands widens ±20%/±40%).
-- Quality = fraction of travel time spent inside the band. Travel ends at mark B; car honks automatically at the midpoint (comedic "meep meep").
-- Visual: car wobbles (Punch roll) with speed; cardboard flap SFX, wheel squeak loop pitched by speed.
-- Miss version: car gets pushed half-way, tips over (rotation tween), Marlowe groans.
+The toss prop is the engine cube (`TossMeshes` not set). Both prop tables throw to `Dash` (default `TossTargetName`).
 
-### 3.4 Door Bell (timing, single press)
-- A ring indicator around Juniper's walking marker: when she reaches the door, the target moment hits.
-- Press LMB on the rope. |Δt| ≤ 0.15 s Perfect, ≤ 0.35 s Good, ≤ 0.7 s Late, otherwise Miss (bell rings at the wrong time, Juniper awkwardly re-opens the door).
-- Steady Hands multiplies these tolerances.
-
-### 3.5 Espresso Steam (hold & release)
-- Hold LMB on the lever: steam pressure gauge needle rises (0 → 1 over 2.2 s, OutCubic feel).
-- Release inside the green arc (0.62–0.78) → Perfect; yellow arcs (0.5–0.62 / 0.78–0.88) → Good; else Late/Miss.
-- Over-pressure (hold past 1.0): **FOG EVERYWHERE** comedy - `NS_EspressoSteam` huge, actors cough montage, counts as Miss.
-- Feedback: hiss loop pitch rises with pressure, machine shakes (Punch, intensity by pressure).
-
-### 3.6 Prop toss (Napkins, Umbrella, Roses)
-- At the prop table, the correct prop auto-goes to the player's hands when they press E (wrong props on the table are decorative).
-- Catch zone: glowing ring (world-space widget or Niagara ring) above the target actor's hands, radius 35 cm (center 15 cm).
-- Hold RMB to charge; dotted arc preview (20 points, `PredictProjectilePath`) colored green when it intersects the catch zone; release to throw. Long Throw increases max speed so far targets are reachable (some tosses are 1F → 2F railing!).
-- Hit center → Perfect, ring edge → Good. If it lands within 2 m → Late (actor bends over to pick it up, "ugh" voice blip). Miss → it bonks the actor on the head (comedic "bonk" + Startled montage) or flies off the balcony; the actor improvises (PostMiss lines).
-- Throw timing is also checked against the window (whichever is worse wins).
-- Actor catch: when the projectile enters the catch sphere, detach physics, tween to the actor's hand socket (0.12 s), play Catch montage.
-
-### 3.7 Thunder (two-step)
-- Step 1: shake the thunder sheet - alternate mouse left/right (or A/D); each direction change adds rumble (+0.12). Rumble decays 0.25/s. Fill to 1.0.
-- Step 2: when full, a "FLASH!" prompt appears; press **F** within 0.4 s (Perfect) / 0.8 s (Good) / later (Late).
-- Effect: `LightningFlash` MPC pulse (0 → 1 → 0 over 0.25 s with a double flicker), thunder crack + rumble SFX, camera micro-shake.
-- Miss version: a sad little "bwomp" with a desk-lamp flicker.
-
-### 3.8 Light Rig - Sunset / Moonlight (choice)
-- Three gel frames hang on the rig: orange, blue, green. Scroll or press 1–3 to select (selected gel pops up), LMB to slide it in (slide tween 0.2 s + clack).
-- Correct gel → grade by time. Wrong gel → light turns that color (green = "Why is she green? Is she seasick?") and counts as Miss; the player can swap again within the window to recover as Late.
-- Effect: key light color tween 1.2 s, `BackdropTime` tween to 1 or 2 over 2 s.
-
-### 3.9 Wind Fan (sustain)
-- Crank: hold LMB to spin up; RPM rises, releases fall. Keep the wind meter in the sweet spot (0.55–0.75) for a total of 3 s within the window.
-- Quality = in-zone time / 3 s (capped) minus a penalty for time spent over 0.9 (over-wind: napkins and Juniper's scarf fly away comedically, `NS_WindDebris` heavy).
-- Effect: `WindStrength` MPC → actor hair/cloth (if supported) + string lights sway + leaves.
-
-### 3.10 Boom Mic (sustain + stay out of frame)
-- Player holds a boom pole; mouse Y raises/lowers the mic, mouse X swings left/right a little.
-- HUD shows the **frame line** (projected top edge of the camera frame at the actors' depth) and the **audio range band** just above it.
-- Keep the mic tip inside the band for 5 s total (window). Mic below the frame line = "BOOM IN SHOT!" red flash, quality penalty, Marlowe bark.
-- Wobble: Perlin noise sway on the pole (amplitude reduced by Steady Hands).
-- Quality = time-in-band / 5 s − time-in-frame × 0.5.
-
-### 3.11 Rain Rig (two-step + sustain) - the trailer moment
-- Step 1: open the valve - rotate the wheel by moving the mouse in circles (or hold LMB; slower). Valve 0 → 1. Water starts at 0.3.
-- Step 2: aim the hose nozzle (mouse) so the spray target circle covers the actors (marked area). Keep coverage ≥ 70% for 6 s.
-- Quality = 0.3 × valve speed score + 0.7 × coverage score.
-- Effect: `NS_RainSprinkler` from the rig, `NS_RainSplash` on terrace surfaces, `RainIntensity` + `Wetness` MPC ramp, rain audio loops, actors switch to "in rain" idle (shoulders up, then laughing).
-- Rain **stays on** for the rest of Act C after success (stand-in drizzle if missed).
-
-### 3.12 Station quick reference
-
-| Cue | Station | Grade type | Base window | Act |
-|---|---|---|---|---|
-| Slate | Slate | Tutorial | ∞ | Pre |
-| Traffic | Car Rail | Quality | 9 | A |
-| Door | Door Bell | Timing | 7 | A |
-| Steam | Espresso | Timing (release) | 8 | A |
-| Napkins | Toss 1F | Timing + accuracy | 8 | A |
-| Thunder | Thunder Sheet | Timing (2-step) | 10 | A |
-| Sunset | Light Rig | Timing + choice | 9 | B |
-| Wind | Fan | Quality | 9 | B |
-| Boom | Boom Mic | Quality | 9 | B |
-| Rain | Rain Rig | Quality | 12 | B→C |
-| Umbrella | Toss 2F | Timing + accuracy | 8 | C |
-| Roses | Toss 2F | Timing + accuracy | 8 | C |
-| Moonlight | Light Rig | Timing + choice | 8 | C |
-| Thunder (finale) | Thunder Sheet | Timing (2-step) | 9 | C |
-
-If time is short, cut Door, Wind, Moonlight (and use Sunset only) - the script in `05` marks which beats are optional.
+**Planned / cut:** station camera tween to a `ViewPoint` and `IMC_Station`; "Not yet" prompt when no cue is active; the pushed cardboard car (Traffic is a Sustain meter); door timing tied to Juniper's walk; boom frame line / mic-in-shot test and "BOOM IN SHOT" bark; rain valve + hose aiming; over-wind; projectile arc preview and catch ring; catch-to-hand socket; desk-lamp flicker misses; per-station grade-type table with distinct timing/quality modes (now: station grade + optional speed grade).
 
 ---
 
-## 4. Frame Cone (Stay Out of Frame)
+## 4. Frame Cone
 
-### 4.1 Test (`ALTTFilmCamera::IsPointInFrame(FVector P)`)
-```
-Local = CameraTransform.InverseTransformPosition(P)
-if Local.X < NearDist (50) or Local.X > MaxDist (2200): false
-HalfH = HorizontalFOV/2 (default 40° → half 20°), HalfV = HalfH / AspectRatio(2.39 anamorphic → use 16:9 for gameplay = 1.777)
-if |atan2(Local.Y, Local.X)| > HalfH: false
-if |atan2(Local.Z, Local.X)| > HalfV: false
-Occlusion: line trace on FrameCheck channel from camera to P; if blocked by static geometry → false
-```
-Test two points on the player: head (camera location) and capsule center. Either inside → in frame.
+### 4.1 Test (`ALTTFilmCamera::IsPointInFrame`)
+- Point in camera space; outside `NearDist` 50 – `MaxDist` 2200 cm → out.
+- Horizontal half-angle = `HorizontalFOV` / 2 (default 40°, overridden on the level's camera); vertical from `AspectRatio` 1.777.
+- Occlusion: line trace on Visibility; only blockers with a **static** root hide the player (props and characters don't).
+- `IsPawnInFrame` tests the eyes and the capsule centre; either counts.
 
-### 4.2 Rules
-- Active only while rolling and not during act camera moves, slate, or the finale lock.
-- Grace 0.25 s before penalty starts. Penalty: take meter −4 per second in frame. First entry each beat triggers a bark (`Bark.P2.InFrame`, cooldown 8 s).
-- Feedback while in frame: red screen-edge vignette (UI, pulse 2 Hz), REC dot turns into "⚠ IN SHOT", frame cone material turns red, a soft alarm beep loop (UI sound).
-- **Dodge the Shot** skill: when within 100 cm of the frustum boundary (test with an inflated FOV +4° / range +100), the cone edge nearest the player glows orange + gentle tick sound.
+### 4.2 Rules (`ALTTSceneDirector::TickFrameCheck`)
+- Checked only while rolling and not during the slate, act camera moves / title cards, the CUT interstitial or the finale. No penalty during the pre-roll.
+- 0.25 s grace, then −4 take meter and −10 points per second. Marlowe barks one of 5 in-frame lines (8 s cooldown).
+- Meter hits 0 → CUT.
 
-### 4.3 Visuals
-- `M_FrameCone`: a frustum mesh (pyramid from camera to MaxDist, scaled by FOV) with translucent unlit material: very low opacity fill (0.04), brighter edges (fresnel/edge mask), animated diagonal stripes, depth fade where it intersects geometry.
-- `M_FrameFloorDecal`: deferred decal projecting the frustum footprint onto floors, yellow-white hatching (like tape marks).
-- Toggle: settings option "Show camera frame" (default on).
+### 4.3 Look
+- `ConeMesh` = the engine cone stretched to the frustum, material `M_FrameCone` (faint, depth-tested, edge glow, scanlines, depth and near-camera fades; cooked via `MapsToCook`). The material's `Color` parameter is set per state:
+
+| `ELTTConeLook` | When | Colour |
+|---|---|---|
+| Idle | Pre-roll and rolling, nobody in shot | Yellow |
+| Alert | Player in shot | Red |
+| Allowed | Slate | Green |
+| Hidden | Finale and wrap | - |
+
+- HUD while in shot: "YOU'RE IN THE SHOT!" and a pulsing red vignette.
+
+**Planned / cut:** `M_FrameFloorDecal`, a "Show camera frame" setting, the alarm beep loop, the Dodge the Shot edge glow.
 
 ---
 
-## 5. Scoring, Take Meter & Retakes
+## 5. Scoring, Take Meter and Retakes
 
-### 5.1 Points
+### 5.1 Points (director defaults)
 
-| Grade | Cue points | Take meter |
+| Event | Points | Take meter |
 |---|---|---|
 | Perfect | +100 | +10 |
 | Good | +60 | +5 |
 | Late | +25 | −3 |
 | Miss | 0 | −15 |
-| In frame (per second) | −10 | −4 |
-| Director's Patience used | 0 | 0 |
-| Retake (per CUT) | −50 | reset to 60 |
+| In frame (per second, after 0.25 s) | −10 | −4 |
+| CUT | −50 | reset to 60 |
 
-Take meter: 0–100, starts at 60. Shown as a film-strip bar (HUD). Hits 0 → **CUT**.
+Take meter 0–100, starts at 60. Shown score is never below 0. `bAllowCut` can turn CUTs off.
 
-### 5.2 Stars (end of scene)
-Max cue points = 100 × number of scored cues (13 with all optional cues, fewer when cut).
+### 5.2 Stars
+`MaxScore` = 100 × cues that have a station (13 with every station placed).
 
 | Stars | Rule |
 |---|---|
-| ★ | Finish the scene |
-| ★★ | Score ≥ 55% of max **and** ≤ 1 CUT |
-| ★★★ | Score ≥ 80% of max **and** 0 CUTs **and** < 6 s total in frame |
+| 1 | Finish the scene |
+| 2 | Score ≥ 55% of max **and** ≤ 1 CUT |
+| 3 | Score ≥ 80% of max **and** 0 CUTs **and** < 6 s in frame |
 
-### 5.3 CUT / retake flow
-1. Marlowe: "CUT! CUT CUT CUT!" (Priority 3). Actors stop, slump montage.
-2. `WBP_CutInterstitial`: clapper slam "CUT! - TAKE N", Marlowe quip, 2.5 s, then fade.
-3. Reset to the current act's checkpoint beat: actors teleport to their first marks of that act (behind the fade), MPC values reset to the act's starting values, stations reset, take meter = 60, Patience restored.
-4. Marlowe: "From the top of the act! Places! … ACTION!"
-- Retake counter persists across the whole scene for scoring.
+### 5.3 CUT / retake (`CallCut`, `ResetToCheckpoint`)
+1. Everything stops, one of three "CUT!" barks, `SW_cut`, actors frozen, HUD shows "CUT! TAKE N" for 2.5 s.
+2. Back to the act's checkpoint beat: score and grade counts go back to what they were when the act started, minus 50. Take meter 60. Stations reset (effects off, gel light restored). MPC values zeroed.
+3. The act's `RestoreEffects` are replayed. Act C restores Sunset and Rain, so the rain is back on.
+4. Camera snaps to the act anchor, actors teleport to the act's start marks, 0.8 s fade from black, Marlowe's restart line, then the checkpoint beat replays.
 
----
+The take number counts every CUT in the run.
 
-## 6. Film Actors (Dash & Juniper)
-
-- `ALTTFilmActor` (Character) with `AAIController`. Movement: `MoveToLocation` on mark arrival with acceptance radius 20 cm, then rotate to the mark's facing (0.3 s tween).
-- Walk speed 160 (calm), 300 (storming off).
-- Anim BP: locomotion blendspace (idle/walk/run), `bSitting` pose for the table beats, montage slot `UpperBody` for talk gestures and `FullBody` for big reactions.
-- Talking: on each dialogue line, play a random talk montage from the speaker's set unless the line names one; voice blips play per word (`07 §2.6`), mouth not animated (fine for the art style; optional jaw bone wobble from blip envelope [C]).
-- Look-at: head look-at the other actor while talking; glance at the camera on off-script lines (comedy beat) and at the player on Miss beats ("Seriously?").
-- Waiting idle during cues: per-character loop (Dash checks his reflection in a spoon; Juniper scrolls her phone).
-- Reaction montages: Perfect → small smile/nod (30% chance); Miss → glance at camera.
-- Catch points: socket `hand_r` with a sphere `CatchZone` (radius 35 cm) offset in front of the chest when "expecting" a toss.
+**Planned / cut:** `WBP_CutInterstitial` as its own widget (it's a HUD text), actors' slump montage.
 
 ---
 
-## 7. Phase 2 Flow
+## 6. Film Actors (Dash and Juniper)
 
-1. **Arrival:** fade in at the crew area. Ambient set noise, crew walla, actors in position at marks for Act A. HUD minimal.
-2. **Pre-shoot notebook (optional):** Marlowe: "Spend your credits now, Rookie. Once we roll, we roll." Notebook opens with Phase 2 skills tab first; closing it continues. (Skippable after first time.)
-3. **Pre-roll:** Marlowe's speech (`05 §2.1`), slate tutorial, "ACTION!".
-4. **Act A → B → C** per the script, with act title cards and camera moves.
-5. **Finale (input locked from the last cue):** silhouette lean-in during the final lightning flash, Marlowe whispers, "CUT! That's a WRAP!", crew cheer, confetti from the catwalks, epilogue dialogue, crew jacket handoff (it flies to the camera like a pickup; HUD toast "ITEM GET: CREW JACKET").
-6. **End screen** (`06 §9`), save `bPhase2Complete`, best score/stars → Credits (`06 §9.3`) → Main Menu.
+- `ALTTFilmActor` (Character, auto-possessed `AAIController`). Meshes `SKM_StylizedMale` / `SKM_StylizedFemale` from `ST_Characters_JC`.
+- No Anim Blueprint: a single-node blend space (`BS_Dash_Locomotion`, `BS_Juniper_Locomotion`, idle/walk/run) driven by speed.
+- `IsNamed` matches either `ActorName` (Dash/Juniper) or `CharacterName` (Leo/Clara).
+- `MoveToMark`: `MoveToLocation` (20 cm), then turn to the mark's arrow. Walk 160, run 300 for `StormOff` lines. If not there after 9 s, or there's no path, they teleport.
+- `Speak` plays the line's named montage or a random talk montage. **The `Montages` and `TalkMontages` maps are empty in the level**, so the actors don't gesture yet.
+- `SetFrozen` during CUTs. `CatchPoint` (35 cm in front of the chest) is the toss target.
+- Hooks `ReceiveLineSpoken` / `ReceiveCueResult` exist; nothing implements them.
+
+**Planned / cut:** seated poses, look-at, voice blips, waiting idles, reaction montages, `hand_r` catch socket.
 
 ---
 
-## 8. Phase 2 Bark Hooks
+## 7. HUD (`WBP_ShootHUD`)
 
-| Event | Trigger tag |
-|---|---|
-| Arrival / pre-shoot | `Bark.P2.Arrival`, `Bark.P2.PreShootNotebook` |
-| Pre-roll chain | `Bark.P2.PreRoll` |
-| Cue call | per beat (`CallLineID`) |
-| Cue result | `Bark.P2.Result.<Cue>.<Grade>` (one line per cue per grade, see `05 §2.4`) |
-| In frame | `Bark.P2.InFrame` |
-| Boom in shot | `Bark.P2.BoomInShot` |
-| Wrong gel | `Bark.P2.WrongGel.<Color>` |
-| Over-steam / over-wind | `Bark.P2.OverSteam`, `Bark.P2.OverWind` |
-| Toss bonk | `Bark.P2.Bonk.<Actor>` |
-| Station bail (left station early) | `Bark.P2.Bail` |
-| Idle during an active cue (10 s, not moving) | `Bark.P2.CueIdle` |
-| Patience | `Bark.P2.Patience` |
-| CUT / restart act | `Bark.P2.Cut`, `Bark.P2.RestartAct.<Act>` |
-| Wrap | `Bark.P2.Wrap` (chain) |
+REC + timecode (STANDBY before rolling, THAT'S A WRAP after), "Scene 42 - Take N - Act X", points, TAKE METER bar, cue card ("CUE: RAIN!" / "NEXT: RAIN", station name + floor label, countdown bar), in-shot warning + vignette, subtitles with speaker label, Marlowe's megaphone bark, act title card, CUT text, grade toast ("PERFECT!  +100"), station instruction + painted mini-game meter (green band, progress), an edge arrow to the active station, and a hint under the crosshair ("Rain Rig - 12 m (upstairs)").
+
+---
+
+## 8. End Screen (`WBP_ShootEndScreen`)
+
+After the wrap (1 s delay): "THAT'S A WRAP!" slam-in, "N / 3 STARS" ("DIRECTOR'S CUT" at 3), Marlowe's quote by stars, cue counts (perfect/good/late/missed), CUTs, time in shot, points roll-up, **Shoot Again** (reloads the level), **Back to Cleanup** (opens `L_NYC_Cafe_Michael`), and the QLE copyright line. The game is **not paused**: the HUD hides and the player can keep walking the set with the cursor shown. Gamepad focus starts on Shoot Again.
+
+**Planned / cut:** `bPhase2Complete` save, best score/stars, leaderboard submit (Phase 1 only), credits, main menu, crew-jacket "ITEM GET" toast, confetti and crew cheer, finale input lock and silhouette shot.
+
+---
+
+## 9. Debug
+
+Console: `LTT.SkipCue [Perfect|Good|Late|Miss]`, `LTT.JumpToAct <A|B|C>`, `LTT.Cut`. Director options: `bSkipOptionalBeats` (drops Door, Wind, Moonlight), `bPlayPreRoll`, `WindowScale`, `bAllowCut`.
+
+## 10. Packaging
+
+`MapsToCook` in `Config/DefaultGame.ini` lists `L_NYC_Cafe_Phase2_Michael`, `M_FrameCone`, `WBP_ShootHUD` and `WBP_ShootEndScreen` (loaded by path). The director's default SFX (`SW_notification`, `SW_success`, `SW_miss`, `SW_cut`, `SW_applause`) are set in its constructor. The station SFX and `NS_*` systems are referenced by the level.
+
+## 11. Bark hooks
+
+There is no tag-based bark system in Phase 2. All lines are plain text in C++: script lines in `LTTSceneData.cpp`, and the reactions, in-frame, CUT and quote lines in `LTTSceneDirector.cpp`. The bail, over-steam and wrong-gel barks are in `LTTEffectStation.cpp`. See `05 §2`.

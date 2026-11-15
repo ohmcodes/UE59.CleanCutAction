@@ -1,317 +1,240 @@
 # Architecture & Core Systems
 
-Covers checklist **P1**. All C++ lives in module `CleanCutAction` (runtime). Editor-only Python scripts live in `Scripts/Python/`. Every C++ class gets a thin Blueprint child (`BP_*`) where assets (meshes, sounds, widgets, curves) are assigned.
+Describes the game as built at `windows` HEAD (87eadcc). The source in `Source/CleanCutAction/` is the truth; file names are given so every claim can be checked.
+
+All C++ lives in the runtime module `CleanCutAction`. The template base classes keep the `CleanCutAction*` names; everything written for the jam uses the `LTT` prefix. Many classes build their own defaults in C++ and work without a Blueprint; where a Blueprint exists it only assigns assets or a designer layout.
 
 ---
 
 ## 1. Class Map
 
+### Framework (template classes, extended)
+
+| Class | File | Responsibility |
+|---|---|---|
+| `ACleanCutActionCharacter` | `CleanCutActionCharacter.h/.cpp` | First-person character: arms mesh + camera on the `head` bone, move/look/jump, crouch toggle, gamepad look rates, emote (dance) |
+| `ACleanCutActionPlayerController` | `CleanCutActionPlayerController.h/.cpp` | Mapping contexts, pause menu, touch overlay, input-device prompt swapping, Unstuck teleport, input-mode helpers for end screens |
+| `ACleanCutActionGameMode` | `CleanCutActionGameMode.h` | Empty template game mode |
+| `ACleanCutActionCameraManager` | `CleanCutActionCameraManager.h` | Template camera manager (pitch limits) |
+
+Blueprints in use (`/Game/FirstPerson/Blueprints/`): `BP_FirstPersonGameMode` (the `GlobalDefaultGameMode` in `Config/DefaultEngine.ini`, also set on both maps), `BP_FirstPersonCharacter`, `BP_FirstPersonPlayerController`. The game instance is the engine's plain `UGameInstance` (`GameInstanceClass=/Script/Engine.GameInstance`).
+
+### Interaction and Phase 1 (`Interaction/`)
+
 | Class | Type | Responsibility |
 |---|---|---|
-| `ULTTGameInstance` | GameInstance | Owns subsystems; holds `PendingPhaseEntry` info between levels |
-| `ULTTSaveSubsystem` | GameInstanceSubsystem | Load/save/reset `ULTTSaveGame` |
-| `ULTTLevelFlowSubsystem` | GameInstanceSubsystem | Fade + OpenLevel between Menu / Phase 1 / Phase 2 |
-| `ULTTTweenSubsystem` | GameInstanceSubsystem + FTickableGameObject | All tweens (actors + widgets) |
-| `ULTTEasing` | BlueprintFunctionLibrary | Easing math |
-| `ALTTGameMode_Menu/Phase1/Phase2` | GameModeBase | Spawn rules, HUD class, phase start/end |
-| `ALTTPlayerController` | PlayerController | Input contexts, pause, widget stack |
-| `ALTTPlayerCharacter` | Character | First-person movement, camera, hand stack, components below |
-| `ULTTInteractionComponent` | ActorComponent | Focus trace, outline, prompts, hold progress |
-| `ULTTCarryComponent` | ActorComponent | Carrying, stacking, drop, throw |
-| `ULTTSkillComponent` | ActorComponent | Unlocks, passive stat mods, active ability cooldowns |
-| `ULTTFeedbackComponent` | ActorComponent | One-call juice: tween + SFX + VFX |
-| `ILTTInteractable` | Interface | Contract for anything the player can use |
-| `ULTTBarkSubsystem` | WorldSubsystem | Director/actor line selection and playback |
-| `ULTTCleanProgressSubsystem` | WorldSubsystem | Phase 1 totals, groups, zones, completion (see `03`) |
-| `ALTTSceneDirector` | Actor | Phase 2 beat machine (see `04`) |
+| `ILTTInteractable` | Interface | Contract for anything the player can focus and use (§5) |
+| `ULTTInteractionComponent` | ActorComponent | Focus trace, place hints, Interact / Throw input routing |
+| `ULTTCarryComponent` | ActorComponent | Holds one prop, place / drop / throw, hand IK targets |
+| `ULTTFirstPersonAnimInstance` | AnimInstance | Parent of the arms Anim BP; reads hand IK from the carry component |
+| `ALTTInteractableBase` | Actor | Every pickup prop: home transform, ghost silhouette, trash / dish / mop flags, breaking. Master BP `BP_MasterInteractables` |
+| `ALTTMessDirector` | Actor | Phase 1 flow: records homes, "earthquake" mess, score, countdown, hints, briefing, HUD, ending shots, end screen, next level |
+| `ALTTCleanupBarker` | Actor | Marlowe's Phase 1 megaphone lines (lines are in C++, shown in `ULTTBarkWidget`) |
+| `ALTTWaterPuddle` | Actor | Spill: slows the player, cleaned with the mop, counts as a cleanup job |
+| `ULTTWashStationComponent` | SceneComponent | Sink basin that washes dishes (`BP_Sink`) |
+| `ULTTUsableComponent` → `ULTTApplianceComponent`, `ULTTCoffeeMachineComponent` | ActorComponent | Makes a placed prop usable (microwave, espresso machine) |
+| `ALTTLightFixture`, `ULTTLightSwitchComponent`, `ULTTFlickerComponent` | Actor / components | Switchable wall and ceiling lamps, LED sign flicker |
+| `ULTTPowerSubsystem`, `ALTTPowerBox` | WorldSubsystem / Actor | Mains power and the electric box (§9) |
+| `ULTTPropSoundSet` | DataAsset | Pick-up / place / break sounds per prop material (`/Game/_CleanCutAction/SFX/Props/DA_PropSounds`) |
+| `ALTTCheatButton` | Actor | Dev button that runs `LTT.PlaceAll` |
+| `ULTTCleanupHUD`, `ULTTEndScreen` | UserWidget | Phase 1 HUD and end screen (see `06`) |
+
+### Phase 2 (`Shoot/`)
+
+`ALTTSceneDirector` (beat machine, score, take meter, CUT), `ULTTSceneData` (scene script; built-in Scene 42 when none is assigned), `ALTTEffectStation` (one class for every station mini-game), `ALTTFilmCamera` (frame cone), `ALTTFilmActor` + `ALTTActorMark`, `ULTTShootHUD`, `ULTTShootEndScreen`. Details are in `04`.
+
+### UI, audio, world (`UI/`, `Audio/`, `World/`)
+
+| Class | Type | Responsibility |
+|---|---|---|
+| `ULTTInputDeviceSubsystem` | GameInstanceSubsystem | Tracks keyboard/mouse vs gamepad vs touch; key labels; gamepad menu focus (§4.3) |
+| `ULTTLeaderboardSubsystem` | GameInstanceSubsystem | Online leaderboard client and player name / id (§11) |
+| `ULTTBriefingScreen`, `ULTTPauseMenu`, `ULTTLeaderboardPanel`, `ULTTVirtualKeyboard`, `ULTTEndingOverlay`, `ULTTMusicToggle`, `ULTTBarkWidget` | UserWidget | See `06` |
+| `LTTTheme` (namespace) | Header helpers | Shared colours, brushes, `PreferWBP` (`UI/LTTUITheme.h`) |
+| `ULTTWidgetBaker` | BlueprintFunctionLibrary | Editor tool: copies a C++ widget layout into its `WBP_` child |
+| `ALTTMusicPlayer` | Actor | Shuffled background music with crossfades; global mute |
+| `ALTTMirror` | Actor | Scene-capture mirror |
 
 ---
 
-## 2. Level Flow
+## 2. Levels and Level Flow
+
+| Map | Role |
+|---|---|
+| `/Game/StylizedNewYorkCity/Level/L_NYC_Cafe_Michael` | Phase 1 (cleanup). `GameDefaultMap` and the editor startup map |
+| `/Game/StylizedNewYorkCity/Level/L_NYC_Cafe_Phase2_Michael` | Phase 2 (the shoot), in `MapsToCook` |
+
+There is no main-menu map. The game boots straight into Phase 1, where the briefing screen acts as the title/start screen.
 
 ```
-L_MainMenu ──New Game / Start Cleanup──▶ L_Phase1_MessySet ──Roll Camera!──▶ L_Phase2_CafeShoot
-     ▲                                        │ (Main Menu)                         │ (Main Menu / end)
-     └────────────────────────────────────────┴─────────────────────────────────────┘
+L_NYC_Cafe_Michael ──end screen "Shoot the Scene!" (set clean only)──▶ L_NYC_Cafe_Phase2_Michael
+   ▲  Play Again / pause Restart reload the same map                        │ Shoot Again reloads it
+   └───────────────────────────── end screen "Back to Cleanup" ─────────────┘
 ```
 
-`ULTTLevelFlowSubsystem`:
-
-```cpp
-UFUNCTION(BlueprintCallable) void GoToMainMenu();
-UFUNCTION(BlueprintCallable) void GoToPhase1();
-UFUNCTION(BlueprintCallable) void GoToPhase2();
-// internal:
-void TravelTo(FName MapName); // 1) bTravelling guard 2) unpause 3) fade to black 0.4s (WBP_Fade, tween) 4) OpenLevel 5) new map's GameMode fades in 0.6s on BeginPlay
-```
-
-Rules:
-- Always unpause and restore `FInputModeGameOnly` (or UI-only for menu) on arrival.
-- Fade widget is added at Z-order 1000 so it's above everything.
-- Phase GameModes call `SaveSubsystem->Save()` only at phase end (not on load).
+- Phase 1 → 2: `ALTTMessDirector::NextLevelName` (default `L_NYC_Cafe_Phase2_Michael`), opened by `LoadNextLevel()` from `ULTTEndScreen`. Empty name hides the button.
+- Phase 2 → 1: `ALTTSceneDirector::CleanupLevelName` (default `L_NYC_Cafe_Michael`), opened from `ULTTShootEndScreen`.
+- Travel is a plain `UGameplayStatics::OpenLevel` (no fade subsystem). `ACleanCutActionPlayerController::ResetGameInput` clears pause, ignore-input flags and UI-only input left over from the end screen; it runs before travel (`ALTTMessDirector::LoadNextLevel`, `ULTTShootEndScreen`) and again in `ALTTSceneDirector::BeginPlay`.
+- No progress carries between levels (no save game, see §12).
 
 ---
 
-## 3. Save System
+## 3. Player Character
 
-### Schema - `ULTTSaveGame`
+`ACleanCutActionCharacter` (`CleanCutActionCharacter.cpp`), with `BP_FirstPersonCharacter` holding the meshes (`SKM_Rookie`, `ABP_FP_Copy_Rookie`, `ABP_Unarmed_Rookie`), input actions, `ULTTInteractionComponent`, `ULTTCarryComponent` and the `M_PP_Outline` post-process.
 
-```cpp
-UPROPERTY() int32 SaveVersion = 1;
+- Capsule 34 × 96. First-person arms mesh (owner-only) with the camera on its `head` bone; first-person FOV 70, first-person scale 0.6. The full body mesh is hidden from the owner but seen by mirrors and other cameras.
+- Air control 0.5, falling braking 1500.
+- **Crouch** toggle: half height 48, crouched speed 250. The arms mesh is lowered so the view drops (`CrouchViewSpeed`). Keys from `CrouchKeys` (C, Left Ctrl, right-stick click) on a runtime action/context unless `CrouchAction` is set; touch calls `DoCrouchToggle()`.
+- **Gamepad look** (`GamepadLookInput`): right stick scaled to `GamepadYawRate` 140°/s and `GamepadPitchRate` 95°/s with a response curve (`GamepadLookExponent` 1.8), compensating for `bEnableLegacyInputScales`. Mouse look is unchanged.
+- **Emote (dance)**: `IA_Emote` (`/Game/_CleanCutAction/Input/IA_Emote`) on a runtime context (G, D-pad Up; touch button injects it). Plays `A_Emote_Rookie` on the body mesh in single-node mode, pauses `ALTTMusicPlayer` and plays the `paroparo` song; pressing again cancels. Both assets are loaded by path and listed in `MapsToCook`.
 
-// Progress
-UPROPERTY() bool  bPhase1Complete = false;
-UPROPERTY() float Phase1BestTimeSeconds = 0.f;   // 0 = none
-UPROPERTY() int32 Phase1BestStars = 0;
-UPROPERTY() bool  bPhase2Complete = false;
-UPROPERTY() int32 Phase2BestScore = 0;
-UPROPERTY() int32 Phase2BestStars = 0;
-
-// Persistent unlocks (survive Phase 1 replays; reset by New Game)
-UPROPERTY() int32 UnspentCrewCredits = 0;
-UPROPERTY() TArray<FName> UnlockedSkills;          // e.g. "Skill.StackEm.2"
-UPROPERTY() TArray<FName> FoundGoldenReels;        // "Reel.1".."Reel.3"
-
-// Settings (survive New Game)
-UPROPERTY() float MasterVolume = 1.f, MusicVolume = 0.8f, SFXVolume = 1.f, VoiceVolume = 1.f, UIVolume = 0.8f;
-UPROPERTY() float MouseSensitivity = 1.f;
-UPROPERTY() bool  bInvertY = false;
-UPROPERTY() float FieldOfView = 90.f;
-UPROPERTY() bool  bHeadBob = true;
-UPROPERTY() bool  bSubtitles = true;
-UPROPERTY() int32 SubtitleSize = 1; // 0 small, 1 medium, 2 large
-UPROPERTY() bool  bScreenShake = true;
-UPROPERTY() int32 QualityPreset = 2; // maps to GameUserSettings overall scalability
-```
-
-### Subsystem API - `ULTTSaveSubsystem`
-
-```cpp
-static const FString SlotName = TEXT("LTT_Save"); static const int32 UserIndex = 0;
-virtual void Initialize(FSubsystemCollectionBase&) override; // load or create
-UFUNCTION(BlueprintCallable) void Save();          // AsyncSaveGameToSlot
-UFUNCTION(BlueprintCallable) void NewGame();       // reset progress + unlocks, keep settings, Save()
-UFUNCTION(BlueprintPure) bool IsPhase1Complete() const;
-UFUNCTION(BlueprintPure) bool HasAnyProgress() const; // drives "Continue" button
-UFUNCTION(BlueprintCallable) void ReportPhase1Result(float TimeSeconds, int32 Stars);
-UFUNCTION(BlueprintCallable) void ReportPhase2Result(int32 Score, int32 Stars);
-UFUNCTION(BlueprintCallable) void ApplySettings(); // pushes volumes to SoundMix, sensitivity to PC, FOV to camera, quality to GameUserSettings
-DECLARE_MULTICAST: OnSettingsChanged
-```
-
-Rules:
-- Load synchronously in `Initialize` (tiny file). Save asynchronously.
-- If `SaveVersion` is older, migrate fields; if the file is corrupt, create fresh and log a warning.
-- Save points: phase completion, skill purchase, golden reel found, settings Apply/Back, New Game.
-- **Phase 1 mid-progress is never saved.** Quitting mid-phase restarts the mess next time (unlocks and reels are kept).
+Not built from the plan: sprint, head bob, hand-stack sway, skill/feedback components.
 
 ---
 
-## 4. Player Character (First Person)
+## 4. Input
 
-Components:
-```
-ALTTPlayerCharacter
- ├─ CapsuleComponent (r=34, hh=88)
- ├─ CameraComponent "FPCamera" (Z=+77 from capsule center → ~165 cm eyes)
- │    └─ SceneComponent "HandStack" (offset X=45, Y=18, Z=-28)   ← carried items attach here
- │    └─ SceneComponent "ToolSocket" (offset X=40, Y=25, Z=-30)  ← broom
- ├─ ULTTInteractionComponent
- ├─ ULTTCarryComponent
- ├─ ULTTSkillComponent
- └─ ULTTFeedbackComponent
-```
+### 4.1 Contexts and actions
 
-Movement defaults (tunable in BP): walk 450, sprint 750 (requires `Skill.Sprint`), accel 2400, braking 2800, jump Z 420, air control 0.3, step height 45, walkable floor 46°.
+| Asset / runtime object | Where added | Contents |
+|---|---|---|
+| `/Game/Input/IMC_Default` | `BP_FirstPersonPlayerController.DefaultMappingContexts` | `IA_Move` (WASD / arrows, left stick), `IA_Look` (right stick), `IA_Jump` (Space, gamepad A), `IA_Interact` (E, LMB, gamepad X), `IA_Throw` (RMB, RT) |
+| `/Game/Input/IMC_MouseLook` | `MobileExcludedMappingContexts` (skipped on touch) | `IA_MouseLook` (Mouse2D) |
+| `IMC_Pause_Runtime` (priority 2) | `ACleanCutActionPlayerController::SetupInputComponent` | Runtime `IA_Pause_Runtime` (`bTriggerWhenPaused`) for `PauseKeys` P, Escape, gamepad Menu |
+| `IMC_Crouch_Runtime` (priority 1) | `ACleanCutActionCharacter::SetupPlayerInputComponent` | C, Left Ctrl, right-stick click |
+| `IMC_Emote_Runtime` (priority 1) | same | `IA_Emote` on G, D-pad Up |
 
-Hand stack sway: `HandStack` relative rotation follows look delta with a spring (stiffness 120, damping 14), clamped ±6°.
+The Interact/Throw key list above was read from the `IMC_Default` asset and matches the in-game controls list (`LTTBriefingScreen.cpp`, `AddControlRow` calls). There are no Station or UI mapping contexts.
 
-Head bob: sine on camera Z (1.2 cm × speed ratio), frequency 1.8 Hz walk / 2.4 Hz sprint; off if `bHeadBob=false`.
+Keys read directly (no Input Action asset):
+- Hint: `ALTTMessDirector::HintKey` F / `HintGamepadKey` gamepad Y (runtime action unless `HintAction` is set).
+- HUD controls card toggle: `ULTTCleanupHUD::ToggleControlsKey` H / D-pad Down.
+- Phase 2 stations poll keys with `IsInputKeyDown` (`LTTEffectStation.cpp`): LMB / RT = action, E / RMB / gamepad B = leave, W / left stick up = push, A/D or LB/RB or the stick = shake, 1–5 / mouse wheel / D-pad / bumpers = pick a choice, F / Y = thunder flash.
+- Menus handle their own keys in `NativeOnKeyDown` (Enter/A, Escape/B, etc.).
+
+### 4.2 Touch
+
+`ShouldUseTouchControls()` is true on touch platforms (`SVirtualJoystick::ShouldDisplayTouchInterface`) or with `bForceTouchControls`. The PC then spawns `MobileControlsWidgetClass` (`/Game/Input/Touch/UI_TouchSimple`: sticks, hand, throw, jump, crouch, hint, dance, pause) and `WBP_MusicToggle`. `RestoreGameInput()` keeps Game+UI input and the cursor on touch so the buttons still take taps.
+
+### 4.3 Input device tracking (`UI/LTTInputDevice.h/.cpp`)
+
+`ULTTInputDeviceSubsystem` registers a Slate input pre-processor and records the last device used: `KeyboardMouse`, `Gamepad` or `Touch` (process-wide, `GetCurrent()`), broadcasting `OnInputDeviceChanged`.
+
+- Start guess: touch if the touch interface is shown, gamepad if one is attached, else keyboard/mouse.
+- Mouse movement alone never switches away from the gamepad (Steam Input trackpads move the mouse).
+- **Sticky gamepad** (87eadcc): for 1.5 s after any gamepad input, mouse clicks and keys don't switch away from the gamepad (Steam Input sends some buttons and trackpad clicks as mouse/keyboard). Every switch is logged with its cause.
+- Helpers: `GamepadKeyLabel` (Xbox / Steam Deck names: "A", "RT", "D-pad Up", "Menu"), `KeyLabelFor`, `Pick`, `FocusFirstButton`, `EnsureGamepadFocus` (menus call it from `NativeTick` so the D-pad / stick and A work), `IsBackKey` (B).
+
+`ACleanCutActionPlayerController::ApplyInputDevice` (on change and on a 0.25 s timer) hides the touch overlay while a gamepad is used on a touch device and swaps the labels in `WBP_InteractPrompt` (E + mouse icons ↔ X, plus an RT cap on the throw row). The HUD, briefing and pause menu swap their own key lists (see `06`).
 
 ---
 
 ## 5. Interaction Framework
 
-### Interface - `ILTTInteractable`
+### `ILTTInteractable` (`Interaction/LTTInteractable.h`)
 
-```cpp
-UINTERFACE(BlueprintType) class ULTTInteractable : public UInterface { GENERATED_BODY() };
-class ILTTInteractable {
-  GENERATED_BODY()
-public:
-  UFUNCTION(BlueprintNativeEvent) bool CanInteract(AActor* Instigator) const;
-  UFUNCTION(BlueprintNativeEvent) FText GetPromptText(AActor* Instigator) const;   // "Pick up", "Sweep", "Aim light"
-  UFUNCTION(BlueprintNativeEvent) ELTTInteractKind GetInteractKind() const;          // Press, Hold, Station
-  UFUNCTION(BlueprintNativeEvent) float GetHoldDuration() const;                     // for Hold
-  UFUNCTION(BlueprintNativeEvent) void OnFocusBegin(AActor* Instigator);
-  UFUNCTION(BlueprintNativeEvent) void OnFocusEnd(AActor* Instigator);
-  UFUNCTION(BlueprintNativeEvent) void OnInteract(AActor* Instigator);              // Press complete / Hold complete
-  UFUNCTION(BlueprintNativeEvent) void OnHoldTick(AActor* Instigator, float Alpha); // live hold feedback
-  UFUNCTION(BlueprintNativeEvent) void OnHoldCancelled(AActor* Instigator);
-};
-```
+BlueprintNativeEvents: `CanInteract`, `GetPromptText`, `GetInteractKind`, `GetHoldDuration`, `OnFocusBegin`, `OnFocusEnd`, `OnInteract`. `ELTTInteractKind` = `Press`, `Hold`, `Station` (Phase 2 effect stations), `Pickup` (carried). There is no hold-tick or hold-cancel event.
+
+Implemented by `ALTTInteractableBase`, `ALTTPowerBox`, `ALTTLightFixture`, `ALTTWaterPuddle`, `ALTTCheatButton`, `ALTTEffectStation`.
 
 ### `ULTTInteractionComponent`
 
-- Every tick: line trace from camera, 300 cm, channel `Interact`, sphere radius 6 cm (forgiving aim).
-- Focus target = first hit actor implementing `ILTTInteractable` whose `CanInteract` is true.
-- On focus change: old `OnFocusEnd`, new `OnFocusBegin`; set custom depth stencil on all primitive components of the focused actor (`SetRenderCustomDepth(true)`, stencil value **1** = focus white).
-- Broadcast `OnFocusChanged(Actor, PromptText, Kind)` → HUD prompt tween.
-- `IA_Primary` (LMB) routing order:
-  1. If carrying and aiming at a valid ghost → **Place**.
-  2. If focused interactable is a pickup and carry has room → **Pick up**.
-  3. If carrying and nothing valid → **Drop** in front (gentle place on surface hit, else drop).
-- `IA_Secondary` (RMB) held while carrying → charge throw; release → throw top item.
-- `IA_Interact` (E) → stations, holds (right a table, aim light, wipe lens, plug cable).
-- Hold interactions: progress 0→1 over `GetHoldDuration()`; release early cancels. HUD shows a radial fill around the crosshair.
-
-### Stencil values (shared with `PP_Outline`)
-
-| Stencil | Color | Used for |
-|---|---|---|
-| 1 | White | Focused interactable |
-| 2 | Gold | Ghost of the item you carry / correct target |
-| 3 | Cyan | Director's Eye highlights |
-| 4 | Red | Frame-violation flash / wrong spot |
-| 5 | Green | Active cue station (Phase 2) |
+- Each tick: sphere trace from the view, `TraceDistance` 300, `TraceRadius` 6, `ECC_Visibility`. The trace passes through up to 8 already-placed props. `OnFocusChanged(Actor, PromptText)` feeds the prompt.
+- Focus outline: custom depth stencil **1** on the focused mesh, drawn by `M_PP_Outline`. Stencil 1 is the only value in use.
+- `IA_Interact` and `IA_Throw` are bound on the pawn's input component (`TryBindInput`).
+- **Interact** routing (`Interact()`), using `ELTTPlaceHint`:
+  1. Holding a prop: `Place` (aiming at its home silhouette within `PlaceDistance` 400) → lock it home; `Mop` → one mop stroke on the aimed puddle (mop stays in hand, reach 260); `Trash` → into the aimed bin; `Wash` → into the aimed sink; otherwise **Drop**. `NeedsSupport` (its table isn't back) drops and triggers a "wrong order" bark; `Fumble` (aim within `NearMissMargin` 35 cm outside the snap) drops and arms the prop to break on landing.
+  2. Not holding: a `Pickup` focus is picked up; anything else gets `OnInteract`.
+- **Throw** (`ThrowHeld`) throws the held prop. Impacts break props through the Blueprint `BreakFromImpact` event → `ALTTInteractableBase::BreakAway` (the controls list says "Throw (breaks it!)"). A prop thrown slowly into its own silhouette is placed instead (trick shot, `TrickShotMaxSpeed`).
 
 ---
 
 ## 6. Carry Component
 
-```cpp
-UPROPERTY(EditAnywhere) int32 BaseCapacity = 3;       // + Stack 'Em ranks + golden reel bonus
-UPROPERTY(VisibleAnywhere) TArray<ALTTPropBase*> Stack;
-bool CanPickUp(ALTTPropBase* Prop) const;   // Small: if Stack.Num() < Capacity and top isn't Medium; Medium: only if Stack empty; Large/Fixed: never
-void PickUp(ALTTPropBase* Prop);            // see sequence below
-ALTTPropBase* PopTop();
-void DropTop(const FHitResult& AimHit);
-void ThrowTop(float Charge01);              // impulse = Lerp(400, 1400, Charge) * LongThrowMult (cm/s), +15° pitch up
-int32 GetCapacity() const;
-DECLARE events: OnStackChanged(int32 Count, int32 Capacity)
-```
+`ULTTCarryComponent` holds **one** prop (no stack, no capacity).
 
-**Pick-up sequence (polish matters here):**
-1. Disable physics, collision → `NoCollision`, set prop state `Carried`.
-2. Pop tween on the prop in the world: scale 1 → 1.15 over 0.08 s (OutCubic).
-3. Fly tween: world location → HandStack slot location over 0.18 s (OutCubic); scale → `CarryScale` (default 0.6 for Small, 0.8 for Medium).
-4. Attach to `HandStack` (KeepWorld), then settle tween to the slot's relative transform 0.1 s (OutBack).
-5. Play `SFX_Pickup_<PhysMat>`; crosshair pulse; HUD stack counter bounce.
-
-**Stack layout:** item *i* sits at relative Z = Σ(previous heights × CarryScale) + 1 cm gap, with a random yaw ±8° fixed at pickup so the stack looks hand-made.
-
-**Drop:** trace from camera 250 cm; if hit a walkable surface → tween to hit point + half height (0.15 s), then enable physics; else enable physics at hand with forward impulse 150.
-
-**Large/Fixed props** are never carried; they use a Hold interaction ("Right it" / "Push back") defined in `03 §3.2`.
+- `PickUp` flies the prop into the hold position over `PickupBlendTime` 0.18 s (OutCubic, inline math). Hold position: `BaseHoldDistance` 45, `HoldDownOffset` 18, one-handed props offset `OneHandSideOffset` 16 to the right.
+- `Drop` (forward speed 150), `Throw` (`ThrowSpeed` 1100 × the prop's multiplier, 10° up), `PlaceHeld` (back home and locked), `PlayUseSwing` (mop stroke).
+- The held mop's head aims at the targeted puddle point (`SetToolAim`).
+- Hand IK: `GetRightHandIK` / `GetLeftHandIK` (`FLTTHandIK`) feed `ULTTFirstPersonAnimInstance`.
+- Events: `OnPickedUp(Item)`, `OnReleased(Item, bThrown)` (the barker listens).
 
 ---
 
-## 7. Tween System
+## 7. Phase 1 Flow (`ALTTMessDirector`)
 
-Small, dependency-free. **Use it for everything** that moves for feedback; physics is only for messy loose props.
+Placed in `L_NYC_Cafe_Michael` with `WBP_Briefing`, `WBP_CleanupHUD` and `WBP_EndScreen` assigned. In order:
 
-### Easing (`ULTTEasing`, t in [0,1])
+1. Starts on black, records every prop's home and support, then throws props around (the "earthquake"; `RandomSeed` 0 = new mess each play). Puddles count as extra cleanup jobs.
+2. Shows the briefing (`BriefingClass`). Start = time trial (countdown `TimeLimitSeconds` 1800), No Timer = no clock (`SetTimerEnabled(false)`). Fades in.
+3. Play: score = placed × 10 + broken × −15 + hints × `PointsPerHint` (0) + time bonus (1 per second left). Hint (F / Y) outlines the nearest placeable prop; repeat-hinted stuck props are rescued. A periodic rescue moves props that fell under the map or out of the cafe.
+4. All placed (or time up): ending camera shots (Level Sequence, or level cameras), skippable with `ULTTEndingOverlay`, confetti, then `ULTTEndScreen`. The game is not paused behind the end screen: `KeepGameInputWithCursor` keeps walking enabled with the cursor up.
 
-```
-Linear(t)      = t
-InOutSine(t)   = -(cos(PI*t) - 1) / 2
-OutCubic(t)    = 1 - (1-t)^3
-OutBack(t)     = 1 + c3*(t-1)^3 + c1*(t-1)^2      with c1 = 1.70158, c3 = c1 + 1
-OutElastic(t)  = t==0?0 : t==1?1 : 2^(-10t) * sin((t*10 - 0.75) * (2*PI/3)) + 1
-OutBounce(t)   = standard 4-segment bounce (n1 = 7.5625, d1 = 2.75)
-InBack(t)      = c3*t^3 - c1*t^2
-Punch(t, f)    = sin(t * PI * f) * (1 - t)            // for wobble/shake, returns -1..1 decaying
-```
-
-### Subsystem API
-
-```cpp
-UENUM() enum class ELTTEase : uint8 { Linear, InOutSine, OutCubic, OutBack, OutElastic, OutBounce, InBack };
-UENUM() enum class ELTTTweenClock : uint8 { Game, Real };  // Real = keeps running while paused (UI)
-
-int32 TweenScale   (USceneComponent* C, FVector From, FVector To, float Dur, ELTTEase E, ELTTTweenClock Clock = Game, TFunction<void()> OnDone = nullptr);
-int32 TweenLocation(USceneComponent* C, FVector From, FVector To, float Dur, ELTTEase E, bool bWorld=true, ...);
-int32 TweenRotation(USceneComponent* C, FRotator From, FRotator To, float Dur, ELTTEase E, ...); // uses Quat slerp
-int32 TweenFloat   (UObject* Owner, float From, float To, float Dur, ELTTEase E, TFunction<void(float)> OnUpdate, ...);
-int32 TweenWidgetScale  (UWidget* W, FVector2D From, FVector2D To, float Dur, ELTTEase E, ELTTTweenClock Clock = Real, ...);
-int32 TweenWidgetOpacity(UWidget* W, float From, float To, float Dur, ELTTEase E, ...);
-int32 TweenWidgetTranslation(UWidget* W, FVector2D From, FVector2D To, float Dur, ELTTEase E, ...);
-void  Cancel(int32 Handle);
-void  CancelAllFor(UObject* Target);  // called before starting a new tween of the same property on the same target (prevents fighting)
-// Blueprint wrappers return handle + latent "Completed" exec pin.
-```
-
-Implementation notes:
-- Store tweens in a `TArray<FLTTTween>` with weak pointers to targets; skip/remove if target is gone.
-- `Tick(DeltaTime)`: Game clock uses world delta (×time dilation, stops when paused). Real clock uses `FApp::GetDeltaTime()` unscaled.
-- `IsTickableWhenPaused()` returns true; Game-clock tweens check `World->IsPaused()` and skip.
-- **Auto-cancel conflicting tweens:** starting a Scale tween on a component cancels its previous Scale tween (snap to current value, not target).
-
-### Feedback presets (`ULTTFeedbackComponent`)
-
-| Preset | Spec |
-|---|---|
-| `Pop` | scale ×1 → ×1.15 (0.08 s OutCubic) → ×1 (0.15 s OutBack) |
-| `Squash` (placement) | scale (1,1,1) → (1.18,1.18,0.82) 0.06 s OutCubic → (0.95,0.95,1.06) 0.08 s → (1,1,1) 0.22 s OutElastic |
-| `Wobble` (wrong / denied) | yaw Punch ±7°, 4 cycles, 0.35 s |
-| `Bob` (idle collectibles) | Z ±6 cm InOutSine loop 1.6 s + yaw 45°/s |
-| `PowerOn` (stage lamps) | intensity 0 → 120% (0.1 s) → 30% (0.05 s) → 100% (0.25 s OutCubic), with a flicker sound |
-
-All presets use the original scale/rotation as base (cached on first use) so repeated triggers never drift.
+Details of the cleaning rules are in `03`.
 
 ---
 
-## 8. Gameplay Tags
+## 8. Director Barks
 
-```
-Prop.Type.Chair, Prop.Type.Stool, Prop.Type.Table, Prop.Type.Lamp, Prop.Type.Cup, Prop.Type.Plate, Prop.Type.Vase,
-Prop.Type.Plant, Prop.Type.Menu, Prop.Type.Frame, Prop.Type.Cushion, Prop.Type.Book, Prop.Type.Sign, Prop.Type.Misc
-Prop.Size.Small, Prop.Size.Medium, Prop.Size.Large, Prop.Size.Fixed
-Task.Place, Task.Trash, Task.Sweep, Task.Cable, Task.Light, Task.Reel, Task.Costume, Task.Lens, Task.Clapper
-Zone.Entrance, Zone.Seating, Zone.Kitchen, Zone.Stairs, Zone.Terrace, Zone.Crew, Zone.Craft
-Skill.Sneakers, Skill.StackEm, Skill.WideBroom, Skill.DirectorsEye, Skill.GrabBag, Skill.SetDresser,
-Skill.CueSense, Skill.SteadyHands, Skill.LongThrow, Skill.Patience, Skill.DodgeShot, Skill.Sprint, Skill.ReelCarry, Skill.ReelCooldown
-Cue.Slate, Cue.Traffic, Cue.Door, Cue.Steam, Cue.Napkins, Cue.Thunder, Cue.Sunset, Cue.Wind, Cue.Boom, Cue.Rain, Cue.Umbrella, Cue.Roses, Cue.Moonlight
-Station.Slate, Station.CarRail, Station.DoorBell, Station.Espresso, Station.PropTable1F, Station.PropTable2F, Station.LightRig, Station.Thunder, Station.Fan, Station.Boom, Station.Rain
-Bark.* (see 05 §0)
-```
+**Phase 1:** `ALTTCleanupBarker` (placed next to the mess director). It listens to the mess director and the carry component, and to `NotifyEvent` (`Crash`, `TrashMiss`, `BinWrongItem`, `WrongOrder`). Lines are written in `LTTCleanupBarker.cpp` (LOCTEXT pools, not a DataTable), with priorities 0–3, chance rolls, cooldowns, no-repeat pools, chains, idle nags (`IdleSeconds` 40) and power reminders (`PowerNagSeconds` 45). A new line cuts in after `MinShowBeforeInterrupt` 1 s; cut-off story/milestone lines replay, cut-off reactions are dropped; `ReactionGap` 4 s between reactions. Duration = max(`MinLineSeconds` 2.4, words × 0.32) + 0.9 s. Speakers: `Marlowe`, `WalkieDash`, `WalkieJuniper`. Text only (no VO, no music ducking). `LTT.DisableBarks [1|0]` turns it off.
+
+**Phase 2:** lines come from `ULTTSceneData` beats and Marlowe's cue calls, shown in `ULTTShootHUD` (subtitle + bark panel). See `04`/`05`.
 
 ---
 
-## 9. Director Bark System (shared by both phases)
+## 9. Power and Lights
 
-### Data - `FLTTDirectorLine` (DataTable row, `DT_DirectorLines`)
-
-| Column | Type | Notes |
-|---|---|---|
-| RowName | FName | Unique ID, e.g. `P1_Place_03` |
-| Trigger | FGameplayTag | e.g. `Bark.P1.Place.Correct` |
-| Speaker | enum | Marlowe, Dash, Juniper, Walkie_Dash, Walkie_Juniper |
-| Text | FText | Subtitle |
-| Voice | SoftObjectPtr USoundBase | Optional VO; if null → voice blips |
-| Priority | int32 | 0 Idle, 1 Reaction, 2 Milestone, 3 Story/Tutorial (interrupts lower) |
-| Chance | float | 0–1, roll per trigger |
-| Cooldown | float | Seconds before this *trigger* may fire again |
-| bOneShot | bool | Plays once per session |
-| FollowUp | FName | Next line to auto-queue (dialogue chains) |
-| MinProgress / MaxProgress | float | Optional % gates (Phase 1) |
-
-### Rules
-- `ULTTBarkSubsystem::Trigger(FGameplayTag Trigger, int32 PriorityOverride = -1)`.
-- Global reaction cooldown **6 s** after any line ends (Priority ≤ 1 only).
-- Per-trigger cooldown from the row; per-line no-repeat: shuffle bag per trigger (don't repeat a line until all lines of that trigger have played).
-- Priority 3 interrupts anything lower (stop current audio, fade subtitle). Priority 2 waits in a queue of size 1 (newest replaces older queued).
-- Line duration = VO length, or `max(1.6, words × 0.32 s)` for blips.
-- Megaphone lines route to `SMX_Megaphone`; walkie lines get squelch in/out SFX + band-pass.
-- Speaking events: `OnLineStarted(Speaker, Text, Duration)` → subtitle widget + Marlowe megaphone montage + Phase 2 actor talk montage.
-- Duck music −6 dB while any line plays.
+- `ULTTPowerSubsystem` (WorldSubsystem): `SetPowerOn(bool)`, `IsPowerOn()`, `OnPowerChanged`. Off darkens every point/spot/rect light and dims lamp bulbs; sky and directional lights are untouched. Lamp switches flipped during an outage apply when power returns.
+- `ALTTPowerBox` (`BP_ElectricBox`): Interact toggles the mains with sparks, a relay click and crackle; a red indicator stays lit. `bStartsOff = true`, so each level starts with the breaker off and Marlowe nags until it's on.
+- `ALTTLightFixture` (`BP_Lamp_*`) and props with `ULTTLightSwitchComponent` (e.g. `BP_Prop_ModernLamp`) switch on/off with Interact. `ULTTFlickerComponent` drives `BP_ShopSign_02_LED`.
 
 ---
 
 ## 10. Pause
 
-- `IA_Pause` in every mapping context (including Station and UI) → `ALTTPlayerController::TogglePause()`.
-- Pause blocked during level travel fades and during the final 1 s of an end-screen stamp sequence (prevents broken tweens).
-- On pause: `SetGamePaused(true)`, push `IMC_UI`, show `WBP_PauseMenu`, enable `SMX_Pause` low-pass, set input mode `GameAndUI` with mouse cursor.
-- On resume: reverse; restore previous mapping contexts (stack-based so Station mode resumes correctly).
-- Barks pause with the game (audio components set `bIsUISound=false` so they pause); UI sounds use `bIsUISound=true`.
+- `ACleanCutActionPlayerController::TogglePauseMenu` on P / Escape / gamepad Menu (runtime action that triggers while paused) or the touch pause button.
+- `OpenPauseMenu` does nothing if the game is already paused. It creates `PauseMenuClass` (`WBP_PauseMenu` on `BP_FirstPersonPlayerController`, default `ULTTPauseMenu`) at Z 20, calls `SetGamePaused(true)`, shows the cursor and sets UI-only input focused on the menu.
+- `ClosePauseMenu` removes it, unpauses and calls `RestoreGameInput()`.
+- Menu buttons: Resume, Music on/off, Leaderboard, Unstuck (`TeleportToSpawn`: back to the first possessed transform, uncrouched; a held prop comes along), Restart (reloads the map; the run isn't submitted), Quit. A small coffee icon runs `LTT.PlaceAll` only for the player named `iPoNet`.
+- Background music (`ALTTMusicPlayer`) is a UI sound and keeps playing while paused; the emote song is not, so it pauses with the game.
+
+---
+
+## 11. Leaderboard and Persistence
+
+`ULTTLeaderboardSubsystem` (`UI/LTTLeaderboardSubsystem.h/.cpp`):
+
+- Server `BaseUrl` `https://cca.ohmcodes.com` (config, or `-LeaderboardUrl=`), page `/leaderboard`, `bEnabled` to switch off.
+- Player identity: a GUID player id plus a name (random "Sleepy Barista 42"-style, or typed on the briefing; max 24 chars, sanitised). Stored in browser `localStorage` on Wasm, otherwise in a `ULTTPlayerProfileSave` save slot.
+- `SubmitRun(Score, Time, bSetClean, bTimeTrial, Placed, Total, Broken, Hints)` is sent by `ULTTEndScreen` when the Phase 1 end screen opens. The server keeps the best score and the best clean-set time. Phase 2 results are not submitted.
+- `FetchLeaderboard(Limit)` → `OnLeaderboardFetched` (top N + your row); `OpenFullLeaderboard()` opens the website.
+- On Wasm the engine HTTP module is a stub, so requests go through the browser's `fetch()` on the main thread (`MAIN_THREAD_EM_ASM`) and are polled from the game thread; elsewhere `FHttpModule`.
+
+The profile save is the only save data. There is no progress save.
+
+---
+
+## 12. Console Commands
+
+| Command | File | Effect |
+|---|---|---|
+| `LTT.PlaceAll [LeaveCount=5]` | `LTTMessDirector.cpp` | Places every cleanup prop except LeaveCount (test the ending) |
+| `LTT.DisableBarks [1\|0]` | `LTTCleanupBarker.cpp` | Turns Phase 1 barks off / on |
+| `LTT.SkipCue [Perfect\|Good\|Late\|Miss]` | `LTTSceneDirector.cpp` | Resolves the active Phase 2 cue |
+| `LTT.JumpToAct <A\|B\|C>` | same | Restarts the scene from an act |
+| `LTT.Cut` | same | Calls CUT |
+
+---
+
+## 13. Planned but not built (cut for the jam)
+
+Checked by grepping `Source/`; none of these exist:
+
+- `ULTTGameInstance`, `ULTTLevelFlowSubsystem` (fades, `GoToMainMenu/Phase1/Phase2`), `L_MainMenu`.
+- `ULTTSaveGame` / `ULTTSaveSubsystem` (completion flags, best times, unlocks, settings).
+- `ULTTTweenSubsystem`, `ULTTEasing`, `ULTTFeedbackComponent`: widgets and props animate with inline easing in `Tick`/`NativeTick`.
+- `ULTTSkillComponent`, Crew Credits, golden reels, abilities, sprint.
+- `ULTTBarkSubsystem` and `DT_DirectorLines` (replaced by `ALTTCleanupBarker`), voice-over, music ducking.
+- `ULTTCleanProgressSubsystem` and zones (the mess director does the counting).
+- Gameplay tags (none are used), carry stacking, hold interactions with progress, stencil values 2–5, Station/UI mapping contexts, `ALTTPropBase`/`ALTTPlayerCharacter` names.

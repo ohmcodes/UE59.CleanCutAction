@@ -1,6 +1,25 @@
 # Audio List
 
-Covers checklist **P9**. **Pri:** [M]/[S]/[C]. **Var:** number of variations to source (randomize pitch ±5% and volume ±2 dB on top).
+Covers checklist **P9**. **Pri:** [M]/[S]/[C]. **Status** is checked against `Content/_CleanCutAction/` and the two cooked maps on 2026-11-15:
+
+- **in** — the asset exists (path under `/Game/_CleanCutAction/`) and something uses it
+- **in, unused** — the asset exists but nothing references it yet
+- **missing** — no asset yet
+- **no mechanic** — the feature it was planned for isn't in the game, so the sound isn't needed unless the feature comes back
+
+---
+
+## 0. What's in the project
+
+| Folder | Contents | Used by |
+|---|---|---|
+| `SFX/Props/` | `SW_Prop_<Material>_Pickup` / `_Place` / `_Break` for 8 materials (Wood, Metal, Paper, Ceramic, Glass, Plastic, Fabric, Food), `DA_PropSounds` (the bank), `ATT_Props` (attenuation) | Every prop via `ULTTPropSoundSet` (pitch 0.92–1.08, break ×1.2 volume). `DA_PropSounds` is in `MapsToCook` |
+| `SFX/` | `SW_CoffeeBuzz`, `SW_CoffeeFill`, `SW_CoffeeGrind`, `SW_LightClick`, `SW_MicrowaveDing`, `SW_MicrowaveDoor`, `SW_MicrowaveTick`, `SW_MopSwish`, `SW_PowerClick`, `SW_PuddleClean`, `SW_PuddleSplash`, `SW_SinkWash`, `SW_SinkWater`, `SW_Spark`, `SW_applause`, `SW_cut`, `SW_miss`, `SW_next_phase`, `SW_notification`, `SW_success` | Phase 1 appliances, puddles, power box; Phase 1/2 directors (see below) |
+| `SFX/stations/` | 23 station sounds (section 2.7) | Phase 2 map effect stations |
+| `MusicFX/` | 6 tracks: `kf011815-sunny-day`, `kf011821-ghostly-bossa`, `kf014010-nova-hall`, `kf017407-only-you`, `kf027101-carefree`, `kf027103-more-of-the-other` (about 14 min) | `ALTTMusicPlayer` in both cafe maps, shuffled, crossfaded, mute toggle (`WBP_MusicToggle`, pause menu) |
+| `EmoteMusic/` | `paroparo` (4.8 min) | Dance emote, loaded by path (in `MapsToCook`) |
+
+No Sound Classes, Submixes, Concurrency assets, MetaSounds or voice files exist yet.
 
 ---
 
@@ -8,15 +27,15 @@ Covers checklist **P9**. **Pri:** [M]/[S]/[C]. **Var:** number of variations to 
 
 | Source | What it's good for | License notes |
 |---|---|---|
-| **Home Foley** (phone recorder) | Cups, plates, cardboard, broom, paper, cushions, hangers, keys, a squeegee on glass, blowing on a mic for wind | You own it. Fastest way to get *exactly* the right prop sounds |
-| **Freesound.org** | Specific SFX (espresso machine, thunder sheet, film projector, megaphone feedback) | License varies per sound (CC0, CC-BY, CC-BY-NC). **Avoid NC** for anything you might sell; credit CC-BY |
-| **Sonniss GameAudioGDC bundles** | High-quality ambiences, impacts, whooshes, rain, thunder | Royalty-free for commercial use per their license; check the bundle's terms |
+| **Home Foley** (phone recorder) | Cups, plates, cardboard, broom, paper, cushions, hangers, keys, a squeegee on glass, blowing on a mic for wind | You own it |
+| **Freesound.org** | Specific SFX (espresso machine, thunder sheet, film projector, megaphone feedback) | License varies per sound. **Avoid NC**; credit CC-BY |
+| **Sonniss GameAudioGDC bundles** | Ambiences, impacts, whooshes, rain, thunder | Royalty-free per their license |
 | **Kenney.nl audio packs** | UI clicks, interface sounds, impacts | CC0 |
-| **Pixabay (music & SFX)** | Background music, stingers | Pixabay Content License; check per item |
+| **Pixabay (music & SFX)** | Background music, stingers | Pixabay Content License |
 | **Incompetech (Kevin MacLeod)** | Jazz/cafe music | CC-BY: attribution required |
-| **AI generation** (music/SFX/TTS) | Marlowe VO, music stems | Allowed only if the jam rules permit; check the tool's terms; disclose in credits |
+| **AI generation** (music/SFX/TTS) | Marlowe VO, music stems | Only if the jam rules permit; disclose in credits |
 
-Log **every** file in `CREDITS.md` as you add it: file name, source URL, author, license.
+Log every file in a `CREDITS.md` (file, source URL, author, license). **It doesn't exist yet**, and the sources of the current SFX and music aren't recorded anywhere in the repo.
 
 ---
 
@@ -24,212 +43,165 @@ Log **every** file in `CREDITS.md` as you add it: file name, source URL, author,
 
 ### 2.1 Player
 
-| ID | Description | Var | Pri |
+| ID | Description | Pri | Status |
 |---|---|---|---|
-| `SFX_Foot_Wood` | Footstep on wooden set floor | 6 | M |
-| `SFX_Foot_Tile` | Footstep on cafe tile | 6 | M |
-| `SFX_Foot_Carpet` | Soft step on rug/runner | 4 | S |
-| `SFX_Foot_Metal` | Step on crew stair / scaffold | 5 | M |
-| `SFX_Foot_Concrete` | Soundstage floor | 5 | M |
-| `SFX_Jump` | Light cloth whoosh + breath | 3 | S |
-| `SFX_Land` | Thud, scaled by fall speed | 3 | M |
-| `SFX_Foot_Wet` | Splashy steps for the wet terrace (Phase 2) | 4 | S |
+| `SFX_Foot_Wood` / `_Tile` / `_Carpet` / `_Metal` / `_Concrete` | Footsteps per surface | M/S | missing |
+| `SFX_Jump` | Light cloth whoosh + breath | S | missing |
+| `SFX_Land` | Thud, scaled by fall speed | M | missing |
+| `SFX_Foot_Wet` | Splashy steps (Phase 2 terrace) | S | missing |
 
 ### 2.2 Props & Interaction
 
-| ID | Description | Var | Pri |
+| ID | Description | Pri | Status |
 |---|---|---|---|
-| `SFX_Focus_Tick` | Very soft tick when focusing an interactable | 1 | M |
-| `SFX_Pickup_Wood` / `_Ceramic` / `_Fabric` / `_Paper` / `_Metal` / `_Plastic` / `_Glass` | Lift sound per material | 3 each | M |
-| `SFX_Pickup_FilmReel` | Metallic reel rattle | 2 | M |
-| `SFX_Place_<Material>` | Solid "thunk" per material for snap | 3 each | M |
-| `MS_PlaceChime` | Bright mallet/celesta note (C major ladder, MetaSound pitch input) | 1 base | M |
-| `SFX_Place_Wrong` | Soft muted "bonk" | 2 | M |
-| `SFX_Drop_<Material>` | Prop dropped/landed loose | 3 each | M |
-| `SFX_Impact_<Material>` | Hard collision (throws), velocity-scaled | 4 each | M |
-| `SFX_Throw_Whoosh` | Throw whoosh, pitch by charge | 3 | M |
-| `SFX_Stack_Shuffle` | Stack cycling (scroll) | 2 | S |
-| `SFX_Stack_Full` | Denied "nope" when full | 1 | M |
-| `SFX_RightIt` | Heavy table tipping upright + wood thud | 2 | M |
-| `SFX_PushBack` | Furniture scrape | 2 | M |
-| `SFX_Poof` | Lost prop respawn | 1 | S |
-| `SFX_TrickShot` | Sparkly "ta-da" | 1 | S |
+| `SFX_Focus_Tick` | Soft tick when focusing an interactable | M | missing |
+| `SFX_Pickup_<Material>` | Lift sound per material | M | **in**: `SFX/Props/SW_Prop_<Material>_Pickup` (8 materials, Food added) |
+| `SFX_Pickup_FilmReel` | Metallic reel rattle | M | no mechanic |
+| `SFX_Place_<Material>` | Solid "thunk" per material for snap | M | **in**: `SFX/Props/SW_Prop_<Material>_Place` |
+| (new) Break per material | Prop shatters on a bad drop or throw | — | **in**: `SFX/Props/SW_Prop_<Material>_Break` |
+| `MS_PlaceChime` | Rising mallet note per placement (MetaSound) | M | missing |
+| `SFX_Place_Wrong` | Soft muted "bonk" | M | missing (a bad drop breaks the prop and plays its Break sound) |
+| `SFX_Drop_<Material>` | Prop dropped/landed loose | M | missing |
+| `SFX_Impact_<Material>` | Hard collision (throws) | M | missing (throws break the prop → Break sound) |
+| `SFX_Throw_Whoosh` | Throw whoosh | M | in, unused: `SFX/stations/SW_Whoosh` |
+| `SFX_Stack_Shuffle` / `SFX_Stack_Full` | Stack cycling / full | S/M | missing |
+| `SFX_RightIt` / `SFX_PushBack` | Table tipping upright / furniture scrape | M | missing |
+| `SFX_Poof` | Lost prop respawn | S | missing |
+| `SFX_TrickShot` | Sparkly "ta-da" | S | missing |
 
 ### 2.3 Cleaning Tasks
 
-| ID | Description | Var | Pri |
+| ID | Description | Pri | Status |
 |---|---|---|---|
-| `SFX_Trash_Deposit` | Item dropping into a bin | 4 | M |
-| `SFX_Bin_Lid` | Lid flap | 2 | M |
-| `SFX_Bin_Swish` | Swish + quick "mild cheer" crowd (a tiny polite clap) | 2 | M |
-| `SFX_Bin_Clank` | Missed shot hitting the bin rim | 2 | M |
-| `SFX_Bin_Spit` | Bin rejecting a set piece ("ptoo") | 1 | S |
-| `SFX_Broom_Pickup` | Wooden handle clack | 1 | M |
-| `SFX_Broom_Stroke` | Bristle sweep | 4 | M |
-| `SFX_Popcorn_Crunch` | Popcorn/confetti scatter layer | 3 | M |
-| `SFX_Pile_Cleared` | Satisfying puff + mini chime | 1 | M |
-| `SFX_Cable_Zip` | Cable straightening "zzzip" | 2 | S |
-| `SFX_Plug_In` | Click + small spark | 2 | S |
-| `SFX_Light_Rotate` | Creaky light-head rotation loop (pitched by speed) | 1 loop | M |
-| `SFX_Light_Lock` | "Kachunk" lock | 1 | M |
-| `SFX_Light_Hum` | Ballast hum loop | 1 loop | S |
-| `SFX_Reel_Slot` | Reel sliding into shelf | 2 | M |
-| `SFX_Projector_Rattle` | Short projector clatter on shelf complete | 1 | S |
-| `SFX_Hanger_Slide` | Hanger on rail "shhk" | 3 | S |
-| `SFX_Lens_Squeak` | Microfiber squeak | 4 | M |
-| `SFX_Lens_Ding` | Glint ding | 1 | M |
-| `SFX_Fridge_Open` | Fridge door + hum (clapperboard reveal) | 1 | S |
-| `SFX_Clapper_Clap` | Clapperboard clap (also used in UI) | 3 | M |
+| `SFX_Trash_Deposit`, `SFX_Bin_Lid`, `SFX_Bin_Swish`, `SFX_Bin_Clank`, `SFX_Bin_Spit` | Trash bin | M/S | no mechanic |
+| `SFX_Broom_Pickup`, `SFX_Broom_Stroke`, `SFX_Popcorn_Crunch`, `SFX_Pile_Cleared` | Sweeping piles | M | no mechanic (puddle mopping replaced it, below) |
+| `SFX_Cable_Zip` | Cable straightening | S | no mechanic |
+| `SFX_Plug_In` | Click + small spark | S | **in** as the power box: `SFX/SW_PowerClick`, `SFX/SW_Spark` (`ALTTPowerBox`, `BP_ElectricBox`) |
+| `SFX_Light_Rotate`, `SFX_Light_Lock`, `SFX_Light_Hum` | Aiming stage lights | M/S | no mechanic |
+| `SFX_Reel_Slot`, `SFX_Projector_Rattle` | Film reel shelf | M/S | no mechanic |
+| `SFX_Hanger_Slide` | Costume rack | S | no mechanic |
+| `SFX_Lens_Squeak`, `SFX_Lens_Ding` | Lens wiping | M | no mechanic |
+| `SFX_Fridge_Open` | Fridge door (clapperboard reveal) | S | missing |
+| `SFX_Clapper_Clap` | Clapperboard clap | M | **in**: `SFX/stations/SW_ClapperboardClap` (Phase 2 slate) |
+| (new) Puddle mopping | Mop swish, splash, clean | — | **in**: `SFX/SW_MopSwish`, `SW_PuddleSplash`, `SW_PuddleClean` (`ALTTWaterPuddle`) |
+| (new) Light switch | Switch click | — | **in**: `SFX/SW_LightClick` (`ULTTLightSwitchComponent`) |
+| (new) Coffee machine | Grind, fill, done buzz | — | **in**: `SFX/SW_CoffeeGrind`, `SW_CoffeeFill`, `SW_CoffeeBuzz` (`BP_Prop_EspressoMachine`) |
+| (new) Microwave | Door, tick, ding | — | **in**: `SFX/SW_MicrowaveDoor`, `SW_MicrowaveTick`, `SW_MicrowaveDing` (`BP_Prop_Microwave`) |
+| (new) Sink | Washing dishes, water | — | **in**: `SFX/SW_SinkWash`, `SW_SinkWater` (`BP_Sink`) |
 
 ### 2.4 Progression & Rewards
 
-| ID | Description | Var | Pri |
+| ID | Description | Pri | Status |
 |---|---|---|---|
-| `SFX_Group_Ding` | Two-note ascending chime + tally light click | 1 | M |
-| `SFX_Zone_Kathunk` | Big stage-light switch "KA-THUNK" + electrical swell + a warm chord | 1 | M |
-| `SFX_Credit_Gain` | Film-reel "click-tick" coin sound | 2 | M |
-| `SFX_Skill_Buy` | Stamp + "ka-ching" | 1 | M |
-| `SFX_Ability_Unlock` | Short fanfare | 1 | M |
-| `SFX_Ability_Eye` | Shimmering scan whoosh | 1 | M |
-| `SFX_Ability_GrabBag` | Suction whoosh + plinks per item | 1 + 3 | M |
-| `SFX_Ability_SetDresser` | Magical swoosh + tiny thunks | 1 | M |
-| `SFX_Ability_Ready` | Ping | 1 | M |
-| `SFX_Ability_Denied` | Soft nope | 1 | M |
-| `SFX_GoldenReel` | Shimmer loop near the reel + pickup jingle | 1 + 1 | M |
-| `SFX_Combo` | Combo pop (pitched up per tier) | 1 | S |
-| `SFX_Phase1_Complete` | Lights-on wave sequence (staggered kathunks) + swell | 1 | M |
+| `SFX_Group_Ding`, `SFX_Zone_Kathunk` | Group / zone complete | M | missing |
+| `SFX_Credit_Gain`, `SFX_Skill_Buy` | Credits and skill shop | M | no mechanic |
+| `SFX_Ability_*` (Unlock, Eye, GrabBag, SetDresser, Ready, Denied) | Abilities | M | no mechanic |
+| `SFX_GoldenReel` | Golden reel shimmer + pickup | M | no mechanic |
+| `SFX_Combo` | Combo pop | S | no mechanic |
+| `SFX_Phase1_Complete` | Set ready | M | **in**: `SFX/SW_next_phase` ("SET READY!" end screen, `ALTTMessDirector.SetReadySound`) |
+| (new) Time's up | Countdown ran out | — | **in**: `SFX/SW_miss` (`ALTTMessDirector.TimeUpSound`) |
 
 ### 2.5 Director, Walkie & Set Ambience
 
-| ID | Description | Var | Pri |
+| ID | Description | Pri | Status |
 |---|---|---|---|
-| `SFX_Megaphone_On` | Megaphone click on | 2 | M |
-| `SFX_Megaphone_Squeal` | Feedback squeal (rare, 5% of lines) | 2 | S |
-| `SFX_Walkie_Squelch_In/Out` | Radio squelch | 2 each | M |
-| `AMB_Soundstage` | Big room tone, distant HVAC | 1 loop | M |
-| `AMB_CrewWalla` | Distant crew chatter, muffled | 1 loop | S |
-| `AMB_Generator` | Faint generator hum outside | 1 loop | C |
-| `AMB_CafeFake` | Phase 2: light cafe murmur (it's "for the scene") | 1 loop | S |
-| `AMB_CityFake` | Phase 2: distant city bed behind street flat | 1 loop | S |
+| `SFX_Megaphone_On`, `SFX_Megaphone_Squeal` | Megaphone click / feedback | M/S | missing (slot exists: `ULTTCleanupBarker.LineSound`) |
+| `SFX_Walkie_Squelch_In/Out` | Radio squelch | M | missing (slot exists: `ULTTCleanupBarker.WalkieSound`) |
+| `AMB_Soundstage`, `AMB_CrewWalla`, `AMB_Generator` | Room tone, crew, generator | M/S/C | missing |
+| `AMB_CafeFake`, `AMB_CityFake` | Phase 2 cafe murmur / city bed | S | missing |
 
 ### 2.6 Voices (VO or blips)
 
-| ID | Description | Pri |
-|---|---|---|
-| `VO_Marlowe_*` | All Marlowe lines (TTS or recorded), routed through `SMX_Megaphone` | S |
-| `VO_Dash_*`, `VO_Juniper_*` | Actor lines (Phase 2) and walkie lines (Phase 1) | S |
-| `SFX_Blip_Marlowe` | 6 short syllable sounds (low), for voice blips | M |
-| `SFX_Blip_Dash` | 6 syllables (mid) | M |
-| `SFX_Blip_Juniper` | 6 syllables (high) | M |
-| `SFX_Actor_Cough` | Over-steam reaction | S |
-| `SFX_Actor_Ow` | Bonk reaction (both actors) | M |
-| `SFX_Actor_Laugh` | Juniper's laugh (rain moment) | S |
+| ID | Description | Pri | Status |
+|---|---|---|---|
+| `VO_Marlowe_*`, `VO_Dash_*`, `VO_Juniper_*` | Spoken lines | S | missing (all lines are on-screen text) |
+| `SFX_Blip_Marlowe` / `_Dash` / `_Juniper` | Syllable blips per speaker | M | missing |
+| `SFX_Actor_Cough`, `SFX_Actor_Ow`, `SFX_Actor_Laugh` | Actor reactions | S/M | missing |
 
-**Voice blips:** on each word of a subtitle, play a random syllable from the speaker's set at the speaker's base pitch ±8%, spaced 0.09–0.13 s. Skip punctuation; louder on words in CAPS. This gives every character a voice without recording anything. Use full VO later if time allows.
+**Voice blips (plan):** on each word of a subtitle, play a random syllable from the speaker's set at the speaker's base pitch ±8%, spaced 0.09–0.13 s.
 
 ### 2.7 Phase 2 Stations & Effects
 
-| ID | Description | Var | Pri |
+Station sounds are set per `ALTTEffectStation` in `L_NYC_Cafe_Phase2_Michael` (`EffectSound` / `MissSound`). Director sounds are `ALTTSceneDirector` defaults.
+
+| ID | Description | Pri | Status |
 |---|---|---|---|
-| `SFX_Action_Beep` | "Rolling" camera beep + motor start | 1 | M |
-| `SFX_Camera_Motor` | Film camera whirr loop while rolling | 1 loop | M |
-| `SFX_Cue_Appear` | Cue card pop stinger (short brass "bwap") | 2 | M |
-| `SFX_Grade_Perfect` / `Good` / `Late` / `Miss` | Result jingles (Miss = a playful deflating sound) | 1 each | M |
-| `SFX_FrameAlarm` | Soft beeping loop while in frame | 1 loop | M |
-| `SFX_Car_Roll` | Wheel squeak + rumble loop (speed-pitched) | 1 loop | M |
-| `SFX_Cardboard_Flap` | Cardboard wobble | 2 | S |
-| `SFX_Car_Horn` | Toy-like honk "meep meep" | 1 | M |
-| `SFX_Car_TipOver` | Cardboard collapse (miss) | 1 | S |
-| `SFX_DoorBell` | Cafe door bell | 2 | S |
-| `SFX_Steam_Hiss` | Pressure hiss loop (pitched by pressure) | 1 loop | M |
-| `SFX_Steam_Burst` | Release burst; big version for over-steam | 2 | M |
-| `SFX_Napkin_Flutter` | Paper flutter during toss | 1 | M |
-| `SFX_Catch` | Soft pat into hands | 2 | M |
-| `SFX_Bonk` | Comedic bonk | 2 | M |
-| `SFX_Thunder_Sheet` | Metal sheet wobble (layered per shake) | 4 | M |
-| `SFX_Thunder_Crack` | Real thunder crack + rolling rumble | 3 | M |
-| `SFX_Flash_Pop` | Flash bulb pop | 2 | M |
-| `SFX_Thunder_Weak` | Sad "bwomp" (miss) | 1 | M |
-| `SFX_Gel_Slide` | Gel frame slide + clack | 2 | S |
-| `SFX_Fan_Crank` | Ratchet clicks (rate by RPM) | 1 loop | S |
-| `SFX_Wind_Loop` | Wind loop (volume by strength) | 1 loop | S |
-| `SFX_Boom_Creak` | Boom pole creak | 2 | M |
-| `SFX_Mic_Bump` | Mic thump on head (miss) | 1 | M |
-| `SFX_Valve_Squeak` | Rusty valve wheel | 3 | M |
-| `SFX_Water_Spray` | Hose spray loop | 1 loop | M |
-| `SFX_Rain_Loop_Light` / `_Heavy` | Rain bed on terrace | 1 each | M |
-| `SFX_Rain_OnUmbrella` | Rain drumming on umbrella | 1 loop | S |
-| `SFX_Umbrella_Open` | Whoosh pop | 1 | M |
-| `SFX_Crowd_Aww` | Crew "awww" at the roses | 1 | S |
-| `SFX_Crew_Cheer` | Crew cheer + applause at wrap | 1 | M |
-| `SFX_Patience_Freeze` | Record-scratch freeze + tape-stop | 1 | M |
-| `SFX_Cut_Slam` | CUT clapper slam + whoosh | 1 | M |
-| `SFX_Confetti` | Confetti cannon pop at the wrap | 1 | S |
+| `SFX_Action_Beep`, `SFX_Camera_Motor` | Rolling beep / camera whirr | M | missing |
+| `SFX_Cue_Appear` | Cue call stinger | M | **in**: `SFX/SW_notification` (`CueCallSound`) |
+| `SFX_Grade_Perfect` / `Good` / `Late` / `Miss` | Result jingles | M | **in**: `SFX/SW_success` for Perfect, Good and Late (`CueGoodSound`); `SFX/SW_miss` for Miss (`CueMissSound`) |
+| `SFX_FrameAlarm` | Beeping while in frame | M | missing |
+| `SFX_Car_Roll` | Car rail rumble loop | M | missing |
+| `SFX_Cardboard_Flap`, `SFX_Car_TipOver` | Cardboard wobble / collapse | S | missing |
+| `SFX_Car_Horn` | Toy honk | M | **in**: `SFX/stations/SW_CarBeepBeep` |
+| `SFX_DoorBell` | Cafe door bell | S | **in**: `SFX/stations/SW_ShopDoorBell` |
+| `SFX_Steam_Hiss`, `SFX_Steam_Burst` | Espresso steam | M | **in**: `SFX/stations/SW_Espresso`, `SW_CoffeeSputter` |
+| `SFX_Napkin_Flutter`, `SFX_Catch` | Prop toss | M | missing |
+| `SFX_Bonk` | Comedic bonk | M | **in**: `SFX/stations/SW_LoudBonk` |
+| `SFX_Thunder_Sheet` | Metal sheet wobble | M | **in**: `SFX/stations/SW_SheetWobble` |
+| `SFX_Thunder_Crack` | Thunder crack + rumble | M | **in**: `SFX/stations/SW_ThunderClap` |
+| `SFX_Flash_Pop`, `SFX_Thunder_Weak` | Flash bulb / weak thunder | M | missing |
+| `SFX_Gel_Slide` | Gel frame slide | S | VERIFY: `SFX/stations/SW_PaperSlide` is in the map; which station uses it isn't confirmed |
+| `SFX_Fan_Crank`, `SFX_Wind_Loop` | Wind fan | S | **in**: `SFX/stations/SW_WindFan`, `SW_FanTurnOff` |
+| `SFX_Boom_Creak` | Boom pole creak | M | **in**: `SFX/stations/SW_Creak` |
+| `SFX_Mic_Bump` | Mic thump on head | M | missing (`SFX/stations/SW_MicFeedback` is in the map) |
+| `SFX_Valve_Squeak`, `SFX_Water_Spray` | Rain valve / hose | M | missing |
+| `SFX_Rain_Loop_Light` / `_Heavy` | Rain bed | M | **in** (light): `SFX/stations/SW_LightRain`; heavy missing |
+| `SFX_Rain_OnUmbrella` | Rain on umbrella | S | missing |
+| `SFX_Umbrella_Open` | Whoosh pop | M | **in**: `SFX/stations/SW_UmbrellaOpen` |
+| `SFX_Crowd_Aww` | Crew "awww" | S | missing |
+| `SFX_Crew_Cheer` | Cheer + applause at wrap | M | **in**: `SFX/SW_applause` (`WrapSound`) |
+| `SFX_Patience_Freeze` | Record-scratch freeze | M | missing |
+| `SFX_Cut_Slam` | CUT clapper slam | M | **in**: `SFX/SW_cut` (`CutSound`) |
+| `SFX_Confetti` | Confetti pop at the wrap | S | missing |
+| (new) Other station sounds in the map | — | — | **in**: `SFX/stations/SW_BicycleBell`, `SW_CowBell`, `SW_SwitchOn`, `SW_SwitchOff`, `SW_WaterDrop`, `SW_MicFeedback` |
 
 ### 2.8 UI
 
-| ID | Description | Var | Pri |
+| ID | Description | Pri | Status |
 |---|---|---|---|
-| `UI_Hover` | Soft paper tick | 3 | M |
-| `UI_Click` | Pencil tap / typewriter key | 3 | M |
-| `UI_Back` | Lower-pitched tick | 1 | M |
-| `UI_Denied` | Muted buzz | 1 | M |
-| `UI_Slider_Tick` | Tiny tick per step | 1 | M |
-| `UI_Panel_Open` / `Close` | Paper whoosh in/out | 1 each | M |
-| `UI_Stamp` | Rubber stamp thunk | 2 | M |
-| `UI_Star_Stamp` | Stamp + sparkle (pitched up per star) | 1 | M |
-| `UI_Counter_Tick` | Fast ticks during number rolls | 1 | M |
-| `UI_PageFlip` | Notebook page flip | 3 | M |
-| `UI_Toast` | Bright pop | 1 | M |
-| `UI_Typewriter` | Typewriter keys for typing text | 4 | S |
-| `UI_Pause_In` / `Out` | Tape-stop / tape-start | 1 each | M |
-| `UI_Confirm` | Positive click | 1 | M |
+| `UI_Hover` | Soft paper tick | M | in, unused: `SFX/stations/SW_UiHover` |
+| `UI_Click` | Pencil tap / typewriter key | M | in, unused: `SFX/stations/SW_UiClick` |
+| `UI_Back`, `UI_Denied`, `UI_Slider_Tick`, `UI_Panel_Open` / `Close`, `UI_Stamp`, `UI_Star_Stamp`, `UI_Counter_Tick`, `UI_PageFlip`, `UI_Toast`, `UI_Typewriter`, `UI_Pause_In` / `Out`, `UI_Confirm` | Menu and HUD sounds | M/S | missing |
 
 ---
 
 ## 3. Music
 
-### 3.1 Track list
+### 3.1 What ships
 
-| ID | Use | Mood / reference | Length | Pri |
-|---|---|---|---|---|
-| `MUS_MainMenu` | Main menu | Light jazzy waltz, brushed drums, upright bass, piano | 1:30 loop | M |
-| `MUS_P1_Stem1_Base` | Phase 1 layer 1 (starts at first placement) | Walking bass + brushes, 100–110 BPM | 2:00 loop | M |
-| `MUS_P1_Stem2_Keys` | Layer 2 (after zone 2) | Piano comping | same loop | M |
-| `MUS_P1_Stem3_Strings` | Layer 3 (after zone 4) | Pizzicato strings / vibraphone | same loop | M |
-| `MUS_P1_Stem4_Melody` | Layer 4 (after zone 6) | Clarinet or muted trumpet melody | same loop | M |
-| `MUS_P1_Complete` | Phase 1 completion | Big jazzy "ta-daa" with a cymbal swell | 0:08 | M |
-| `MUS_P2_PreRoll` | Pre-shoot / pre-roll | Nervous light percussion, ticking | 1:00 loop | S |
-| `MUS_P2_ActA` | Act I | Awkward-cute bossa nova | 1:30 loop | M |
-| `MUS_P2_ActB` | Act II | Tense, dramatic strings + soft piano | 1:30 loop | M |
-| `MUS_P2_ActC` | Act III | Romantic swell with rain-friendly piano | 1:30 loop | M |
-| `MUS_P2_Finale` | Final lean-in | Held string chord → silence at the flash | 0:15 | M |
-| `MUS_Wrap` | "That's a wrap!" | Triumphant brass hit + jazzy outro | 0:12 | M |
-| `MUS_Credits` | Credits | Reprise of the menu theme, warmer | 1:00+ | S |
-| `MUS_Sting_Cut` | CUT interstitial | Record scratch + comedic brass "wah-wah" (original) | 0:02 | M |
-| `MUS_Sting_Fired` | "You're Fired!" ending | Sad trombone-style descending phrase (original) | 0:03 | S |
-| `MUS_Sting_ActTitle` | Act title cards | Short jazzy hit | 0:02 | S |
+The planned stem system was replaced by a playlist: `ALTTMusicPlayer` (`Source/CleanCutAction/Audio/`) is placed in both cafe maps with the six `MusicFX/` tracks, shuffles them, plays each once and crossfades to the next. The player can mute music (`WBP_MusicToggle`, pause menu, touch button). The dance emote plays `EmoteMusic/paroparo`, kept out of `MusicFX/` so the playlist doesn't pick it up.
 
-### 3.2 Phase 1 layering (implementation)
-- All four stems are the same length/tempo and start together (stem 1 audible, others at 0 volume) via one MetaSound with 4 inputs, or 4 synced Audio Components started on the same frame.
-- Zone completions raise layers: zones 1–2 → stem 2 fades in (2 s), zones 3–4 → stem 3, zones 5–6 → stem 4, zone 7 → all + slight high-shelf "brightness" boost.
-- Duck all music −6 dB during barks (Sound Mix or a sidechain-style volume tween).
+### 3.2 Planned track list
 
-### 3.3 Phase 2 transitions
-- Crossfade per act (2 s) at the act title card.
-- Music volume drops to 50% during cue windows (so effects sounds read) and comes back after the grade.
-- Final thunder → music cuts to silence on the flash (0.0 s), then `MUS_Wrap` on "That's a wrap!".
+| ID | Use | Pri | Status |
+|---|---|---|---|
+| `MUS_MainMenu` | Main menu | M | missing (no main menu map; the game starts on the briefing screen) |
+| `MUS_P1_Stem1_Base` … `MUS_P1_Stem4_Melody` | Phase 1 layered stems | M | replaced by the `MusicFX` playlist |
+| `MUS_P1_Complete` | Phase 1 completion | M | missing (`SW_next_phase` plays instead) |
+| `MUS_P2_PreRoll`, `MUS_P2_ActA`, `MUS_P2_ActB`, `MUS_P2_ActC` | Phase 2 per-act music | S/M | replaced by the `MusicFX` playlist |
+| `MUS_P2_Finale` | Final lean-in | M | missing |
+| `MUS_Wrap` | "That's a wrap!" | M | missing (`SW_applause` plays instead) |
+| `MUS_Credits` | Credits | S | missing |
+| `MUS_Sting_Cut` | CUT interstitial | M | missing (`SW_cut` plays instead) |
+| `MUS_Sting_Fired`, `MUS_Sting_ActTitle` | Stingers | S | missing |
+
+### 3.3 Phase 1 layering / Phase 2 transitions (plan, not built)
+
+- Phase 1: four synced stems raised by zone completion; duck music −6 dB during barks.
+- Phase 2: crossfade per act; music to 50% during cue windows; silence on the final flash, then `MUS_Wrap`.
 
 ---
 
 ## 4. Implementation Checklist
 
-- [ ] Sound Classes: Master → Music, SFX, Voice, UI, Ambience; volumes driven by Sound Mix overrides from settings.
-- [ ] Submixes: `SMX_Megaphone` (band-pass, slight saturation), `SMX_Walkie` (narrower band-pass + noise), `SMX_Pause` (low-pass while paused).
-- [ ] Attenuation: `ATT_Prop` (200 → 2500 cm), `ATT_Station` (300 → 3000 cm), `ATT_Ambience` (non-spatial or wide).
-- [ ] Concurrency: `CON_Bark` (1), `CON_PropImpact` (6, stop quietest), `CON_Footstep` (2), `CON_Chime` (3).
-- [ ] Random containers / MetaSounds for variations with pitch ±5%, volume ±2 dB.
-- [ ] `MS_PlaceChime` with an integer input "Step" mapped to semitones.
-- [ ] Loops (rain, hiss, car roll, fan, light rotate) use Audio Components owned by their actors, with parameters for pitch/volume driven every tick.
-- [ ] UI sounds marked as UI sounds so they play while paused.
-- [ ] Normalize loudness: dialogue −16 LUFS-ish target; SFX peaks below −3 dBFS; music sits ~6 dB below dialogue.
+- [ ] Sound Classes (Master → Music, SFX, Voice, UI, Ambience) with Sound Mix volumes. None yet; music mute is a code toggle.
+- [ ] Submixes: `SMX_Megaphone`, `SMX_Walkie`, `SMX_Pause`.
+- [x] Prop attenuation: `SFX/Props/ATT_Props` (used by `DA_PropSounds`). `ATT_Station`, `ATT_Ambience` missing.
+- [ ] Concurrency: `CON_Bark`, `CON_PropImpact`, `CON_Footstep`, `CON_Chime`.
+- [x] Pitch variation for prop sounds (`ULTTPropSoundSet.PitchRange` 0.92–1.08). No random containers / MetaSounds.
+- [ ] `MS_PlaceChime` with a "Step" input.
+- [x] Looping appliance/station sounds on Audio Components owned by their actors (`ULTTUsableComponent::PlayOwnerSound`, stations restart their audio on each cue).
+- [ ] UI sounds that play while paused.
+- [ ] Loudness pass (dialogue −16 LUFS-ish, SFX peaks below −3 dBFS, music ~6 dB under dialogue).
+- [ ] Per-platform audio cook quality if a build is too big (music is the largest audio; currently quality 80).
+- [ ] `CREDITS.md` with every sound and track source.

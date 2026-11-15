@@ -1,114 +1,135 @@
 # CleanCutAction — Packaging Guide (Index)
 
-This folder tells an agent (Claude Code / Cowork) or a teammate exactly how to set up and package CleanCutAction for four targets from **one project**.
+How to set up and package Clean! Cut! Action! for four targets. Each target has its own branch and its own checkout folder; content and most config are shared.
 
-| Doc | Target | Renderer | Priority |
-|---|---|---|---|
-| `01_Windows.md` | Windows "Go Big" (RTX showcase, DLSS) | Desktop, DX12 SM6, HW ray tracing | 1 — prize-relevant |
-| `02_Web_WASM.md` | Browser (desktop + mobile), WebAssembly/WebGPU | Mobile renderer | 2 — riskiest, current target |
-| `03_Android.md` | Android APK (sideload) | Mobile renderer, Vulkan + ES3.1 | 3 |
-| `04_Linux_SteamDeck.md` | Linux / Steam Deck | Desktop, Vulkan SM5 | 4 |
+| Doc | Target | Branch / folder | Renderer | State (2026-11-15) |
+|---|---|---|---|---|
+| `02_Web_WASM.md` | Browser (desktop + mobile), WebAssembly/WebGPU | `wasm` / `F:\UE5 Projects\CCA_WASM` | Mobile deferred tier (WebGPU) | **Shipped build exists** (2026-11-15 01:14). itch.io target. |
+| `01_Windows.md` | Windows "Go Big" (RTX showcase) | `windows` / `F:\UE5 Projects\CCA_Windows` | Desktop, DX12 SM6 | Config in progress (HW ray tracing + device profile added, uncommitted). No DLSS. Not packaged yet. |
+| `04_Linux_SteamDeck.md` | Linux / Steam Deck | `linux` / `F:\UE5 Projects\CCA_Linux` | Desktop, Vulkan SM6 | No platform config yet. Not packaged yet. |
+| `03_Android.md` | Android APK (sideload) | `android` / `F:\UE5 Projects\CCA_Android` | Mobile, Vulkan + ES3.1 | No platform config yet. Not packaged yet. |
 
-Scripts live in `Scripts/`. Record every build result in `BUILD_LOG.md` (create it if missing).
+`main` (`F:\UE5 Projects\CleanCutAction`) is the editor/MCP branch: it keeps `AllToolsets` on and is not used for packaging.
+
+Scripts: `Build_Platform.bat` in this folder. Record every build in `BUILD_LOG.md` (not created yet; this guide holds the only size records so far).
 
 ---
 
 ## Engine context
 
-- Engine: **Unreal Engine 5.9 MegaJam Preview, source build** (required for the Web target).
-- Project: C++ project (required for the Web target and for compiling the DLSS plugin).
-- Project root: `F:\UE5 Projects\CleanCutAction\` (verify the `.uproject` name before scripting).
-- The preview is experimental. Expect rough edges in the Web platform especially.
+- Engine: **UE 5.9.0 Preview** at `F:\UE5 Engines\UE_5.9`. It is an **installed build** (`Engine/Build/InstalledBuild.txt`), not a source build, and ships Win64, Linux, LinuxArm64, Android and Wasm binaries.
+- Project: C++ (`CleanCutAction.uproject`, one runtime module `CleanCutAction`). The Web target needs a C++ project.
+- Project root for this checkout: `F:\UE5 Projects\CCA_Windows`. Other branches use the folders in the table above.
+- Wasm platform docs: `F:\UE5 Engines\UE_5.9\Engine\Platforms\Wasm\Docs\` (GettingStarted, Deploy, Performance, Troubleshooting).
+- UAT logs: `%APPDATA%\Unreal Engine\AutomationTool\Logs\F+UE5+Engines+UE_5.9\Log.txt`.
 
 ---
 
 ## How an agent should use these docs
 
-1. Read this README fully, then read **one** platform doc.
-2. Work on a dedicated git branch: `packaging/windows`, `packaging/web`, `packaging/android`, `packaging/linux`.
-3. Implement the platform doc **section by section, in order**. Commit after each section with a message naming the section.
-4. Tick the platform doc's checklist as you go and report which items are done, skipped or blocked.
-5. When anything in a doc is marked **VERIFY**, look it up in the engine source/config or ask the user. Never guess.
+1. Read this README fully, then **one** platform doc.
+2. Work in that platform's checkout folder and branch (table above).
+3. Go section by section. Tick the platform doc's checklist and report which items are done, skipped or blocked.
+4. When something is marked **VERIFY**, look it up in the engine source/config or ask the user. Never guess.
 
 ---
 
 ## Non-negotiable rules (all platforms)
 
-1. **Never modify, downscale or re-import source assets for a platform.** Texture size and quality limits go in device profiles or per-platform overrides only (see "Texture policy" below).
-2. **`Config/Default*.ini` is only for settings valid on ALL platforms.** Platform-specific settings go in `Config/<Platform>/<Platform>Engine.ini`, `<Platform>Game.ini`, etc., or in platform sections of `DefaultDeviceProfiles.ini`.
-3. **NVIDIA plugins (DLSS, Streamline) are Windows-only.** They must never be compiled or cooked into Linux, Android or Web builds.
-4. **Never put API keys or secrets** in the project, config, Blueprints or source code.
-5. **Stop and ask the user before:**
-   - modifying engine source
-   - installing, upgrading or removing plugins
-   - deleting or moving assets
-   - changing a project-wide rendering default in `DefaultEngine.ini`
-   - any change that forces a full shader recompile for every platform (warn about the time cost first)
-6. Prefer the smallest, reversible change. If a setting can be done per-platform, do it per-platform.
+1. **Never modify, downscale or re-import source assets for a platform.** Texture caps go in device profiles only (see "Texture policy").
+2. **`Config/Default*.ini` is for settings valid on ALL platforms.** Platform settings go in `Config/<Platform>/<Platform>*.ini` (Windows, Linux, Android) or `Platforms/Wasm/Config/Wasm*.ini` (Web).
+3. **NVIDIA plugins (DLSS, Streamline) are Windows-only.** Never compile or cook them into Linux, Android or Web builds.
+4. **Never put API keys or secrets** in the project, config, Blueprints or source.
+5. **No level travel may point at an uncooked map.** Only the maps listed below are cooked.
+6. **Never set `bSkipEditorContent=True`.** The Landmass plugin's startup materials reference `/Engine/EditorMaterials` and `/Engine/EditorResources`; the cook fails ("Content is missing from cook", UAT ExitCode=25). Tried on wasm 2026-11-14 and reverted.
+7. **Stop and ask the user before:** modifying engine source; installing, upgrading or removing plugins; deleting or moving assets; changing a project-wide rendering default in `DefaultEngine.ini`; any change that recompiles every platform's shaders (warn about the time first).
+8. Prefer the smallest, reversible change, per platform where possible.
 
 ---
 
-## Texture policy (read before touching textures)
+## Pre-package check (every branch)
 
-Earlier web work may have optimized textures. Before packaging any platform, check:
+These fixes were applied to all five checkouts on 2026-11-14. Verify them at the start of every packaging session:
 
-1. Open an affected texture. Compare **Imported** resolution vs **Displayed / Max In-Game** resolution.
-   - Imported still original (e.g. 4096) → only properties changed. Revert `Maximum Texture Size`, `LOD Bias`, `Compression Settings`, `LOD Group` to their originals. No reimport needed.
-   - Imported itself is small → source data was replaced. Restore the `.uasset` from the pre-web branch (step 2).
-2. List what changed and restore from git rather than re-importing:
-   ```
-   git diff --name-only <pre-web-branch>..HEAD -- Content/ Config/
-   git checkout <pre-web-branch> -- Content/Path/To/Textures/
-   git lfs pull
-   ```
-3. Check the `Config/` part of that diff for global texture caps in `DefaultEngine.ini`, `DefaultDeviceProfiles.ini` or `DefaultScalability.ini`. Move any platform-specific caps to that platform's device profile.
+| Check | Expected | Where |
+|---|---|---|
+| `AllToolsets` plugin | `"Enabled": false` (its game feature plugins fail the cook with a GameFeatureData asset-manager error). Only `main` keeps it on. | `CleanCutAction.uproject` |
+| `NNEDenoiser` plugin | `"Enabled": false`, and no `+DirectoriesToAlwaysCook=(Path="/NNEDenoiser")` (54 MB of path-tracer models) | `.uproject`, `DefaultGame.ini` |
+| "Back to Cleanup" target | `LTTSceneDirector.CleanupLevelName` = `L_NYC_Cafe_Michael`, not the uncooked `L_NYC_Cafe` | `Source/CleanCutAction/Shoot/LTTSceneDirector.h` |
+| Compression level | `PackageCompressionLevel_TestShipping=7` | `DefaultGame.ini` |
+| `bSkipEditorContent` | `False` | `DefaultGame.ini` |
 
-Per-platform limits are then applied at cook time:
-- Device profiles: `+TextureLODGroups=(Group=TEXTUREGROUP_World,MaxLODSize=1024,LODBias=0)` style entries inside the platform's profile.
-- Per-asset: the per-platform override arrow next to `Maximum Texture Size` / `LOD Bias` in the texture details.
+After editing the `.uproject` or ini files by hand, restart the editor before saving Project Settings, or it writes the old values back.
 
 ---
 
-## Shared packaging settings
+## Texture policy
 
-Set once in **Project Settings → Packaging** (written to `Config/DefaultGame.ini`):
+- Source textures stay at their imported size. The StylizedNewYorkCity textures are 2K and were the bulk of the web build.
+- Caps are applied at cook time in the platform's device profile, for example:
+  `+TextureLODGroups=(Group=TEXTUREGROUP_World,MinLODSize=1,MaxLODSize=1024,LODBias=0,...)`
+- Current caps: Wasm only (`Platforms/Wasm/Config/WasmDeviceProfiles.ini`, see `02_Web_WASM.md`). Windows cooks full resolution. Linux and Android have no caps yet.
+- There is no `Config/DefaultDeviceProfiles.ini` and no global texture cap in `DefaultEngine.ini` or `DefaultScalability.ini`.
 
-```ini
-[/Script/UnrealEd.ProjectPackagingSettings]
-BuildConfiguration=PPBC_Shipping
-UsePakFile=True
-bUseIoStore=True
-bShareMaterialShaderCode=True
-bSharedMaterialNativeLibraries=True
-IncludePrerequisites=True
-; Only the maps the game actually needs. Keeps every build (especially Web) small.
-+MapsToCook=(FilePath="/Game/Maps/VERIFY_MainMap")
-```
+---
 
-**VERIFY:** list the real map paths with the user before writing `MapsToCook`.
+## Shared packaging settings (current `Config/DefaultGame.ini`)
 
-Use `Full Rebuild` only for final submission builds.
+`[/Script/UnrealEd.ProjectPackagingSettings]`, shared by every branch:
+
+| Setting | Value |
+|---|---|
+| Build configuration | `PPBC_Shipping`, `ForDistribution=False`, `IncludeDebugFiles=False`, `IncludeCrashReporter=False` |
+| Containers | `UsePakFile=True`, `bUseIoStore=True`, `bUseZenStore=True` |
+| Chunks | `bGenerateChunks=True`, `MaxChunkSize=0` (the web build gets `pakchunk0` + `pakchunk99`) |
+| Compression | `bCompressed=True`, Oodle **Kraken**, level 4 (Debug/Development), **7** (Test/Shipping and Distribution) |
+| Shader code | `bShareMaterialShaderCode=True`, `bSharedMaterialNativeLibraries=False` |
+| Prerequisites | `IncludePrerequisites=True` (Windows installer for the VC++ runtime) |
+| Cultures | English only (`+CulturesToStage=en`) |
+| Cook scope | `bCookAll=False`, `bCookMapsOnly=False`, `bSkipEditorContent=False` |
+
+**Maps.** `GameDefaultMap` (in `DefaultEngine.ini`) is `/Game/StylizedNewYorkCity/Level/L_NYC_Cafe_Michael` (Phase 1). `MapsToCook` adds:
+
+- `/Game/StylizedNewYorkCity/Level/L_NYC_Cafe_Phase2_Michael` (Phase 2)
+- `/Game/ParisStreet/Levels/SampleMap` (the level instance both cafes use)
+
+**Assets loaded only by path** are also in `MapsToCook`, so the cook picks them up: `GC_Generic_Shatter`, `A_Emote_Rookie`, `IA_Emote`, `EmoteMusic/paroparo`, the materials `M_GhostSilhouette`, `M_BrokenProp`, `M_FrameCone`, `M_WaterPuddle`, `Mirror/M_Mirror`, `Mirror/M_MirrorFrame`, the SFX `SW_LightClick`, `SW_MopSwish`, `SW_PuddleSplash`, `SW_PuddleClean`, `SFX/Props/DA_PropSounds`, `VFX/NS_MopSplash`, three UI icons, the widgets `WBP_VirtualKeyboard`, `WBP_MusicToggle`, `WBP_EndingOverlay`, `WBP_ShootHUD`, `WBP_ShootEndScreen`, and the engine basic shapes `Cube`, `Cylinder`, `Plane`, `BasicShapeMaterial`. **Add any new path-loaded asset there.**
+
+Use Full Rebuild only for final submission builds.
 
 ---
 
 ## Build output layout
 
-```
-F:\UE5 Projects\CleanCutAction\Builds\
-    Windows\
-    Web\
-    Android\
-    SteamDeck\
-```
+`Build_Platform.bat` archives into the project's own `Packaged\` folder (git-ignored), one sub-folder per platform as UAT names it:
 
-Add `Builds/` to `.gitignore`. Use `Scripts/Build_Platform.bat <Win64|Web|Android|Linux>` to produce each package.
+```
+<checkout>\Packaged\
+    Wasm\        (web: upload this folder, zipped)
+    Windows\
+    Linux\
+    Android\     (or Android_ASTC\, depending on cook flavor)
+```
 
 ---
 
 ## Common verification (every platform)
 
-- [ ] Package completes with no errors. Read the UAT log for cook warnings about missing assets or shaders.
-- [ ] Build launches and reaches gameplay on the target device.
-- [ ] Input works with that platform's primary input (mouse/keyboard, gamepad, touch).
-- [ ] Package size recorded in `BUILD_LOG.md`, with date, branch and commit hash.
+- [ ] Pre-package check above passes.
+- [ ] Package completes with no errors. Read the UAT log for "missing from cook" and shader warnings.
+- [ ] Build launches into `L_NYC_Cafe_Michael`, Phase 1 → "Shoot the Scene!" loads Phase 2, and "Back to Cleanup" returns to Phase 1.
+- [ ] Keyboard/mouse, gamepad and (where relevant) touch all work; on-screen prompts follow the last-used device.
+- [ ] Online leaderboard (`https://cca.ohmcodes.com`) submits a run and shows the board.
+- [ ] Package size recorded with date, branch and commit.
 - [ ] No NVIDIA plugin files in non-Windows packages (search the staged folder for `DLSS`, `Streamline`, `nvngx`).
+
+---
+
+## Build records
+
+| Date | Platform | Branch / commit | Size | Notes |
+|---|---|---|---|---|
+| 2026-11-15 01:14 | Wasm (Shipping) | `wasm` `d1471cd` + uncommitted 512 world-texture cap | `pakchunk0-Wasm.ucas` 146.5 MB, `.wasm` 141.2 MB (25.9 MB brotli), staged folder 330 MB, `CCA_2ms_WASM_v1.0.0.zip` 238.7 MB | `F:\UE5 Projects\CCA_WASM\Packaged\`. Every file under 200 MB. |
+| — | Windows | — | — | Not packaged yet |
+| — | Linux | — | — | Not packaged yet |
+| — | Android | — | — | Not packaged yet |

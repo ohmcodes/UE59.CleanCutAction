@@ -1,18 +1,51 @@
 # VFX & Shaders
 
-Covers checklist **P10**. Goal: a few signature effects that make the game look polished and on-theme, without heavy GPU cost. All Niagara systems in `Content/CleanCutAction/VFX/`, materials in `Materials/`.
+Covers checklist **P10**. Goal: a few signature effects that make the game look polished and on-theme, without heavy GPU cost. Niagara systems live in `/Game/_CleanCutAction/VFX/`, materials in `/Game/_CleanCutAction/Materials/`, breakables in `BreakFX/` and `Destruction/`.
 
-**Shared global parameters - `MPC_World` (Material Parameter Collection):**
+**Status** is checked against `Content/_CleanCutAction/` and the cooked maps on 2026-11-15:
 
-| Param | Type | Range | Driven by |
-|---|---|---|---|
-| `Wetness` | Scalar | 0–1 | Phase 2 rain (lags rain by 4 s) |
-| `RainIntensity` | Scalar | 0–1 | Rain valve/coverage |
-| `LightningFlash` | Scalar | 0–1 | Thunder flash pulse |
-| `WindStrength` | Scalar | 0–1 | Fan |
-| `BackdropTime` | Scalar | 0–2 | Gel cues (day → sunset → night) |
-| `GhostPulseTime` | Scalar | seconds | Game time for synced pulses |
-| `PlayerPos` | Vector | world | For proximity reveals |
+- **in** — the asset exists and something uses it (path under `/Game/_CleanCutAction/`)
+- **partial** — the code hook exists but the asset doesn't, or a simpler version shipped
+- **missing** — not made yet
+- **no mechanic** — the feature it was for isn't in the game
+
+---
+
+## 0. What's in the project
+
+| Asset | Used by |
+|---|---|
+| `VFX/NS_MopSplash` | Puddle mopping (`ALTTWaterPuddle`, loaded by path, in `MapsToCook`) |
+| `VFX/NS_Sparks` (material `M_Spark`) | Power box sparks (`BP_ElectricBox`) |
+| `VFX/NS_SinkBubbles` (material `M_Bubble`) | Dish washing (`BP_Sink`) |
+| `VFX/NS_Rain`, `VFX/NS_Steam`, `VFX/NS_Wind` | Phase 2 effect stations (in `L_NYC_Cafe_Phase2_Michael`) |
+| `BreakFX/GC_Generic_Shatter` | Fallback Chaos geometry collection for props without their own (`ALTTInteractableBase`, in `MapsToCook`) |
+| `Destruction/GC_*` (70 geometry collections) | Per-prop break pieces |
+| `Materials/M_GhostSilhouette` | Placement ghost on every prop (in `MapsToCook`) |
+| `Materials/M_BrokenProp` | Broken pieces (in `MapsToCook`) |
+| `Materials/PostProcess/M_PP_Outline` | Focus/hint outline, CustomStencil 1 (`BP_FirstPersonCharacter`) |
+| `Materials/M_FrameCone` | Film camera frame cone (`ALTTFilmCamera`, in `MapsToCook`) |
+| `Materials/M_WaterPuddle`, `M_WaterSplash`, `M_WaterStream` | Puddles, sink water |
+| `Materials/M_CoffeeGrounds`, `M_CoffeeLiquid`, `M_CoffeeStream` | Coffee machine (`ULTTCoffeeMachineComponent`) |
+| `Materials/M_MopSolid`, `MI_Mop_Plastic`, `MI_Mop_Wood`, `MI_Mop_Yarn` | Mop |
+| `Materials/M_RedDot` | Power box indicator (`BP_ElectricBox`) |
+| `Materials/Mirror/M_Mirror`, `M_MirrorFrame`, `RT_MirrorDefault` | Mirror actor (`ALTTMirror`, in `MapsToCook`) |
+
+---
+
+## Shared global parameters — `MPC_World`
+
+**Status: partial.** `ALTTSceneDirector.WorldMPC` is an optional slot and the director drives `RainIntensity`, `Wetness`, `LightningFlash` (0.3 s double flicker), `WindStrength` and `BackdropTime` when cues land. **No `MPC_World` asset exists**, so nothing reads them yet.
+
+| Param | Type | Range | Driven by | Status |
+|---|---|---|---|---|
+| `Wetness` | Scalar | 0–1 | Phase 2 rain | driven by code, no asset |
+| `RainIntensity` | Scalar | 0–1 | Rain cue | driven by code, no asset |
+| `LightningFlash` | Scalar | 0–1 | Thunder cue | driven by code, no asset |
+| `WindStrength` | Scalar | 0–1 | Fan cue | driven by code, no asset |
+| `BackdropTime` | Scalar | 0–2 | Gel cues (day → sunset → night) | driven by code, no asset |
+| `GhostPulseTime` | Scalar | seconds | Synced pulses | missing |
+| `PlayerPos` | Vector | world | Proximity reveals | missing |
 
 ---
 
@@ -20,151 +53,103 @@ Covers checklist **P10**. Goal: a few signature effects that make the game look 
 
 ### 1.1 Phase 1 - Cleaning feedback
 
-| System | Description | Spec | Pri |
+| System | Description | Pri | Status |
 |---|---|---|---|
-| `NS_PlaceSparkle` | Gold sparkle burst at placement | 20–30 sprite sparks, gold → white, burst radius 40 cm, gravity −200, lifetime 0.4–0.7 s, plus 1 expanding ring sprite (ground-aligned, 0 → 80 cm, 0.3 s) | M |
-| `NS_WrongPuff` | Small red-grey puff on wrong drop | 8 soft smoke sprites, 0.4 s | M |
-| `NS_DustPuff` | Dust on landing, right-it, respawn | 12 smoke sprites, ring emission at ground, beige, 0.6 s | M |
-| `NS_SweepDebris` | Kernels/confetti kicked by broom | Mesh particles (kernel mesh) in a 60° cone in sweep direction, 10–25 per stroke, bounce on collision (CPU, depth buffer) | M |
-| `NS_TrashSwish` | Swish confetti from bin mouth | 15 confetti quads, upward, gravity, 0.8 s, team colors (gold/white) | M |
-| `NS_PlugSpark` | Electrical spark when plugging cable | 10 ribbon/sprite sparks, blue-white, 0.2 s + light flash 0.1 s | S |
-| `NS_LensGlint` | Star glint on clean lens | 1 four-point star sprite scaling 0 → 1 → 0, 0.4 s, rotating | M |
-| `NS_GroupLamp` | Little warm bloom when a group lamp turns on | 1 soft glow sprite + 5 motes | M |
-| `NS_ZoneComplete` | Zone celebration | Volumetric-looking light shaft cone (mesh with additive material), 40 floating dust motes catching light, 30 confetti from above the zone, 2.0 s | M |
-| `NS_GoldenReelShimmer` | Idle shimmer around golden reels | 6 orbiting sparkles + soft glow, looping | M |
-| `NS_GoldenReelGet` | Pickup burst | 40 gold sparks + ring | M |
-| `NS_CreditFly` | (optional) world-to-HUD trail | Short ribbon toward camera before UI takes over | C |
+| `NS_PlaceSparkle` | Gold sparkle burst at placement | M | missing |
+| `NS_WrongPuff` | Small red-grey puff on a wrong drop | M | missing (wrong drops break the prop: Chaos pieces from `Destruction/GC_*` or `BreakFX/GC_Generic_Shatter`, `M_BrokenProp`) |
+| `NS_DustPuff` | Dust on landing, right-it, respawn | M | missing |
+| `NS_SweepDebris` | Kernels/confetti kicked by broom | M | no mechanic |
+| `NS_TrashSwish` | Confetti from bin mouth | M | no mechanic |
+| `NS_PlugSpark` | Electrical spark | S | **in** as `VFX/NS_Sparks` (power box) |
+| `NS_LensGlint` | Glint on clean lens | M | no mechanic |
+| `NS_GroupLamp` | Warm bloom when a group lamp turns on | M | missing |
+| `NS_ZoneComplete` | Zone celebration | M | missing |
+| `NS_GoldenReelShimmer`, `NS_GoldenReelGet` | Golden reels | M | no mechanic |
+| `NS_CreditFly` | World-to-HUD trail | C | no mechanic |
+| (new) Mop splash | Splash while mopping a puddle | — | **in**: `VFX/NS_MopSplash` |
+| (new) Sink bubbles | Dish washing | — | **in**: `VFX/NS_SinkBubbles` |
 
 ### 1.2 Phase 1 - Abilities
 
-| System | Description | Pri |
+| System | Pri | Status |
 |---|---|---|
-| `NS_DirectorsEye_Cast` | Cyan ring at player's feet expanding with the post-process scan wave | S |
-| `NS_GrabBag_Trail` | Cyan ribbon trail attached to each pulled prop | S |
-| `NS_SetDresser_Trail` | Gold ribbon + sparkles following each prop home | S |
-| `NS_AbilityReady` | Tiny screen-space sparkle at the HUD icon (UI Niagara if available, else widget animation) | C |
+| `NS_DirectorsEye_Cast`, `NS_GrabBag_Trail`, `NS_SetDresser_Trail`, `NS_AbilityReady` | S/C | no mechanic (no abilities in the game; the Hint highlights the nearest stray prop with the outline instead) |
 
 ### 1.3 Phase 2 - Effects (the showpieces)
 
-| System | Description | Spec | Pri |
+| System | Description | Pri | Status |
 |---|---|---|---|
-| `NS_RainSprinkler` | Rain from the rig over the terrace | **GPU** sprites, spawn box above terrace (6 × 4 m), 2000–6000/s scaled by `RainIntensity`, velocity-aligned stretched streaks, depth-buffer collision → kill + event | M |
-| `NS_RainSplash` | Splashes on surfaces | Spawned from collision events (or a separate box spawning on surface heights): tiny crown sprites + 3 droplets, 0.2 s | M |
-| `NS_HoseSpray` | Visible spray from the hose nozzle | Cone of streaks + mist sprites toward aim point, follows nozzle; drives where `NS_RainSprinkler` is centered | M |
-| `NS_RainDrizzle` | Miss version | 300/s, small area | M |
-| `NS_EspressoSteam` | Steam from machine | Soft smoke sprites rising, curl noise; parameter `Pressure` scales spawn and size; over-steam variant fills the room (500 sprites, lifetime 6 s, fades) | M |
-| `NS_ThunderFlash` | Flash flicker | Not particles: drives `LightningFlash` + a rect light pulse; optional 1 big additive "flash card" sprite over the backdrop | M |
-| `NS_WindDebris` | Leaves/napkins on wind | Mesh particles (leaf, napkin) with velocity from fan direction × `WindStrength`, curl noise; over-wind spawns the scarf mesh flying away | S |
-| `NS_RosePetals` | Petals on roses catch/toss | 20 petal mesh particles, flutter (curl noise), 2 s | M |
-| `NS_CarRailDust` | Dust behind the cardboard car | Small puffs from wheels, rate by speed | S |
-| `NS_UmbrellaDrops` | Rain bouncing off umbrella | Sprites spawned on umbrella surface while in rain | C |
-| `NS_WrapConfetti` | Confetti from catwalks at "That's a wrap!" | 800 confetti quads, multicolor, flutter, 4 s | M |
-| `NS_MicBump` | Comic star burst at the boom-mic bonk | 5 cartoon stars circling | S |
-| `NS_Bonk` | Prop bonk on actor head | Same cartoon stars | M |
+| `NS_RainSprinkler` | Rain over the terrace | M | **in** as `VFX/NS_Rain` (VERIFY GPU sim and bounds against the spec below) |
+| `NS_RainSplash` | Splashes on surfaces | M | missing |
+| `NS_HoseSpray` | Spray from the hose nozzle | M | missing |
+| `NS_RainDrizzle` | Miss version | M | missing |
+| `NS_EspressoSteam` | Steam from the machine | M | **in** as `VFX/NS_Steam` |
+| `NS_ThunderFlash` | Flash flicker | M | partial: `LightningFlash` is driven by code; no MPC asset or light hooked to it |
+| `NS_WindDebris` | Leaves/napkins on wind | S | **in** as `VFX/NS_Wind` |
+| `NS_RosePetals` | Petals on the roses toss | M | missing |
+| `NS_CarRailDust` | Dust behind the cardboard car | S | missing |
+| `NS_UmbrellaDrops` | Rain bouncing off umbrella | C | missing |
+| `NS_WrapConfetti` | Confetti at "That's a wrap!" | M | missing |
+| `NS_MicBump`, `NS_Bonk` | Cartoon stars | S/M | missing |
 
-### 1.4 Performance rules
-- Rain: GPU sim, fixed bounds, max 8k particles, scalability: Low = 30% spawn, no splashes.
+### 1.4 Performance rules (plan)
+
+- Rain: GPU sim, fixed bounds, max 8k particles; Low scalability = 30% spawn, no splashes. The web build's `Wasm_Mobile` profile sets `sg.EffectsQuality=1`.
 - Turn off collision-heavy CPU emitters on Low.
-- Cull all Phase 1 FX when off-screen > 2 s (default Niagara culling via effect type `ET_Gameplay`).
-- Pool frequently spawned systems (`NS_PlaceSparkle`, `NS_DustPuff`) via Niagara component pooling.
+- Cull Phase 1 FX off-screen > 2 s (effect type `ET_Gameplay`; no effect types exist yet).
+- Pool frequently spawned systems.
 
 ---
 
 ## 2. Materials & Shaders
 
-### 2.1 `M_GhostTapeMark` - the placement ghost (signature look)
-Translucent, unlit, used on the ghost copy of each prop.
-- **Base:** `TapeYellow` emissive at 0.6, opacity 0.18.
-- **Fresnel edge:** exponent 3, adds +0.5 opacity and +2 emissive at the silhouette.
-- **Scanlines:** world-space Z stripes (`frac(WorldPos.Z / 6 + Time × 0.5)`), thin lines adding emissive.
-- **Pulse:** opacity × (0.8 + 0.2 × sin(Time × 4)).
-- **Hover state (param `Active` 0/1):** color lerp → `Gold`, pulse speed ×2, opacity ×2.
-- **Depth fade** to avoid hard intersections with the floor.
-- **Proximity reveal:** extra opacity when `distance(PlayerPos, WorldPos) < 300 cm`.
-- Also: `M_TapeDecal` (deferred decal): yellow gaffer-tape "X" or "L" corners with worn edges; param `Done` swaps to a check mark and tints green-gold.
+| Planned | Status |
+|---|---|
+| 2.1 `M_GhostTapeMark` (placement ghost) | **in** as `Materials/M_GhostSilhouette` (VERIFY which of the spec's features it has: fresnel, scanlines, pulse, hover state, depth fade, proximity reveal). `M_TapeDecal` missing |
+| 2.2 `PP_Outline` (stencil outlines) | **in** as `Materials/PostProcess/M_PP_Outline`. Code only uses stencil 1 (focus, hint target, light fixtures, cheat button); the other stencil colours aren't used |
+| 2.3 `PP_DirectorsEye_Scan` | no mechanic |
+| 2.4 `MF_Wetness` (wet set surfaces) | missing in `_CleanCutAction` (the ParisStreet pack has its own `ParisStreet/Materials/MF_Wetness`; not wired to `MPC_World`) |
+| 2.5 `M_FrameCone` | **in**: `Materials/M_FrameCone` (`ALTTFilmCamera` drives it through a dynamic instance). `M_FrameFloorDecal` missing |
+| 2.6 `M_BackdropTranslite` | missing |
+| 2.7 `M_LensSmudge` | no mechanic |
+| 2.8 `M_CardboardCar` | missing |
+| 2.9 `M_StageLight_Beam` | missing |
+| 2.10 Character wetness | missing |
+| (new) `M_BrokenProp` | **in**: broken prop pieces |
+| (new) Water, coffee, mop, mirror, power box materials | **in** (section 0) |
 
-### 2.2 `PP_Outline` - stencil outlines
-Post-process material (Before Tonemapping or After, test both) reading `CustomStencil`.
-- Edge detection: sample stencil at 4–8 neighbors (offset by `OutlineWidth` = 2 px at 1080p, scale by resolution). Pixel is an edge if its stencil differs from neighbors and one of them is non-zero.
-- Color by stencil value (see `02 §5`): 1 white, 2 gold, 3 cyan, 4 red, 5 green.
-- Stencil 3 (Director's Eye) draws **through walls**: use CustomDepth vs SceneDepth comparison to render occluded parts with 50% opacity + a hatch pattern.
-- Animated thickness pulse for stencil 2 and 5.
+### Spec notes (kept for anything still to build)
 
-### 2.3 `PP_DirectorsEye_Scan`
-Post-process blendable enabled during the ability cast:
-- A ring expanding from the player world position: `abs(distance(WorldPos, Origin) − Radius) < Thickness` → cyan emissive band.
-- Behind the ring: slight desaturation (30%) + cool tint for the ability's duration; interactables keep color (stencil mask).
-
-### 2.4 `MF_Wetness` - wet set surfaces (Phase 2)
-Material function inserted into the master set materials (`M_Set_Master`, `M_Prop_Master`):
-- Darken base color by `lerp(1, 0.6, Wetness)`.
-- Roughness → `lerp(R, 0.08, Wetness × PuddleMask)` (puddle mask = world-aligned noise texture, flat surfaces only via world normal Z > 0.8).
-- Raindrop ripples: flipbook ripple normal texture on horizontal surfaces, intensity × `RainIntensity`.
-- Vertical surfaces: streaking drops (panning normal map) × `RainIntensity`.
-- Restrict to the terrace area with a world-position box mask (params `WetBoxMin/Max`) so the 1F stays dry.
-
-### 2.5 `M_FrameCone` + `M_FrameFloorDecal`
-- Frustum mesh material: translucent, unlit, two-sided.
-  - Fill opacity 0.035; edges (UV-based edge mask on the frustum mesh) opacity 0.35.
-  - Animated diagonal stripes moving away from the camera (`frac((U + V) × 20 − Time × 0.5)`).
-  - Depth fade 30 cm.
-  - Param `State`: 0 neutral (white), 1 warning (orange), 2 violation (red, stripes speed ×3), 3 slate (green).
-- Floor decal: projects the frustum footprint as hatched lines in `TapeYellow`, matching `State`.
-
-### 2.6 `M_BackdropTranslite`
-Large emissive plane behind the street flat.
-- Three textures: day skyline, sunset skyline, night skyline (paint them or source/generate; must be license-clean).
-- `BackdropTime` blends 0 → 1 → 2 (lerp day→sunset, then sunset→night).
-- Emissive strength ×(1 + `LightningFlash` × 4).
-- Slight canvas texture overlay to sell "painted backdrop".
-
-### 2.7 `M_LensSmudge`
-On the film camera's front glass.
-- Base glass (translucent, low opacity, high specular).
-- Smudge mask texture (fingerprints + a big cartoony lick mark) multiplied by `Smudge` (1 → 0 as you wipe): adds opacity, roughness, and a slight brown tint.
-- Optional: wiped area reveal using a radial mask around the last wipe UV (keep simple: global fade is fine).
-
-### 2.8 `M_CardboardCar`
-Painted cardboard look: base color texture with visible brush strokes, a corrugated cardboard edge texture on the cutout's thin sides, wobble via World Position Offset driven by a `Wobble` param (sine on X along height).
-
-### 2.9 `M_StageLight_Beam`
-Additive cone mesh in front of each stage light: soft volumetric look (radial gradient × length falloff × slight noise flicker), intensity tied to the light's on/aim state. Color follows the light (warm when aimed, cool when not).
-
-### 2.10 Character wetness (Phase 2) [C]
-Actor materials get a `Wetness` input: darker cloth, glossier hair/skin, driven by `MPC_World.Wetness` only while the actor is inside the rain box (per-actor dynamic material instance param).
+- **Ghost:** translucent unlit; `TapeYellow` emissive 0.6, opacity 0.18; fresnel edge (exp 3); world-Z scanlines; pulse `0.8 + 0.2 × sin(Time × 4)`; `Active` param → gold, ×2 pulse and opacity; depth fade; extra opacity within 300 cm of the player.
+- **Outline:** edge detect on `CustomStencil` at 4–8 neighbours, 2 px at 1080p; colour by stencil (1 white, 2 gold, 3 cyan, 4 red, 5 green).
+- **Wetness:** darken base colour by `lerp(1, 0.6, Wetness)`; roughness → 0.08 in puddle mask on flat surfaces; ripple normals × `RainIntensity`; limit to the terrace with a world box mask.
+- **Frame cone:** fill opacity 0.035, edges 0.35, stripes moving away from the camera, depth fade 30 cm; `State` 0 neutral, 1 warning, 2 violation, 3 slate.
+- **Backdrop:** day/sunset/night textures blended by `BackdropTime`; emissive × (1 + `LightningFlash` × 4).
+- **Cardboard car:** painted base, corrugated edges, WPO wobble.
+- **Stage light beam:** additive cone, radial gradient × length falloff, follows the light's colour.
 
 ---
 
 ## 3. Post-Process & Screen Effects
 
-### 3.1 Global look
-- Slight warm grade, mild bloom, filmic tonemapper defaults, light vignette (0.25).
-- Phase 1: work-light look, a bit flat and cool, saturation 0.9. As zones complete, a post-process volume's blend weight increases toward a warm "set ready" grade (saturation 1.05, warmer white balance). Gives the whole level a visible progress curve.
-
-### 3.2 `PP_Cinematic` (Phase 2 while rolling)
-Blendable with weight tween 0 → 1 on ACTION (0.6 s), back on CUT/wrap:
-- Film grain (intensity 0.25), slight chromatic aberration at edges (0.1), stronger vignette (0.45), teal-orange grade (shadows teal, highlights warm).
-- Letterbox handled by UI bars (cheaper, crisper).
-- Combined with `LightningFlash`: exposure bias spike +2 EV for the flash frames.
-
-### 3.3 Freeze-frame (CUT interstitial / Patience)
-Post-process param `Freeze` 0 → 1: desaturate 100%, add sepia tint 20%, slight halftone overlay (optional), vignette 0.6. Use time dilation 0 for CUT (behind the UI) and 0.0 play rate on actors for Patience.
-
-### 3.4 Frame-violation vignette
-UI image (red radial gradient) pulsing; no post-process cost.
-
-### 3.5 Screen droplets [C]
-When the player stands in the rain box: post-process with a droplets normal-map overlay distorting scene color, fading in/out over 1 s.
+| Planned | Status |
+|---|---|
+| 3.1 Global look (warm grade, bloom, vignette; Phase 1 grade warms as zones complete) | missing as a system. Project defaults have bloom, auto exposure and motion blur **off**; the Windows build turns default bloom on (`Config/Windows/WindowsEngine.ini`) |
+| 3.2 `PP_Cinematic` (film grain, CA, vignette, teal-orange while rolling) | missing |
+| 3.3 Freeze-frame (CUT / Patience) | partial: film actors freeze with `CustomTimeDilation = 0` (`ALTTFilmActor`); no post-process freeze look |
+| 3.4 Frame-violation vignette | **in** as a UI red tint over the screen while in shot (`ULTTShootHUD`, "Vignette" border) |
+| 3.5 Screen droplets | missing |
 
 ---
 
-## 4. Lighting Moments (cheap, high impact)
+## 4. Lighting Moments
 
-| Moment | Implementation |
+| Moment | Status |
 |---|---|
-| Zone complete | Stage spotlight intensity PowerOn tween (`02 §7`), `NS_ZoneComplete` shaft, post-process warmth step |
-| Phase 1 complete | All stage lights PowerOn in a wave (0.15 s stagger), then exposure settles |
-| Sunset / Moonlight | Key light color + temperature tween over 1.2 s, backdrop blend 2 s |
-| Thunder | Rect light behind the backdrop: double flicker (0 → 1 → 0.2 → 1 → 0 over 0.3 s) + `LightningFlash` |
-| Final kiss | All lights dim to 15% over 1 s, one lightning flash silhouettes the actors against the backdrop, then cut to black |
-| Wrap | All set lights full + confetti + a warm white "work light" bloom |
+| Zone complete | missing (no zones) |
+| Phase 1 complete | missing (end screen + `SW_next_phase`) |
+| Sunset / Moonlight | partial: `BackdropTime` driven by code, nothing reads it |
+| Thunder | partial: `LightningFlash` double flicker driven by code (0.3 s), nothing reads it |
+| Final kiss | missing |
+| Wrap | missing (applause + end screen) |
+| (new) Light switches and flicker | **in**: `ULTTLightSwitchComponent`, `ULTTFlickerComponent`, `ALTTLightFixture`, `ALTTPowerBox` + `ULTTPowerSubsystem` |
