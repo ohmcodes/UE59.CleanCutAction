@@ -170,7 +170,7 @@ public:
 
 	/** Level the end screen's "Back to Cleanup" button opens. None hides the button. */
 	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "HUD")
-	FName CleanupLevelName = TEXT("/Game/StylizedNewYorkCity/Level/L_NYC_Cafe");
+	FName CleanupLevelName = TEXT("/Game/StylizedNewYorkCity/Level/L_NYC_Cafe_Michael");
 
 	// ---- Events ----
 
