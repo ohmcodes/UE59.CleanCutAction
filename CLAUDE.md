@@ -25,8 +25,8 @@ The design docs live in `Docs/`. The overview below is imported in full; read th
 
 - Game content folder is `/Game/_CleanCutAction/` (`Blueprints/Interactables`, `Blueprints/Widgets`, `BreakFX/`, `Destruction/` geometry collections, `Input/`, `Materials/`, `MusicFX/`, `UI/`), not `Content/CleanCutAction/` as the docs say.
 - `Source/CleanCutAction/` has the template base classes (`CleanCutAction*` character, game mode, player controller, camera manager) plus `LTT` classes: `Interaction/` (carry, interaction component, interactable base, mess director, cleanup HUD, end screen, first person anim instance), `UI/` (briefing screen, pause menu, UI theme, widget baker), `Audio/` (music player). The Horror/Shooter template variants are gone. Many classes from the docs (save game, tween subsystem, Phase 2 director) aren't written yet.
-- The only map cooked for packaging is `/Game/StylizedNewYorkCity/Level/L_NYC_Cafe`. `MapsToCook` in `Config/DefaultGame.ini` also force-cooks the music WAVs, `GC_Generic_Shatter`, `M_GhostSilhouette` and `M_BrokenProp`. Add any asset that's only loaded by path there.
-- The editor's default map is `L_NYC_Cafe_Michael` (`Config/DefaultEngine.ini`), a per-dev copy of the cafe level.
+- The packaged maps are `/Game/StylizedNewYorkCity/Level/L_NYC_Cafe_Michael` (Phase 1, cooked as `GameDefaultMap` in `Config/DefaultEngine.ini`, so the build boots into it) and `L_NYC_Cafe_Phase2_Michael` (Phase 2, in `MapsToCook`). `L_NYC_Cafe` is not cooked. `MapsToCook` in `Config/DefaultGame.ini` also force-cooks the music WAVs, `GC_Generic_Shatter`, `M_GhostSilhouette`, `M_BrokenProp` and other path-loaded assets. Add any asset that's only loaded by path there.
+- Level flow by path: `ALTTMessDirector::NextLevelName` (Phase 1 → Phase 2) and `ALTTSceneDirector::CleanupLevelName` (Phase 2 "Back to Cleanup"). Both point at the `_Michael` maps.
 - Set art comes from the StylizedNewYorkCity pack (`/Game/StylizedNewYorkCity`).
 
 ## Ownership and copyright
