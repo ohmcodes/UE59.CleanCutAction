@@ -512,7 +512,7 @@ ALTTInteractableBase* ULTTCleanupHUD::FindPickupRingTarget(const FVector& CamLoc
 	for (TActorIterator<ALTTInteractableBase> It(World); It; ++It)
 	{
 		ALTTInteractableBase* Prop = *It;
-		if (!IsValid(Prop) || Prop->IsBrokenInPlace() || Prop->IsPlaced() || !ILTTInteractable::Execute_CanInteract(Prop, const_cast<AActor*>(IgnoreActor)))
+		if (!IsValid(Prop) || Prop->IsBrokenInPlace() || Prop->IsPlaced() || Prop->IsSetDressing() || !ILTTInteractable::Execute_CanInteract(Prop, const_cast<AActor*>(IgnoreActor)))
 		{
 			continue;
 		}
@@ -568,9 +568,9 @@ void ULTTCleanupHUD::UpdatePickupRing(float DeltaTime)
 		// The prop under the crosshair always wins; otherwise re-pick the nearest a few times a second.
 		const ULTTInteractionComponent* Interaction = Pawn->FindComponentByClass<ULTTInteractionComponent>();
 		ALTTInteractableBase* Focused = Interaction ? Cast<ALTTInteractableBase>(Interaction->GetFocusedActor()) : nullptr;
-		if (Focused && Focused->IsPlaced())
+		if (Focused && (Focused->IsPlaced() || Focused->IsSetDressing()))
 		{
-			Focused = nullptr; // a placed lamp: switchable, not a pickup
+			Focused = nullptr; // a placed or set dressing lamp: switchable, not a pickup
 		}
 		RingSearchTimer -= DeltaTime;
 		if (Focused)
@@ -589,7 +589,7 @@ void ULTTCleanupHUD::UpdatePickupRing(float DeltaTime)
 		{
 			const FVector Target = Prop->Mesh ? Prop->Mesh->Bounds.Origin : Prop->GetActorLocation();
 			const FVector ToTarget = Target - CamLoc;
-			const bool bStillValid = !Prop->IsPlaced() && ILTTInteractable::Execute_CanInteract(Prop, Pawn)
+			const bool bStillValid = !Prop->IsPlaced() && !Prop->IsSetDressing() && ILTTInteractable::Execute_CanInteract(Prop, Pawn)
 				&& (bRingFocused || (ToTarget.SizeSquared() <= FMath::Square(PickupRingDistance * 1.1f)
 					&& FVector::DotProduct(ToTarget.GetSafeNormal(), CamDir) > 0.f));
 			FVector2D ScreenPos;

@@ -308,6 +308,7 @@ bool ALTTMessDirector::ShowHint()
 	GetWorldTimerManager().SetTimer(HintTimer, this, &ALTTMessDirector::UpdateHint, 0.1f, true);
 
 	UE_LOG(LogTemp, Log, TEXT("MessDirector: hint -> %s"), *Best->GetPropName().ToString());
+	OnHintShown.Broadcast(Best);
 	ReceiveHintShown(Best);
 	return true;
 }
@@ -451,8 +452,8 @@ const bool bShouldStartHidden = bFadeInOnStart && !bIntroDone;
 	{
 		ALTTInteractableBase* Prop = *It;
 		UStaticMeshComponent* M = Prop ? Prop->Mesh.Get() : nullptr;
-		// Set dressing (not a task, starts at home) stays put; it isn't part of the mess.
-		if (!M || Prop->IsPlaced() || Prop->IsHeld() || (Prop->bStartsAtHome && !Prop->bIsCleanupTask))
+		// Set dressing (not a task) stays put; it isn't part of the mess.
+		if (!M || Prop->IsPlaced() || Prop->IsHeld() || Prop->IsSetDressing())
 		{
 			continue;
 		}

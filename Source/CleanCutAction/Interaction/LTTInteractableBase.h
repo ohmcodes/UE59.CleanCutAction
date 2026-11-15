@@ -17,6 +17,21 @@ class ULTTLightSwitchComponent;
 class ULTTUsableComponent;
 class ULTTWashStationComponent;
 
+/** Which of Marlowe's prop-specific lines (Docs/05 §1.2, §1.9) a prop triggers. Auto picks from the class name. */
+UENUM(BlueprintType)
+enum class ELTTBarkPropKind : uint8
+{
+	Auto,
+	None,
+	Furniture,  // tables, chairs, shelves: "Right it" when picked up tipped over
+	Light,      // lamps: light aim / light done
+	Electric,   // sockets, electric box: cable lines
+	Camera,     // the film camera: lens lines
+	Shelf,      // books on the shelf: the reel lines
+	Fabric,     // pillows, curtains: the costume lines
+	Broom       // cleaning gear (broom, mop, spray, soap): sweep lines
+};
+
 UCLASS(Blueprintable)
 class CLEANCUTACTION_API ALTTInteractableBase : public AActor, public ILTTInteractable
 {
@@ -123,9 +138,41 @@ public:
 
 	// ---- Cleanup: put the prop back where it was in the clean level ----
 
-	/** The set isn't clean until this prop is back home. Off for props that don't matter (trash, extras). */
+	/** The set isn't clean until this prop is back home. Off for set dressing: it can't be picked up or used and
+	 *  never simulates physics, so it stays exactly where it's placed in the level (see IsSetDressing). */
 	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Interactable|Cleanup")
 	bool bIsCleanupTask = true;
+
+	/** Not part of the mess: no interaction, no physics, skipped by the earthquake and see-through for the aim trace. */
+	bool IsSetDressing() const { return !bIsCleanupTask; }
+
+	// ---- Director barks ----
+
+	/** Which of Marlowe's prop lines this prop triggers. Auto: chosen from the class name (Table/Chair, Lamp, Socket,
+	 *  Camera, Book, Pillow/Curtain, Broom/Mop/Spray/Soap). */
+	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Interactable|Barks")
+	ELTTBarkPropKind BarkKind = ELTTBarkPropKind::Auto;
+
+	/** BarkKind with Auto resolved. */
+	UFUNCTION(BlueprintPure, Category = "Interactable|Barks")
+	ELTTBarkPropKind GetBarkKind() const;
+
+	/** Speed (cm/s) at which a prop the player just let go of counts as crashing into something. */
+	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Interactable|Barks", meta = (ClampMin = "0"))
+	float CrashSpeed = 650.f;
+
+	// ---- Trick shot (Docs/03 §3.12) ----
+
+	/** A thrown prop that flies into its own silhouette slower than TrickShotMaxSpeed is placed ("trick shot"). */
+	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Interactable|Cleanup")
+	bool bAllowTrickShot = true;
+
+	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Interactable|Cleanup", meta = (ClampMin = "0", EditCondition = "bAllowTrickShot"))
+	float TrickShotMaxSpeed = 1500.f;
+
+	/** True if the prop got home by being thrown into its silhouette. */
+	UFUNCTION(BlueprintPure, Category = "Interactable|Cleanup")
+	bool WasTrickShot() const { return bTrickShot; }
 
 	// ---- Sound ----
 
@@ -379,6 +426,18 @@ protected:
 
 	/** Set by ArmBreakOnLanding; cleared on pickup or when it breaks. */
 	bool bBreakOnLanding = false;
+
+	/** The first hit after the player lets go hasn't happened yet (crash / bin / missed-bin barks). */
+	bool bFirstHitPending = false;
+	/** World time the player last let go of this prop. */
+	float ReleaseTime = -100.f;
+	/** Thrown: watching for it to fly into its own silhouette until this world time. */
+	float TrickShotWatchUntil = -1.f;
+	bool bTrickShot = false;
+	/** Places the prop if it is flying through its silhouette (thrown). True if it did. */
+	bool TryTrickShot();
+	/** First thing a released prop bumps into: tells the barker, and spits non-trash back out of a bin. */
+	void HandleFirstHitAfterRelease(AActor* Other, const FVector& Impulse);
 
 	void FinishPlacing();
 	/** Puts the prop at its home, kinematic and solid (shared by placing and breaking in place). */
