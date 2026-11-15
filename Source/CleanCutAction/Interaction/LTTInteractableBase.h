@@ -67,6 +67,11 @@ public:
 	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Interactable|Hold")
 	FRotator HoldRotationOffset = FRotator::ZeroRotator;
 
+	/** Held the way round it was picked up. Off = always held the same way (Hold Rotation Offset only), for tools
+	 *  like the mop. */
+	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Interactable|Hold")
+	bool bKeepPickupYaw = true;
+
 	/** Use both hands (IK) while held. Auto turns on for props wider than TwoHandedRadius. */
 	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Interactable|Hold")
 	bool bAutoTwoHanded = true;
@@ -146,6 +151,13 @@ public:
 	/** Switches the music to the next track (or unmutes it). Returns false if the level has no music player. */
 	UFUNCTION(BlueprintCallable, Category = "Interactable|Use")
 	bool ChangeMusic();
+
+	// ---- Mop ----
+
+	/** The mop: while it's held, aiming at a water puddle (ALTTWaterPuddle) and pressing Interact mops the water
+	 *  instead of dropping it. It never breaks. Set on BP_Prop_Mop. */
+	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Interactable|Mop")
+	bool bIsMop = false;
 
 	// ---- Trash ----
 

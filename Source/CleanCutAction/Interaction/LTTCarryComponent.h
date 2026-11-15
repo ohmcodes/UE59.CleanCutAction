@@ -61,6 +61,15 @@ public:
 	UFUNCTION(BlueprintCallable, Category = "Carry")
 	bool PlaceHeld();
 
+	/** A quick push-and-sweep of the held prop (a mop stroke). It stays in the hand. */
+	UFUNCTION(BlueprintCallable, Category = "Carry")
+	void PlayUseSwing(float Duration = 0.4f);
+
+	/** The held tool (the mop) points its head at this world position, e.g. the spot on the puddle being aimed at.
+	 *  Without an aim it's carried at an angle in front of the player. Set every frame by the interaction component. */
+	static void SetToolAim(const FVector& WorldPoint);
+	static void ClearToolAim();
+
 	UFUNCTION(BlueprintPure, Category = "Carry")
 	bool IsHolding() const { return HeldItem != nullptr; }
 
@@ -137,6 +146,10 @@ protected:
 
 	/** Prop yaw relative to the camera at pickup, kept while holding. */
 	float HeldRelativeYaw = 0.f;
+
+	/** < 0: no swing playing. */
+	float SwingElapsed = -1.f;
+	float SwingDuration = 0.4f;
 
 	float BlendElapsed = 0.f;
 	FVector BlendStartLocation = FVector::ZeroVector;

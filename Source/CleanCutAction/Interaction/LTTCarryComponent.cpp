@@ -8,6 +8,88 @@
 #include "Engine/StaticMesh.h"
 #include "Engine/World.h"
 
+namespace
+{
+	// ---- Held tool (the mop): gripped on its handle at the lower right, head out in front ----
+	// One local player, so the aim lives here rather than on the component.
+	bool GToolAimSet = false;
+	FVector GToolAimPoint = FVector::ZeroVector;
+	/** Smoothed direction from the grip to the mop head, camera space. */
+	FVector GToolDir = FVector::ZeroVector;
+	/** Smoothed position of the mop head (its pivot), camera space. */
+	FVector GToolHead = FVector::ZeroVector;
+	/** While mopping the head sits on the floor at most this far in front of the player (cm). */
+	constexpr float ToolFloorReach = 150.f;
+
+	/** Where the hand holds the handle, camera space (X fwd, Y right, Z up). */
+	const FVector ToolGripOffset(30.f, 19.f, -34.f);
+	/** How far up the handle the hand is, from the mop's pivot (the bottom of its head), cm. */
+	constexpr float ToolGripHeight = 92.f;
+	/** Carried, not mopping: the head points this way from the grip (down and slightly towards the middle). */
+	const FRotator ToolIdleAim(-15.f, -8.f, 0.f);
+	constexpr float ToolAimSpeed = 10.f;
+
+	/** SwingT: 0..1 during a mop stroke, < 0 otherwise. */
+	void ComputeToolTarget(const USceneComponent* Parent, float DeltaTime, float SwingT, FVector& OutRelLocation, FRotator& OutRelRotation)
+	{
+		const FTransform& Cam = Parent->GetComponentTransform();
+
+		// Carried: head out in front of the grip.
+		FVector WantDir = ToolIdleAim.Vector();
+		FVector WantHead = ToolGripOffset + WantDir * ToolGripHeight;
+		FVector ScrubAxis = WantDir;
+		if (GToolAimSet)
+		{
+			// Mopping: the head rests on the water, on the way from the player to the aimed spot (no further out
+			// than ToolFloorReach), and the handle runs from there up to the hand, at about 45 degrees.
+			const FVector Grip = Cam.TransformPosition(ToolGripOffset);
+			const FVector Base(Grip.X, Grip.Y, GToolAimPoint.Z);
+			const FVector Along = GToolAimPoint - Base;
+			const float Dist = static_cast<float>(Along.Size());
+			if (Dist > 5.f)
+			{
+				const FVector Flat = Along / Dist;
+				const FVector Head = Base + Flat * FMath::Min(Dist, ToolFloorReach);
+				WantHead = Cam.InverseTransformPosition(Head);
+				WantDir = Cam.InverseTransformVector(Head - Grip).GetSafeNormal();
+				ScrubAxis = Cam.InverseTransformVector(Flat);
+			}
+		}
+		if (GToolDir.IsNearlyZero())
+		{
+			GToolDir = WantDir;
+			GToolHead = WantHead;
+		}
+		else
+		{
+			GToolDir = FMath::VInterpTo(GToolDir, WantDir, DeltaTime, ToolAimSpeed).GetSafeNormal();
+			GToolHead = FMath::VInterpTo(GToolHead, WantHead, DeltaTime, ToolAimSpeed);
+		}
+
+		// A stroke: push and pull across the floor (along the handle when just carried), with a small sideways sweep.
+		FVector Head = GToolHead;
+		if (SwingT >= 0.f)
+		{
+			Head += ScrubAxis * (16.f * FMath::Sin(2.f * PI * SwingT)) + FVector(0.f, 6.f * FMath::Sin(PI * SwingT), 0.f);
+		}
+
+		// The mop's +Z runs from its head up the handle; its head is widest along X (kept level, across the view).
+		OutRelRotation = FRotationMatrix::MakeFromZX(-GToolDir, FVector::RightVector).Rotator();
+		OutRelLocation = Head;
+	}
+}
+
+void ULTTCarryComponent::SetToolAim(const FVector& WorldPoint)
+{
+	GToolAimSet = true;
+	GToolAimPoint = WorldPoint;
+}
+
+void ULTTCarryComponent::ClearToolAim()
+{
+	GToolAimSet = false;
+}
+
 ULTTCarryComponent::ULTTCarryComponent()
 {
 	PrimaryComponentTick.bCanEverTick = true;
@@ -51,10 +133,21 @@ bool ULTTCarryComponent::PickUp(ALTTInteractableBase* Item)
 	BlendStartLocation = Item->GetRootComponent()->GetRelativeLocation();
 	BlendStartRotation = Item->GetRootComponent()->GetRelativeRotation().Quaternion();
 	BlendElapsed = 0.f;
+	SwingElapsed = -1.f;
+	GToolDir = FVector::ZeroVector;
 
 	HeldItem = Item;
 	OnPickedUp.Broadcast(Item);
 	return true;
+}
+
+void ULTTCarryComponent::PlayUseSwing(float Duration)
+{
+	if (HeldItem)
+	{
+		SwingDuration = FMath::Max(Duration, 0.05f);
+		SwingElapsed = 0.f;
+	}
 }
 
 void ULTTCarryComponent::Drop()
@@ -139,7 +232,8 @@ void ULTTCarryComponent::ComputeHoldTarget(FVector& OutRelLocation, FRotator& Ou
 	const float Dist = HeldItem->HoldDistance > 0.f ? HeldItem->HoldDistance : FMath::Max(BaseHoldDistance, Radius * 1.1f + 18.f);
 	const FVector CenterRel = FVector(Dist, bTwoHands ? 0.f : OneHandSideOffset, -(HoldDownOffset + Radius * 0.5f)) + HeldItem->HoldOffset;
 
-	const FQuat RelQuat = FRotator(0.f, HeldRelativeYaw, 0.f).Quaternion() * HeldItem->HoldRotationOffset.Quaternion();
+	const float Yaw = HeldItem->bKeepPickupYaw ? HeldRelativeYaw : 0.f;
+	const FQuat RelQuat = FRotator(0.f, Yaw, 0.f).Quaternion() * HeldItem->HoldRotationOffset.Quaternion();
 
 	// Hold by the bounds centre, not the pivot (most props pivot at their base).
 	FVector LocalCenter = FVector::ZeroVector;
@@ -165,7 +259,33 @@ void ULTTCarryComponent::TickComponent(float DeltaTime, ELevelTick TickType, FAc
 	{
 		FVector TargetLoc;
 		FRotator TargetRot;
-		ComputeHoldTarget(TargetLoc, TargetRot);
+		float SwingT = -1.f;
+		if (SwingElapsed >= 0.f)
+		{
+			SwingElapsed += DeltaTime;
+			SwingT = SwingElapsed / SwingDuration;
+			if (SwingT >= 1.f)
+			{
+				SwingElapsed = -1.f;
+				SwingT = -1.f;
+			}
+		}
+
+		if (HeldItem->bIsMop && HoldParent)
+		{
+			// The mop is held by its handle and points at the puddle being mopped.
+			ComputeToolTarget(HoldParent, DeltaTime, SwingT, TargetLoc, TargetRot);
+		}
+		else
+		{
+			ComputeHoldTarget(TargetLoc, TargetRot);
+			// Use swing: push forward and down, with a sideways sweep, then back.
+			if (SwingT >= 0.f)
+			{
+				const float Push = FMath::Sin(PI * SwingT);
+				TargetLoc += FVector(16.f * Push, 9.f * FMath::Sin(2.f * PI * SwingT), -7.f * Push);
+			}
+		}
 
 		BlendElapsed += DeltaTime;
 		const float A = PickupBlendTime > 0.f ? FMath::Clamp(BlendElapsed / PickupBlendTime, 0.f, 1.f) : 1.f;
@@ -201,13 +321,20 @@ void ULTTCarryComponent::UpdateHandIK(float DeltaTime)
 
 	const FBoxSphereBounds& B = HeldItem->Mesh->Bounds;
 	const FVector E = B.BoxExtent;
-	const float ExtRight = FMath::Abs(Right.X) * E.X + FMath::Abs(Right.Y) * E.Y + FMath::Abs(Right.Z) * E.Z;
+	// The mop is gripped on its handle (its bounds centre), not beside its head's width.
+	const float ExtRight = HeldItem->bIsMop ? 0.f : FMath::Abs(Right.X) * E.X + FMath::Abs(Right.Y) * E.Y + FMath::Abs(Right.Z) * E.Z;
 
 	const FVector Base = B.Origin + Fwd * GripOffset.X + Up * GripOffset.Z;
 	RightHand.Location = Base + Right * (ExtRight + GripOffset.Y);
 	LeftHand.Location = Base - Right * (ExtRight + GripOffset.Y);
 
-	RightHand.JointTarget = Cam.TransformPosition(ElbowPoleOffset);
+	if (HeldItem->bIsMop)
+	{
+		// On the handle, where the mop is gripped.
+		RightHand.Location = HeldItem->Mesh->GetComponentTransform().TransformPosition(FVector(0.f, 0.f, ToolGripHeight));
+	}
+
+	RightHand.JointTarget =Cam.TransformPosition(ElbowPoleOffset);
 	LeftHand.JointTarget = Cam.TransformPosition(FVector(ElbowPoleOffset.X, -ElbowPoleOffset.Y, ElbowPoleOffset.Z));
 
 	RightHand.Rotation = Cam.Rotator();

@@ -149,6 +149,27 @@ void ALTTMusicPlayer::SetMusicVolume(float NewVolume)
 	}
 }
 
+void ALTTMusicPlayer::SetMusicPaused(bool bPaused)
+{
+	// Pausing keeps the position. Turning the volume to 0 instead gets a non-looping track culled as silent.
+	for (UAudioComponent* Audio : { AudioA.Get(), AudioB.Get() })
+	{
+		if (Audio && Audio->Sound)
+		{
+			Audio->SetPaused(bPaused);
+		}
+	}
+	FTimerManager& Timers = GetWorldTimerManager();
+	if (bPaused)
+	{
+		Timers.PauseTimer(NextTrackTimer);
+	}
+	else
+	{
+		Timers.UnPauseTimer(NextTrackTimer);
+	}
+}
+
 void ALTTMusicPlayer::SetMusicMuted(bool bMuted)
 {
 	bMusicMuted = bMuted;

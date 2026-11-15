@@ -75,10 +75,18 @@ public:
 
 	/** Cleanup props still in play (placed + not yet placed). Broken props are removed. */
 	UFUNCTION(BlueprintPure, Category = "Cleanup")
-	int32 GetTotalCount() const { return Tasks.Num(); }
+	int32 GetTotalCount() const { return Tasks.Num() + ExtraTaskTotal; }
 
+	/** Props put back, plus other finished cleanup jobs (mopped puddles). */
 	UFUNCTION(BlueprintPure, Category = "Cleanup")
-	int32 GetPlacedCount() const { return PlacedCount; }
+	int32 GetPlacedCount() const { return PlacedCount + ExtraTaskDone; }
+
+	/** A cleanup job that isn't a prop (a water puddle): counted with the props, scores like one, and the set
+	 *  isn't clean until it's done. */
+	void RegisterExtraTask();
+	void NotifyExtraTaskDone();
+	/** The job went away without being done (its actor was removed). */
+	void RemoveExtraTask();
 
 	/** Cleanup props destroyed before they were placed (shattered or disappeared). */
 	UFUNCTION(BlueprintPure, Category = "Cleanup")
@@ -116,7 +124,7 @@ public:
 
 	/** Points from props put back. */
 	UFUNCTION(BlueprintPure, Category = "Score")
-	int32 GetPropPoints() const { return PlacedCount * PointsPerPlaced; }
+	int32 GetPropPoints() const { return GetPlacedCount() * PointsPerPlaced; }
 
 	/** Points lost (or won) for broken props. */
 	UFUNCTION(BlueprintPure, Category = "Score")
@@ -493,6 +501,8 @@ protected:
 	TArray<TObjectPtr<ALTTInteractableBase>> Tasks;
 
 	int32 PlacedCount = 0;
+	int32 ExtraTaskTotal = 0;
+	int32 ExtraTaskDone = 0;
 	int32 TimeBonusPoints = 0;
 	float TimeLeftAtFinish = 0.f;
 	/** The intro fade / mess start was due while the briefing was up; run it when Start is pressed. */

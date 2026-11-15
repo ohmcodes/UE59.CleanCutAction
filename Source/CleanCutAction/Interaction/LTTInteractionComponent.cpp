@@ -5,6 +5,7 @@
 #include "Interaction/LTTInteractable.h"
 #include "Interaction/LTTInteractableBase.h"
 #include "Interaction/LTTWashStationComponent.h"
+#include "Interaction/LTTWaterPuddle.h"
 #include "EnhancedInputComponent.h"
 #include "GameFramework/Pawn.h"
 #include "GameFramework/Controller.h"
@@ -73,6 +74,8 @@ void ULTTInteractionComponent::UpdatePlaceHint()
 		}
 	}
 	SetSupportGhost(NeededSupport);
+	TargetPuddle = nullptr;
+	ULTTCarryComponent::ClearToolAim();
 
 	const APawn* Pawn = Cast<APawn>(GetOwner());
 	AController* Controller = Pawn ? Pawn->GetController() : nullptr;
@@ -125,6 +128,21 @@ void ULTTInteractionComponent::UpdatePlaceHint()
 			}
 		}
 		return;
+	}
+
+	// The mop: aiming at a puddle within reach = "Mop up the water". Anywhere else it's dropped like any prop.
+	if (Held->bIsMop)
+	{
+		FVector At;
+		if (ALTTWaterPuddle* Puddle = ALTTWaterPuddle::FindAimed(this, ViewLoc, ViewRot.Vector(), MopReach, At, GetOwner()))
+		{
+			Held->UpdateGhost(false, false, false);
+			PlaceHint = ELTTPlaceHint::Mop;
+			TargetPuddle = Puddle;
+			TargetPuddlePoint = At;
+			ULTTCarryComponent::SetToolAim(At); // the mop points at the water
+			return;
+		}
 	}
 
 	if (!Held->bIsCleanupTask || !Held->HasHome())
@@ -182,6 +200,8 @@ FText ULTTInteractionComponent::GetPlaceHintText() const
 		return NSLOCTEXT("LTT", "HintTrash", "Throw in the bin");
 	case ELTTPlaceHint::Wash:
 		return NSLOCTEXT("LTT", "HintWash", "Wash in the sink");
+	case ELTTPlaceHint::Mop:
+		return NSLOCTEXT("LTT", "HintMop", "Mop up the water");
 	default:
 		return FText::GetEmpty();
 	}
@@ -233,6 +253,12 @@ void ULTTInteractionComponent::UpdateFocus()
 		}
 		break;
 	}
+	// Water puddles have no collision (props lying in them stay grabbable): looking at the water focuses it.
+	if (!NewFocus)
+	{
+		FVector At;
+		NewFocus = ALTTWaterPuddle::FindAimed(this, ViewLoc, ViewRot.Vector(), TraceDistance, At, GetOwner());
+	}
 	SetFocus(NewFocus);
 }
 
@@ -271,6 +297,15 @@ void ULTTInteractionComponent::Interact()
 			return;
 		}
 		ALTTInteractableBase* Dropped = Carry->GetHeldItem();
+		if (PlaceHint == ELTTPlaceHint::Mop && TargetPuddle.IsValid())
+		{
+			// One stroke; the mop stays in the hand.
+			if (TargetPuddle->MopUp(Dropped, TargetPuddlePoint))
+			{
+				Carry->PlayUseSwing(TargetPuddle->StrokeTime);
+			}
+			return;
+		}
 		if (PlaceHint == ELTTPlaceHint::Trash && TargetBin.IsValid())
 		{
 			ALTTInteractableBase* Bin = TargetBin.Get();
