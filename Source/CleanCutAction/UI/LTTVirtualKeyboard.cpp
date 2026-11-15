@@ -15,6 +15,8 @@
 #include "Components/VerticalBoxSlot.h"
 #include "GameFramework/PlayerController.h"
 
+#include "UI/LTTInputDevice.h"
+
 #define LOCTEXT_NAMESPACE "LTTVirtualKeyboard"
 
 namespace LTTVirtualKeyboardPrivate // unique names: unity builds merge widget .cpps
@@ -434,6 +436,12 @@ void ULTTVirtualKeyboard::NativeTick(const FGeometry& MyGeometry, float InDeltaT
 	Super::NativeTick(MyGeometry, InDeltaTime);
 	AnimTime += InDeltaTime;
 	RefreshPreview();
+	// Gamepad: the keys can't take focus (physical keys must reach the keyboard), so a highlighted-key cursor stands in.
+	if (ULTTInputDeviceSubsystem::IsGamepad() && PadKeyIndex == INDEX_NONE && Keys.Num() > 0)
+	{
+		PadKeyIndex = 0;
+	}
+	RefreshPadCursor();
 	// Slides up from below its spot.
 	if (KeyboardPanel)
 	{
@@ -446,9 +454,102 @@ void ULTTVirtualKeyboard::NativeTick(const FGeometry& MyGeometry, float InDeltaT
 	}
 }
 
+void ULTTVirtualKeyboard::RefreshPadCursor()
+{
+	const int32 Want = ULTTInputDeviceSubsystem::IsGamepad() ? PadKeyIndex : INDEX_NONE;
+	if (Want == ShownPadKeyIndex)
+	{
+		return;
+	}
+	if (Keys.IsValidIndex(ShownPadKeyIndex) && Keys[ShownPadKeyIndex])
+	{
+		Keys[ShownPadKeyIndex]->SetBackgroundColor(FLinearColor::White);
+		Keys[ShownPadKeyIndex]->SetRenderScale(FVector2D(1.f, 1.f));
+	}
+	if (Keys.IsValidIndex(Want) && Keys[Want])
+	{
+		Keys[Want]->SetBackgroundColor(FLinearColor(1.f, 0.72f, 0.25f)); // gold, like the focused menu button
+		Keys[Want]->SetRenderScale(FVector2D(1.12f, 1.12f));
+	}
+	ShownPadKeyIndex = Want;
+}
+
+void ULTTVirtualKeyboard::MovePadCursor(const FVector2D& Direction)
+{
+	if (!Keys.IsValidIndex(PadKeyIndex) || !Keys[PadKeyIndex])
+	{
+		PadKeyIndex = Keys.Num() > 0 ? 0 : INDEX_NONE;
+		return;
+	}
+	auto Centre = [](const UWidget* W)
+	{
+		const FGeometry& G = W->GetCachedGeometry();
+		return G.GetAbsolutePosition() + G.GetAbsoluteSize() * 0.5f;
+	};
+	const FVector2D From = Centre(Keys[PadKeyIndex]);
+	int32 Best = INDEX_NONE;
+	double BestScore = TNumericLimits<double>::Max();
+	for (int32 i = 0; i < Keys.Num(); ++i)
+	{
+		if (i == PadKeyIndex || !Keys[i] || !Keys[i]->IsVisible())
+		{
+			continue;
+		}
+		const FVector2D Delta = Centre(Keys[i]) - From;
+		const double Along = FVector2D::DotProduct(Delta, Direction);
+		if (Along <= 4.0)
+		{
+			continue; // not in that direction
+		}
+		const double Across = FMath::Abs(FVector2D::CrossProduct(Direction, Delta));
+		const double Score = Along + Across * 2.5; // stay in the row / column when there's a key there
+		if (Score < BestScore)
+		{
+			BestScore = Score;
+			Best = i;
+		}
+	}
+	if (Best != INDEX_NONE)
+	{
+		PadKeyIndex = Best;
+	}
+}
+
 FReply ULTTVirtualKeyboard::NativeOnKeyDown(const FGeometry& InGeometry, const FKeyEvent& InKeyEvent)
 {
 	const FKey Key = InKeyEvent.GetKey();
+	// Gamepad: d-pad / left stick move the highlight, A types it, X deletes, Y adds a space, B / Menu close.
+	if (Key.IsGamepadKey())
+	{
+		FVector2D Dir = FVector2D::ZeroVector;
+		if (Key == EKeys::Gamepad_DPad_Up || Key == EKeys::Gamepad_LeftStick_Up) Dir = FVector2D(0.f, -1.f);
+		else if (Key == EKeys::Gamepad_DPad_Down || Key == EKeys::Gamepad_LeftStick_Down) Dir = FVector2D(0.f, 1.f);
+		else if (Key == EKeys::Gamepad_DPad_Left || Key == EKeys::Gamepad_LeftStick_Left) Dir = FVector2D(-1.f, 0.f);
+		else if (Key == EKeys::Gamepad_DPad_Right || Key == EKeys::Gamepad_LeftStick_Right) Dir = FVector2D(1.f, 0.f);
+		if (!Dir.IsZero())
+		{
+			MovePadCursor(Dir);
+			return FReply::Handled();
+		}
+		if (Key == EKeys::Gamepad_FaceButton_Bottom)
+		{
+			if (Keys.IsValidIndex(PadKeyIndex) && Keys[PadKeyIndex])
+			{
+				PressKey(Keys[PadKeyIndex]->Value);
+			}
+			return FReply::Handled();
+		}
+		if (Key == EKeys::Gamepad_FaceButton_Left)
+		{
+			PressKey(KeyBack);
+			return FReply::Handled();
+		}
+		if (Key == EKeys::Gamepad_FaceButton_Top)
+		{
+			PressKey(KeySpace);
+			return FReply::Handled();
+		}
+	}
 	if (Key == EKeys::Enter || Key == EKeys::Escape || Key == EKeys::Gamepad_FaceButton_Right || Key == EKeys::Gamepad_Special_Right)
 	{
 		Finish();

@@ -165,7 +165,7 @@ void ACleanCutActionCharacter::SetupPlayerInputComponent(UInputComponent* Player
 		EnhancedInputComponent->BindAction(MoveAction, ETriggerEvent::Triggered, this, &ACleanCutActionCharacter::MoveInput);
 
 		// Looking/Aiming
-		EnhancedInputComponent->BindAction(LookAction, ETriggerEvent::Triggered, this, &ACleanCutActionCharacter::LookInput);
+		EnhancedInputComponent->BindAction(LookAction, ETriggerEvent::Triggered, this, &ACleanCutActionCharacter::GamepadLookInput);
 		EnhancedInputComponent->BindAction(MouseLookAction, ETriggerEvent::Triggered, this, &ACleanCutActionCharacter::LookInput);
 
 		// Crouch: a runtime action + context for CrouchKeys unless an asset action is set.
@@ -248,6 +248,25 @@ void ACleanCutActionCharacter::LookInput(const FInputActionValue& Value)
 	// pass the axis values to the aim input
 	DoAim(LookAxisVector.X, LookAxisVector.Y);
 
+}
+
+void ACleanCutActionCharacter::GamepadLookInput(const FInputActionValue& Value)
+{
+	FVector2D Stick = Value.Get<FVector2D>();
+	const float Tilt = FMath::Min(Stick.Size(), 1.f);
+	if (Tilt <= KINDA_SMALL_NUMBER)
+	{
+		return;
+	}
+	// Curve on the tilt, not per axis, so diagonals keep their direction.
+	Stick = Stick / Stick.Size() * FMath::Pow(Tilt, GamepadLookExponent);
+
+	const UWorld* World = GetWorld();
+	const float DeltaSeconds = World ? World->GetDeltaSeconds() : 0.f;
+	// NOTE(5.9): DefaultInput.ini keeps bEnableLegacyInputScales, so the controller multiplies yaw by 2.5 and pitch by -2.5;
+	// divide that back out so the rates above are real degrees per second.
+	constexpr float LegacyInputScale = 2.5f;
+	DoAim(Stick.X * GamepadYawRate * DeltaSeconds / LegacyInputScale, Stick.Y * GamepadPitchRate * DeltaSeconds / LegacyInputScale);
 }
 
 void ACleanCutActionCharacter::DoAim(float Yaw, float Pitch)

@@ -17,6 +17,8 @@
 #include "Components/VerticalBoxSlot.h"
 #include "Kismet/GameplayStatics.h"
 
+#include "UI/LTTInputDevice.h"
+
 #define LOCTEXT_NAMESPACE "LTTShootEndScreen"
 
 void ULTTShootEndScreen::NativeOnInitialized()
@@ -217,6 +219,9 @@ void ULTTShootEndScreen::NativeTick(const FGeometry& MyGeometry, float InDeltaTi
 {
 	Super::NativeTick(MyGeometry, InDeltaTime);
 	AnimTime += InDeltaTime; // UMG ticks with real time, so this runs while the game is paused
+
+	// Gamepad: focus a button so the left stick / d-pad and A drive the screen.
+	ULTTInputDeviceSubsystem::EnsureGamepadFocus(this, ShootAgainButton);
 
 	// Title slams down, card fades in, points roll up (same beats as the Phase 1 end screen).
 	if (TitleText)

@@ -105,6 +105,15 @@ protected:
 	void RefreshKeyCaps();
 	void RefreshPreview();
 
+	/** Gamepad: moves the highlighted key to the nearest key in that direction (by on-screen position). */
+	void MovePadCursor(const FVector2D& Direction);
+	/** Gamepad: tints the highlighted key, clears the others. */
+	void RefreshPadCursor();
+
+	/** Key the gamepad cursor is on (index into Keys), or INDEX_NONE before the gamepad is used. */
+	int32 PadKeyIndex = INDEX_NONE;
+	int32 ShownPadKeyIndex = INDEX_NONE;
+
 	UPROPERTY(Transient)
 	TObjectPtr<UEditableTextBox> Target;
 
