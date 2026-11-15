@@ -126,6 +126,10 @@ public:
 	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Cleanup HUD|Controls")
 	FKey ToggleControlsKey = EKeys::H;
 
+	/** Gamepad button that shows / hides the key list. */
+	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Cleanup HUD|Controls")
+	FKey ToggleControlsGamepadKey = EKeys::Gamepad_DPad_Down;
+
 	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Cleanup HUD|Controls")
 	bool bControlsLegendStartsOpen = true;
 
@@ -181,20 +185,34 @@ protected:
 
 	void BuildControlsLegend();
 	void UpdateControlsLegend();
-	/** Small dark key cap with cream letters ("E", "Space"). */
-	UWidget* MakeKeyCap(const FText& Key) const;
+	/** Small dark key cap with cream letters ("E", "Space"). TextName names the label so code can change it. */
+	UWidget* MakeKeyCap(const FText& Key, FName TextName = NAME_None) const;
 	/** Key cap holding a mouse-button icon (T_Icon_MouseLeft / Right). */
 	UWidget* MakeMouseCap(const TCHAR* IconName) const;
 	/** Caps, then the action name. */
-	void AddLegendRow(UVerticalBox* Box, const TArray<UWidget*>& Caps, const FText& Action) const;
+	void AddLegendRow(UVerticalBox* Box, const TArray<UWidget*>& Caps, const FText& Action, FName RowName = NAME_None) const;
+	/** Fills the gamepad key list (ControlsListPad). */
+	void FillGamepadLegend(UVerticalBox* List) const;
+	/** Adds what a WBP_ baked before them is missing (dance row, gamepad list, named toggle key). */
+	void AddMissingLegendParts();
 
+	/** Keyboard / mouse key list. */
 	UPROPERTY(Transient)
 	TObjectPtr<UWidget> ControlsList;
+
+	/** Gamepad key list, shown instead of ControlsList while the player uses a controller. */
+	UPROPERTY(Transient)
+	TObjectPtr<UWidget> ControlsListPad;
+
+	/** Label of the footer's toggle key cap ("H" or "D-pad Down"). */
+	UPROPERTY(Transient)
+	TObjectPtr<UTextBlock> ControlsToggleKeyText;
 
 	UPROPERTY(Transient)
 	TObjectPtr<UTextBlock> ControlsToggleText;
 
 	bool bLegendOpen = true;
+	bool bLegendShowsPad = false;
 
 	void UpdateTexts();
 	void UpdateArrow();

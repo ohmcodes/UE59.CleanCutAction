@@ -20,6 +20,7 @@
 #include "Sound/SoundBase.h"
 #include "TimerManager.h"
 #include "UObject/ConstructorHelpers.h"
+#include "UI/LTTInputDevice.h"
 
 #define LOCTEXT_NAMESPACE "LTTCleanupBarker"
 
@@ -84,7 +85,7 @@ void ALTTCleanupBarker::BuildPools()
 	// 1.2 First-time tutorials (one-shot).
 	AddPool("First.Pickup", 3, 1.f, 0.f, { LOCTEXT("P1_First_Pickup", "Look at you, holding a prop. Your parents must be so proud.") }).bOneShot = true;
 	AddPool("First.Place", 3, 1.f, 0.f, { LOCTEXT("P1_First_Place", "Hear that? That's the sound of order. Burn it into your memory.") }).bOneShot = true;
-	AddPool("First.Throw", 3, 1.f, 0.f, { LOCTEXT("P1_First_Throw", "Right-click to throw. Wait, why am I teaching you to throw props on my set? It BREAKS them!") }).bOneShot = true;
+	AddPool("First.Throw", 3, 1.f, 0.f, { LOCTEXT("P1_First_Throw", "{0} to throw. Wait, why am I teaching you to throw props on my set? It BREAKS them!") }).bOneShot = true;
 	AddPool("First.Stack", 3, 1.f, 0.f, { LOCTEXT("P1_First_Stack", "Stacking! Efficient. Reckless. I respect both.") }).bOneShot = true;
 	AddPool("First.Bin", 3, 1.f, 0.f, { LOCTEXT("P1_First_Bin", "Trash goes in the bin. Revolutionary, I know. Write it down.") }).bOneShot = true;
 	AddPool("First.Broom", 3, 1.f, 0.f, { LOCTEXT("P1_First_Broom", "That's cleaning gear. Push it at the mess. It's basically filmmaking.") }).bOneShot = true;
@@ -661,7 +662,7 @@ void ALTTCleanupBarker::TickTriggers()
 	{
 		bIntroDone = true;
 		FFormatOrderedArguments Args;
-		Args.Add(D->HintKey.GetDisplayName());
+		Args.Add(ULTTInputDeviceSubsystem::KeyLabelFor(D->HintKey, D->HintGamepadKey));
 		Trigger("Intro", Args);
 	}
 
@@ -700,7 +701,7 @@ void ALTTCleanupBarker::TickTriggers()
 	if (T - LastActivityTime >= IdleSeconds && T >= NextIdleTime && !bTalking && Queue.Num() == 0)
 	{
 		FFormatOrderedArguments Args;
-		Args.Add(D->HintKey.GetDisplayName());
+		Args.Add(ULTTInputDeviceSubsystem::KeyLabelFor(D->HintKey, D->HintGamepadKey));
 		if (Trigger("Idle", Args))
 		{
 			NextIdleTime = T + IdleRepeatSeconds;
@@ -1098,7 +1099,9 @@ void ALTTCleanupBarker::HandleReleased(ALTTInteractableBase* Item, bool bThrown)
 	LastReleased = Item;
 	if (bThrown)
 	{
-		if (!Trigger("First.Throw"))
+		FFormatOrderedArguments ThrowArgs;
+		ThrowArgs.Add(ULTTInputDeviceSubsystem::Pick(LOCTEXT("ThrowKeyKb", "Right-click"), LOCTEXT("ThrowKeyPad", "Right trigger")));
+		if (!Trigger("First.Throw", ThrowArgs))
 		{
 			Trigger("Throw");
 		}
