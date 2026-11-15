@@ -1,6 +1,7 @@
 // Clean! Cut! Action!
 
 #include "Interaction/LTTInteractionComponent.h"
+#include "Interaction/LTTCleanupBarker.h"
 #include "Interaction/LTTCarryComponent.h"
 #include "Interaction/LTTInteractable.h"
 #include "Interaction/LTTInteractableBase.h"
@@ -294,6 +295,10 @@ void ULTTInteractionComponent::Interact()
 			return;
 		}
 		const bool bFumble = PlaceHint == ELTTPlaceHint::Fumble;
+		if (PlaceHint == ELTTPlaceHint::NeedsSupport && IsValid(Dropped))
+		{
+			ALTTCleanupBarker::NotifyEvent(this, ELTTBarkEvent::WrongOrder, Dropped); // its table isn't back yet
+		}
 		Carry->Drop();
 		if (bFumble && IsValid(Dropped))
 		{

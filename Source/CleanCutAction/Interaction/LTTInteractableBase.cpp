@@ -9,6 +9,7 @@
 #include "Materials/MaterialInterface.h"
 #include "Materials/MaterialInstanceDynamic.h"
 #include "Interaction/LTTMessDirector.h"
+#include "Interaction/LTTCleanupBarker.h"
 #include "Interaction/LTTLightSwitchComponent.h"
 #include "Interaction/LTTUsableComponent.h"
 #include "Interaction/LTTWashStationComponent.h"
@@ -173,6 +174,8 @@ void ALTTInteractableBase::BeginHold(AActor* InHolder)
 	Holder = InHolder;
 	bBreakOnLanding = false;
 	bEverHeld = true;
+	bFirstHitPending = false;
+	TrickShotWatchUntil = -1.f;
 	PlayPropSound(ELTTPropSoundEvent::Pickup);
 
 	WakeTouchingProps();
@@ -204,7 +207,111 @@ void ALTTInteractableBase::EndHold(const FVector& LinearVelocity, const FVector&
 	Mesh->SetPhysicsAngularVelocityInDegrees(AngularVelocityDeg);
 	Mesh->WakeAllRigidBodies();
 
+	bFirstHitPending = true;
+	ReleaseTime = GetWorld() ? GetWorld()->GetTimeSeconds() : 0.f;
+	if (bLastReleaseWasThrow && bAllowTrickShot && bIsCleanupTask && bHasHome && !HasNoHomeSpot() && !bBrokenInPlace)
+	{
+		TrickShotWatchUntil = ReleaseTime + 2.5f; // checked in Tick while it flies
+		SetActorTickEnabled(true);
+	}
+
 	ReceiveDropped(OldHolder, bLastReleaseWasThrow);
+}
+
+ELTTBarkPropKind ALTTInteractableBase::GetBarkKind() const
+{
+	if (BarkKind != ELTTBarkPropKind::Auto)
+	{
+		return BarkKind;
+	}
+	const FString Name = GetClass()->GetName();
+	auto Has = [&Name](const TCHAR* Part) { return Name.Contains(Part, ESearchCase::IgnoreCase); };
+	if (Has(TEXT("Lamp")))
+	{
+		return ELTTBarkPropKind::Light;
+	}
+	if (Has(TEXT("Socket")) || Has(TEXT("ElectricBox")))
+	{
+		return ELTTBarkPropKind::Electric;
+	}
+	if (Has(TEXT("Camera")))
+	{
+		return ELTTBarkPropKind::Camera;
+	}
+	if (Has(TEXT("Book")) && !Has(TEXT("BookShelf")))
+	{
+		return ELTTBarkPropKind::Shelf;
+	}
+	if (Has(TEXT("Pillow")) || Has(TEXT("Curtain")))
+	{
+		return ELTTBarkPropKind::Fabric;
+	}
+	if (Has(TEXT("Broom")) || Has(TEXT("Mop")) || Has(TEXT("Spray")) || Has(TEXT("Soap")))
+	{
+		return ELTTBarkPropKind::Broom;
+	}
+	if (Has(TEXT("Table")) || Has(TEXT("Chair")) || Has(TEXT("Chai")) || Has(TEXT("Shelf")))
+	{
+		return ELTTBarkPropKind::Furniture;
+	}
+	return ELTTBarkPropKind::None;
+}
+
+bool ALTTInteractableBase::TryTrickShot()
+{
+	if (!Mesh || bPlaced || bPlacing || IsHeld() || !IsHomeSupportReady())
+	{
+		return false;
+	}
+	if (FVector::Dist(FVector(Mesh->Bounds.Origin), GetHomeCenter()) > GetSnapRadius())
+	{
+		return false;
+	}
+	if (Mesh->GetPhysicsLinearVelocity().Size() > TrickShotMaxSpeed)
+	{
+		return false;
+	}
+	bTrickShot = true;
+	TrickShotWatchUntil = -1.f;
+	bFirstHitPending = false;
+	bBreakOnLanding = false;
+	PlaceAtHome(); // slides the last bit home and locks (FinishPlacing tells the mess director)
+	return true;
+}
+
+void ALTTInteractableBase::HandleFirstHitAfterRelease(AActor* Other, const FVector& Impulse)
+{
+	bFirstHitPending = false;
+	const UWorld* World = GetWorld();
+	if (!World || World->GetTimeSeconds() - ReleaseTime > 4.f || !Mesh)
+	{
+		return; // came to rest long ago; this is just physics settling
+	}
+	const ALTTInteractableBase* OtherProp = Cast<ALTTInteractableBase>(Other);
+
+	// A set piece dropped or thrown in a bin: the bin spits it back out.
+	if (!bIsTrash && OtherProp && OtherProp->bIsTrashBin)
+	{
+		const FVector Away = (GetActorLocation() - Other->GetActorLocation()).GetSafeNormal2D();
+		Mesh->SetPhysicsLinearVelocity(Away * 180.f + FVector(0.f, 0.f, 420.f));
+		Mesh->SetPhysicsAngularVelocityInDegrees(FMath::VRand() * 200.f);
+		ALTTCleanupBarker::NotifyEvent(this, ELTTBarkEvent::BinWrongItem, this);
+		return;
+	}
+	// Thrown trash that hit something other than a bin.
+	if (bIsTrash && bLastReleaseWasThrow)
+	{
+		ALTTCleanupBarker::NotifyEvent(this, ELTTBarkEvent::TrashMiss, this);
+		return;
+	}
+	// Anything the player let go of slamming into something. The hit arrives after the bounce, so use the speed
+	// the impact took out of it (impulse / mass) as well as what is left.
+	const float Mass = FMath::Max(Mesh->IsSimulatingPhysics() ? Mesh->GetMass() : 1.f, 0.1f);
+	const float ImpactSpeed = FMath::Max(static_cast<float>(Mesh->GetPhysicsLinearVelocity().Size()), static_cast<float>(Impulse.Size()) / Mass);
+	if (ImpactSpeed >= CrashSpeed)
+	{
+		ALTTCleanupBarker::NotifyEvent(this, ELTTBarkEvent::Crash, this);
+	}
 }
 
 bool ALTTInteractableBase::IsSwitchableLamp() const
@@ -563,6 +670,15 @@ void ALTTInteractableBase::NotifyHit(UPrimitiveComponent* MyComp, AActor* Other,
 			}
 		}
 	}
+	// Flew through its own silhouette and hit something right there: still counts as a trick shot.
+	if (TrickShotWatchUntil > 0.f && TryTrickShot())
+	{
+		return;
+	}
+	if (bFirstHitPending && !IsHeld() && !bPlacing && !bPlaced)
+	{
+		HandleFirstHitAfterRelease(Other, NormalImpulse);
+	}
 	Super::NotifyHit(MyComp, Other, OtherComp, bSelfMoved, HitLocation, HitNormal, NormalImpulse, Hit); // BP ReceiveHit
 	if (!bBreakOnLanding || IsHeld() || bPlaced || bPlacing || !IsValid(this) || IsActorBeingDestroyed())
 	{
@@ -844,6 +960,19 @@ void ALTTInteractableBase::Tick(float DeltaSeconds)
 			SetActorTickEnabled(false);
 		}
 		return;
+	}
+
+	if (TrickShotWatchUntil > 0.f && !bPlacing)
+	{
+		const UWorld* World = GetWorld();
+		if (bPlaced || IsHeld() || !World || World->GetTimeSeconds() > TrickShotWatchUntil)
+		{
+			TrickShotWatchUntil = -1.f;
+		}
+		else if (!TryTrickShot())
+		{
+			return; // keep watching
+		}
 	}
 
 	if (!bPlacing)

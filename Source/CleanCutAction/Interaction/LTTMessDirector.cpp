@@ -307,6 +307,7 @@ bool ALTTMessDirector::ShowHint()
 	GetWorldTimerManager().SetTimer(HintTimer, this, &ALTTMessDirector::UpdateHint, 0.1f, true);
 
 	UE_LOG(LogTemp, Log, TEXT("MessDirector: hint -> %s"), *Best->GetPropName().ToString());
+	OnHintShown.Broadcast(Best);
 	ReceiveHintShown(Best);
 	return true;
 }

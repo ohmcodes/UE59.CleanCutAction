@@ -27,6 +27,7 @@ class USoundBase;
 DECLARE_DYNAMIC_MULTICAST_DELEGATE_TwoParams(FLTTOnCleanProgress, int32, Placed, int32, Total);
 DECLARE_DYNAMIC_MULTICAST_DELEGATE(FLTTOnAllPlaced);
 DECLARE_DYNAMIC_MULTICAST_DELEGATE(FLTTOnTimeUp);
+DECLARE_DYNAMIC_MULTICAST_DELEGATE_OneParam(FLTTOnHintShown, ALTTInteractableBase*, Target);
 
 UCLASS(Blueprintable)
 class CLEANCUTACTION_API ALTTMessDirector : public AActor
@@ -86,6 +87,10 @@ public:
 
 	UFUNCTION(BlueprintPure, Category = "Cleanup")
 	bool IsSetClean() const { return bAllPlaced; }
+
+	/** True once the briefing is closed and the screen faded in: the player is cleaning. */
+	UFUNCTION(BlueprintPure, Category = "Cleanup")
+	bool HasMessStarted() const { return bMessStarted; }
 
 	UPROPERTY(BlueprintAssignable, Category = "Cleanup")
 	FLTTOnCleanProgress OnProgressChanged;
@@ -226,6 +231,9 @@ public:
 
 	UFUNCTION(BlueprintPure, Category = "Hint")
 	int32 GetHintsUsed() const { return HintsUsed; }
+
+	UPROPERTY(BlueprintAssignable, Category = "Hint")
+	FLTTOnHintShown OnHintShown;
 
 	/** Blueprint hook for a hint sound / Marlowe line. */
 	UFUNCTION(BlueprintImplementableEvent, Category = "Hint", meta = (DisplayName = "On Hint Shown"))
