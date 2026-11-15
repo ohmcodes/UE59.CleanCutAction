@@ -74,6 +74,12 @@ public:
 
 	// ---- Progress ----
 
+	/** Most cleanup jobs at the start, props and extra jobs (puddles) together. If there are more, the smallest
+	 *  freestanding props become set dressing until the count fits, so a puddle takes a prop's place instead of
+	 *  adding to the total. 0 = no cap. */
+	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Cleanup", meta = (ClampMin = "0"))
+	int32 MaxCleanupTasks = 100;
+
 	/** Cleanup props still in play (placed + not yet placed). Broken props are removed. */
 	UFUNCTION(BlueprintPure, Category = "Cleanup")
 	int32 GetTotalCount() const { return Tasks.Num() + ExtraTaskTotal; }
@@ -504,6 +510,8 @@ protected:
 	void HandleHintInput();
 	void UpdateHint();
 	bool IsHintCandidate(const ALTTInteractableBase* Prop) const;
+	/** Turns props into set dressing until props + extra jobs fit MaxCleanupTasks. */
+	void TrimTasksToCap();
 
 	UPROPERTY(Transient)
 	TArray<TObjectPtr<ALTTInteractableBase>> Tasks;

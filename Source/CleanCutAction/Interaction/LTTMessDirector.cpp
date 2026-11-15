@@ -118,6 +118,9 @@ void ALTTMessDirector::SetupTasks()
 		}
 	}
 
+	// Puddles registered in their BeginPlay, so the extra jobs are known: they take props' places in the count.
+	TrimTasksToCap();
+
 	for (ALTTInteractableBase* Prop : All)
 	{
 		if (Prop->bIsCleanupTask && Prop->bStartsAtHome)
@@ -452,8 +455,9 @@ const bool bShouldStartHidden = bFadeInOnStart && !bIntroDone;
 	{
 		ALTTInteractableBase* Prop = *It;
 		UStaticMeshComponent* M = Prop ? Prop->Mesh.Get() : nullptr;
-		// Set dressing (not a task) stays put; it isn't part of the mess.
-		if (!M || Prop->IsPlaced() || Prop->IsHeld() || Prop->IsSetDressing())
+		// Set dressing (not a task) stays put; it isn't part of the mess. Neither is the mop: it stays where it's
+		// leaning so the player can find it.
+		if (!M || Prop->IsPlaced() || Prop->IsHeld() || Prop->IsSetDressing() || Prop->bIsMop)
 		{
 			continue;
 		}
@@ -513,6 +517,48 @@ void ALTTMessDirector::RemoveExtraTask()
 	ExtraTaskTotal = FMath::Max(ExtraTaskTotal - 1, ExtraTaskDone);
 	OnProgressChanged.Broadcast(GetPlacedCount(), GetTotalCount());
 	CheckComplete();
+}
+
+void ALTTMessDirector::TrimTasksToCap()
+{
+	const int32 Excess = MaxCleanupTasks > 0 ? Tasks.Num() + ExtraTaskTotal - MaxCleanupTasks : 0;
+	if (Excess <= 0)
+	{
+		return;
+	}
+
+	// Only props whose staying put can't look wrong: nothing rests on them, they don't rest on a prop that gets
+	// thrown, they have a home spot of their own and they aren't tools or switches.
+	TArray<ALTTInteractableBase*> Candidates;
+	for (ALTTInteractableBase* Prop : Tasks)
+	{
+		if (IsValid(Prop) && !Prop->bIsMop && !Prop->bIsTrashBin && !Prop->HasNoHomeSpot() && !Prop->HasUseAction()
+			&& !Prop->bStartsAtHome && !HasDependents(Prop)
+			&& (!Prop->HomeSupport || !Prop->HomeSupport->bIsCleanupTask))
+		{
+			Candidates.Add(Prop);
+		}
+	}
+	// The smallest ones are the least missed in the mess.
+	Candidates.Sort([](const ALTTInteractableBase& A, const ALTTInteractableBase& B)
+	{
+		return A.GetPropRadius() < B.GetPropRadius();
+	});
+
+	const int32 ToTrim = FMath::Min(Excess, Candidates.Num());
+	for (int32 i = 0; i < ToTrim; ++i)
+	{
+		ALTTInteractableBase* Prop = Candidates[i];
+		Tasks.Remove(Prop);
+		Prop->OnDestroyed.RemoveDynamic(this, &ALTTMessDirector::HandlePropDestroyed);
+		Prop->MakeSetDressing();
+		UE_LOG(LogTemp, Log, TEXT("MessDirector: %s is set dressing to keep the job count at %d."), *Prop->GetName(), MaxCleanupTasks);
+	}
+	if (ToTrim < Excess)
+	{
+		UE_LOG(LogTemp, Warning, TEXT("MessDirector: %d jobs, but only %d props could be left out (cap %d)."),
+			Tasks.Num() + ExtraTaskTotal + ToTrim, ToTrim, MaxCleanupTasks);
+	}
 }
 
 bool ALTTMessDirector::HasDependents(const ALTTInteractableBase* Prop) const
