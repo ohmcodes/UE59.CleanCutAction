@@ -40,13 +40,6 @@
 			"Enabled": true
 		},
 		{
-			"Name": "AllToolsets",
-			"Enabled": false,
-			"TargetAllowList": [
-				"Editor"
-			]
-		},
-		{
 			"Name": "NNEDenoiser",
 			"Enabled": false
 		}
