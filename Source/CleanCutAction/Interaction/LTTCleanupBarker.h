@@ -149,6 +149,15 @@ public:
 	UFUNCTION(BlueprintPure, Category = "Barks")
 	bool IsTalking() const { return bTalking; }
 
+	/** Turns barking on or off. Turning it off also drops every queued line and the one on screen.
+	 *  Console: LTT.DisableBarks [0|1] (1 = disable, the default; 0 = enable again). */
+	UFUNCTION(BlueprintCallable, Category = "Barks")
+	void SetBarksEnabled(bool bInEnabled);
+
+	/** Drops every queued line and hides the one on screen. */
+	UFUNCTION(BlueprintCallable, Category = "Barks")
+	void ClearQueuedBarks();
+
 protected:
 	virtual void BeginPlay() override;
 	virtual void Tick(float DeltaSeconds) override;

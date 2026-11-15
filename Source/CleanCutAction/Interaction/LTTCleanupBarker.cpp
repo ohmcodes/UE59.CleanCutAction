@@ -14,6 +14,7 @@
 #include "Engine/World.h"
 #include "EngineUtils.h"
 #include "GameFramework/Pawn.h"
+#include "HAL/IConsoleManager.h"
 #include "GameFramework/PlayerController.h"
 #include "Kismet/GameplayStatics.h"
 #include "Sound/SoundBase.h"
@@ -541,6 +542,29 @@ void ALTTCleanupBarker::Bark(const FText& Text, ELTTBarkSpeaker Speaker, int32 P
 	Line.Speaker = Speaker;
 	Line.Priority = Priority;
 	Say({ Line });
+}
+
+void ALTTCleanupBarker::SetBarksEnabled(bool bInEnabled)
+{
+	bEnabled = bInEnabled;
+	if (!bEnabled)
+	{
+		ClearQueuedBarks();
+	}
+}
+
+void ALTTCleanupBarker::ClearQueuedBarks()
+{
+	Queue.Reset();
+	BatchInsertIndex = 0;
+	ChainWait = 0.f;
+	bCurrentRequeued = false;
+	if (bTalking)
+	{
+		bTalking = false;
+		LineSecondsLeft = 0.f;
+		QuietSince = Now();
+	}
 }
 
 bool ALTTCleanupBarker::GetCurrentLine(FText& OutText, FText& OutSpeaker, bool& bOutWalkie) const
@@ -1094,5 +1118,26 @@ void ALTTCleanupBarker::CheckWrongDrop(TWeakObjectPtr<ALTTInteractableBase> Item
 	}
 	Trigger("Place.Wrong");
 }
+
+// ---- Console ----
+
+static FAutoConsoleCommandWithWorldAndArgs GLTTDisableBarksCommand(
+	TEXT("LTT.DisableBarks"),
+	TEXT("LTT.DisableBarks [1|0] - 1 (default) stops Marlowe's Phase 1 barks and drops every queued line; 0 turns them back on."),
+	FConsoleCommandWithWorldAndArgsDelegate::CreateLambda([](const TArray<FString>& Args, UWorld* World)
+	{
+		const bool bDisable = Args.Num() == 0 || Args[0].ToBool();
+		int32 Count = 0;
+		if (World)
+		{
+			for (TActorIterator<ALTTCleanupBarker> It(World); It; ++It)
+			{
+				It->SetBarksEnabled(!bDisable);
+				++Count;
+			}
+		}
+		UE_LOG(LogTemp, Display, TEXT("LTT.DisableBarks: barks %s on %d barker(s)."),
+			bDisable ? TEXT("disabled") : TEXT("enabled"), Count);
+	}));
 
 #undef LOCTEXT_NAMESPACE
