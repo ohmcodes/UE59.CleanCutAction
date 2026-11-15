@@ -19,6 +19,7 @@
 #include "Kismet/KismetSystemLibrary.h"
 #include "Kismet/GameplayStatics.h"
 #include "UI/LTTLeaderboardPanel.h"
+#include "UI/LTTGraphicsSettings.h"
 
 #include "UI/LTTInputDevice.h"
 
@@ -88,6 +89,7 @@ void ULTTPauseMenu::NativeOnInitialized()
 	{
 		RestartButton->OnClicked.AddDynamic(this, &ULTTPauseMenu::HandleRestartClicked);
 	}
+	AddGraphicsButtons(); // Windows + RTX only
 	if (!CheatButton)
 	{
 		AddCheatButton(); // WBP_PauseMenu was baked before this existed
@@ -123,6 +125,69 @@ void ULTTPauseMenu::AddCheatButton()
 	}
 }
 
+void ULTTPauseMenu::AddGraphicsButtons()
+{
+	if (!LTTGraphics::IsDLSSAvailable())
+	{
+		return; // Wasm, non-RTX GPU or old driver: no NVIDIA options, TSR stays on
+	}
+	LTTGraphics::ApplyDefaultsOnce();
+	UTextBlock* Label = nullptr;
+	DLSSButton = MakeButton(TEXT("DLSSButton"), FText::GetEmpty(), PauseButtonGrey, &Label);
+	DLSSLabel = Label;
+	InsertBeforeQuit(DLSSButton);
+	DLSSButton->OnClicked.AddDynamic(this, &ULTTPauseMenu::HandleDLSSClicked);
+	if (LTTGraphics::IsFrameGenAvailable())
+	{
+		FrameGenButton = MakeButton(TEXT("FrameGenButton"), FText::GetEmpty(), PauseButtonGrey, &Label);
+		FrameGenLabel = Label;
+		InsertBeforeQuit(FrameGenButton);
+		FrameGenButton->OnClicked.AddDynamic(this, &ULTTPauseMenu::HandleFrameGenClicked);
+	}
+	if (LTTGraphics::IsRayReconstructionAvailable())
+	{
+		RayReconstructionButton = MakeButton(TEXT("RayReconstructionButton"), FText::GetEmpty(), PauseButtonGrey, &Label);
+		RayReconstructionLabel = Label;
+		InsertBeforeQuit(RayReconstructionButton);
+		RayReconstructionButton->OnClicked.AddDynamic(this, &ULTTPauseMenu::HandleRayReconstructionClicked);
+	}
+	RefreshGraphicsLabels();
+}
+
+void ULTTPauseMenu::RefreshGraphicsLabels()
+{
+	if (DLSSLabel)
+	{
+		DLSSLabel->SetText(LTTGraphics::GetUpscalerLabel());
+	}
+	if (FrameGenLabel)
+	{
+		FrameGenLabel->SetText(LTTGraphics::GetFrameGenLabel());
+	}
+	if (RayReconstructionLabel)
+	{
+		RayReconstructionLabel->SetText(LTTGraphics::GetRayReconstructionLabel());
+	}
+}
+
+void ULTTPauseMenu::HandleDLSSClicked()
+{
+	LTTGraphics::CycleUpscaler();
+	RefreshGraphicsLabels();
+}
+
+void ULTTPauseMenu::HandleFrameGenClicked()
+{
+	LTTGraphics::SetFrameGen(!LTTGraphics::IsFrameGenOn());
+	RefreshGraphicsLabels();
+}
+
+void ULTTPauseMenu::HandleRayReconstructionClicked()
+{
+	LTTGraphics::SetRayReconstruction(!LTTGraphics::IsRayReconstructionOn());
+	RefreshGraphicsLabels();
+}
+
 void ULTTPauseMenu::InsertBeforeQuit(UButton* Button)
 {
 	UVerticalBox* Column = QuitButton ? Cast<UVerticalBox>(QuitButton->GetParent()) : nullptr;
@@ -143,6 +208,7 @@ void ULTTPauseMenu::NativeConstruct()
 	Super::NativeConstruct();
 	AnimTime = 0.f;
 	RefreshMusicLabel();
+	RefreshGraphicsLabels();
 }
 
 UTextBlock* ULTTPauseMenu::MakeText(FName Name, int32 FontSize, const FLinearColor& Color) const

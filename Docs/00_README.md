@@ -28,7 +28,7 @@ The player is the Rookie, a production assistant on the last day of shooting *Cl
 | `L_NYC_Cafe_Changes_4beed6a.md` | Cafe level changes in commit `4beed6a` |
 | `Level_Changes_dev-michael.md` | Cafe level changes on the `dev/michael` branch, with coordinates, for re-applying by hand |
 | `PackagingGuide/` | How to package for Windows, Web (Wasm), Android and Linux / Steam Deck, plus `Build_Platform.bat` |
-| `Submission/` | Jam theme and award notes (not committed yet) |
+| `Submission/` | Jam theme answer and NVIDIA RTX Award notes |
 
 ## Key Technical Decisions
 

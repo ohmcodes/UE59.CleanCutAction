@@ -76,6 +76,25 @@ public:
 	UPROPERTY(BlueprintReadOnly, Category = "Pause Menu", meta = (BindWidgetOptional))
 	TObjectPtr<UButton> CheatButton;
 
+	/** NVIDIA DLSS toggles (Windows build, RTX GPUs only). Added at runtime before Quit; hidden when DLSS isn't supported. */
+	UPROPERTY(Transient)
+	TObjectPtr<UButton> DLSSButton;
+
+	UPROPERTY(Transient)
+	TObjectPtr<UButton> FrameGenButton;
+
+	UPROPERTY(Transient)
+	TObjectPtr<UButton> RayReconstructionButton;
+
+	UPROPERTY(Transient)
+	TObjectPtr<UTextBlock> DLSSLabel;
+
+	UPROPERTY(Transient)
+	TObjectPtr<UTextBlock> FrameGenLabel;
+
+	UPROPERTY(Transient)
+	TObjectPtr<UTextBlock> RayReconstructionLabel;
+
 	/** The menu card (fades and drops in). */
 	UPROPERTY(BlueprintReadOnly, Category = "Pause Menu", meta = (BindWidgetOptional))
 	TObjectPtr<UWidget> Card;
@@ -94,6 +113,8 @@ protected:
 	UButton* MakeButton(FName Name, const FText& Label, const FLinearColor& Color, UTextBlock** OutLabel = nullptr) const;
 	void RefreshMusicLabel();
 	void AddCheatButton();
+	void AddGraphicsButtons();
+	void RefreshGraphicsLabels();
 	/** Puts Button into the column that holds QuitButton, just above Quit (for WBP_ layouts made before it existed). */
 	void InsertBeforeQuit(UButton* Button);
 
@@ -117,6 +138,15 @@ protected:
 
 	UFUNCTION()
 	void HandleUnstuckClicked();
+
+	UFUNCTION()
+	void HandleDLSSClicked();
+
+	UFUNCTION()
+	void HandleFrameGenClicked();
+
+	UFUNCTION()
+	void HandleRayReconstructionClicked();
 
 	float AnimTime = 0.f;
 };

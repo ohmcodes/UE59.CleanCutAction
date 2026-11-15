@@ -30,6 +30,15 @@ The design docs live in `Docs/`. The overview below is imported in full; read th
 - The editor's default map is `L_NYC_Cafe_Michael` (`Config/DefaultEngine.ini`), a per-dev copy of the cafe level.
 - Set art comes from the StylizedNewYorkCity pack (`/Game/StylizedNewYorkCity`).
 
+## Windows branch ("Go Big" RTX build)
+
+- Windows-only graphics live in `Config/Windows/WindowsEngine.ini` (TSR, hardware ray tracing, Lumen HW RT with hit-lit reflections, translucent front-layer reflections, bloom) and `Config/Windows/WindowsDeviceProfiles.ini` (Cinematic GI/reflections/shadows/post/shading). Don't put these in `DefaultEngine.ini`.
+- NVIDIA DLSS 4.5 plugins (v8.9.0, built for UE 5.8) are in `Plugins/`: `DLSS`, `StreamlineCore`, `StreamlineNGXCommon`, `StreamlineDLSSG`, `StreamlineReflex`, enabled for Win64 only in the `.uproject`. 5.9 rejects their printf format strings, so every plugin `*.Build.cs` sets `bValidateFormatStrings = false` (`NOTE(5.9)`). Keep that if the plugins are updated.
+- `.gitignore` ignores `Plugins/**/Binaries/*`, so the `nvngx_*.dll` runtime files are not committed. Copy them from the NVIDIA package on a fresh clone.
+- `UI/LTTGraphicsSettings.*` (compiled only when `WITH_LTT_DLSS=1`, set for Win64 in `CleanCutAction.Build.cs`) applies the DLSS defaults at start and backs the pause menu's NVIDIA DLSS / Frame Generation / Ray Reconstruction buttons.
+- Award and theme answers: `Docs/Submission/`.
+- Reusable copy for other 5.9 projects (outside this repo): `F:/UE5 Projects/_SharedKits/NVIDIA_DLSS_UE59_Kit/` (patched plugins with DLLs, generic `NvGraphics` helper, Windows configs, `Install-NvidiaDLSS.ps1`, README).
+
 ## Ownership and copyright
 
 - The game is owned by **QLE OPC** (Quality Level Entertainment), Mandaluyong, Metro Manila, PH. The full notice is in `COPYRIGHT.md`, and the project settings in `Config/DefaultGame.ini` (`CopyrightNotice`, `CompanyName`) carry the same notice.

@@ -36,6 +36,23 @@ public class CleanCutAction : ModuleRules
 			PrivateDependencyModuleNames.AddRange(new string[] { "UnrealEd", "UMGEditor", "Kismet" });
 		}
 
+		// NVIDIA DLSS / Frame Generation / Reflex (Plugins/DLSS, Plugins/Streamline*): Windows only.
+		// UI/LTTGraphicsSettings.cpp wraps every call in WITH_LTT_DLSS.
+		if (Target.Platform == UnrealTargetPlatform.Win64)
+		{
+			PrivateDependencyModuleNames.AddRange(new string[] {
+				"DLSSBlueprint",
+				"StreamlineBlueprint",
+				"StreamlineDLSSGBlueprint",
+				"StreamlineReflexBlueprint"
+			});
+			PrivateDefinitions.Add("WITH_LTT_DLSS=1");
+		}
+		else
+		{
+			PrivateDefinitions.Add("WITH_LTT_DLSS=0");
+		}
+
 		PublicIncludePaths.AddRange(new string[] {
 			"CleanCutAction"
 		});

@@ -26,6 +26,7 @@
 #include "Components/TextBlock.h"
 #include "Engine/GameInstance.h"
 #include "TimerManager.h"
+#include "UI/LTTGraphicsSettings.h"
 
 ACleanCutActionPlayerController::ACleanCutActionPlayerController()
 {
@@ -38,6 +39,12 @@ ACleanCutActionPlayerController::ACleanCutActionPlayerController()
 void ACleanCutActionPlayerController::BeginPlay()
 {
 	Super::BeginPlay();
+
+	// Windows + RTX: DLSS Quality, Frame Generation, Ray Reconstruction on by default (no-op elsewhere).
+	if (IsLocalPlayerController())
+	{
+		LTTGraphics::ApplyDefaultsOnce();
+	}
 
 	
 	// only spawn touch controls on local player controllers
