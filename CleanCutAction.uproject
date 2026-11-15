@@ -50,5 +50,9 @@
 			"Name": "NNEDenoiser",
 			"Enabled": false
 		}
+	],
+	"TargetPlatforms": [
+		"Android",
+		"Wasm"
 	]
 }

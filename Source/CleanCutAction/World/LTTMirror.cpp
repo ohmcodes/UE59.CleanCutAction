@@ -130,6 +130,15 @@ void ALTTMirror::BeginPlay()
 {
 	Super::BeginPlay();
 
+#if PLATFORM_ANDROID
+	// Phones: the reflection is a second full scene render, so draw it smaller, without shadows, only up close.
+	ResolutionScale = FMath::Min(ResolutionScale, 0.35f);
+	MaxResolution = FMath::Min(MaxResolution, 512);
+	bReflectShadows = false;
+	UpdateDistance = UpdateDistance > 0.f ? FMath::Min(UpdateDistance, 1200.f) : 1200.f;
+	MaxReflectionDistance = MaxReflectionDistance > 0.f ? FMath::Min(MaxReflectionDistance, 1500.f) : 1500.f;
+#endif
+
 	// The mirror never shows up in its own reflection (its frame sits behind the glass, right in front of the capture).
 	Capture->HiddenActors.AddUnique(this);
 	HideActorsBehindMirror(Capture, this);
