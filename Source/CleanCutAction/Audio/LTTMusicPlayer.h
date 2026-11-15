@@ -66,6 +66,10 @@ public:
 	UFUNCTION(BlueprintCallable, Category = "Music")
 	void SetMusicVolume(float NewVolume);
 
+	/** Holds the current track where it is (and the timer to the next one), e.g. while the emote song plays.
+	 *  Not a UFUNCTION yet so it could go in through Live Coding; make it BlueprintCallable at the next full build. */
+	void SetMusicPaused(bool bPaused);
+
 	/** Mutes or unmutes all music (pause menu): muting fades the music out, unmuting starts the next track. Lasts for the session, so it survives Play Again / level loads. */
 	UFUNCTION(BlueprintCallable, Category = "Music")
 	static void SetMusicMuted(bool bMuted);

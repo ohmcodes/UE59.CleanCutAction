@@ -14,6 +14,103 @@
 #include "EnhancedInputSubsystems.h"
 #include "Engine/LocalPlayer.h"
 #include "GameFramework/PlayerController.h"
+#include "Animation/AnimSequenceBase.h"
+#include "TimerManager.h"
+#include "Audio/LTTMusicPlayer.h"
+#include "Components/AudioComponent.h"
+#include "Kismet/GameplayStatics.h"
+#include "Sound/SoundBase.h"
+#include "EngineUtils.h"
+
+/** Emote animation and input action, loaded by path (both are in MapsToCook). */
+static const TCHAR* LTTEmoteAnimPath = TEXT("/Game/_CleanCutAction/Character/Rookie/Anims/A_Emote_Rookie.A_Emote_Rookie");
+static const TCHAR* LTTEmoteActionPath = TEXT("/Game/_CleanCutAction/Input/IA_Emote.IA_Emote");
+
+/** The dance song while it plays (single player). */
+static TWeakObjectPtr<UAudioComponent> LTTEmoteMusic;
+
+/** Starts the dance song and pauses the background music. Respects the music on/off toggle. */
+static void LTTStartEmoteMusic(UWorld* World)
+{
+	if (!World || ALTTMusicPlayer::IsMusicMuted())
+	{
+		return;
+	}
+	// Song for the dance, loaded by path (in MapsToCook). Kept out of MusicFX so the background music player doesn't shuffle it in.
+	// Its loudness is the Volume setting on the paroparo Sound Wave asset.
+	const TCHAR* SongPath = TEXT("/Game/_CleanCutAction/EmoteMusic/paroparo.paroparo");
+	USoundBase* Song = LoadObject<USoundBase>(nullptr, SongPath);
+	if (!Song)
+	{
+		UE_LOG(LogCleanCutAction, Warning, TEXT("Emote music not found: %s"), SongPath);
+		return;
+	}
+	for (TActorIterator<ALTTMusicPlayer> It(World); It; ++It)
+	{
+		It->SetMusicPaused(true);
+	}
+	if (UAudioComponent* Old = LTTEmoteMusic.Get())
+	{
+		Old->Stop();
+	}
+	// Not a UI sound, so it pauses with the game like the dance does.
+	LTTEmoteMusic = UGameplayStatics::SpawnSound2D(World, Song);
+}
+
+/** Fades the dance song out and resumes the background music where it was. */
+static void LTTStopEmoteMusic(UWorld* World)
+{
+	UAudioComponent* Song = LTTEmoteMusic.Get();
+	LTTEmoteMusic.Reset();
+	if (!Song)
+	{
+		return; // music was off when the dance started, so nothing was paused
+	}
+	Song->FadeOut(0.5f, 0.f);
+	if (World)
+	{
+		for (TActorIterator<ALTTMusicPlayer> It(World); It; ++It)
+		{
+			It->SetMusicPaused(false);
+		}
+	}
+}
+
+/** Plays the emote once on the body mesh (the one mirrors and other cameras see), then hands the mesh back to its anim blueprint.
+ *  The mesh goes to single-node mode for the length of the clip, so this doesn't depend on the anim blueprint having a montage slot. */
+static void LTTPlayEmote(ACleanCutActionCharacter& Character)
+{
+	USkeletalMeshComponent* Body = Character.GetMesh();
+	if (!Body)
+	{
+		return;
+	}
+	if (Body->GetAnimationMode() == EAnimationMode::AnimationSingleNode)
+	{
+		// Already emoting: the key cancels it.
+		Body->SetAnimationMode(EAnimationMode::AnimationBlueprint);
+		LTTStopEmoteMusic(Character.GetWorld());
+		return;
+	}
+	UAnimSequenceBase* Emote = LoadObject<UAnimSequenceBase>(nullptr, LTTEmoteAnimPath);
+	if (!Emote)
+	{
+		UE_LOG(LogCleanCutAction, Warning, TEXT("Emote animation not found: %s"), LTTEmoteAnimPath);
+		return;
+	}
+	Body->PlayAnimation(Emote, false);
+	LTTStartEmoteMusic(Character.GetWorld());
+	FTimerHandle Handle;
+	Character.GetWorldTimerManager().SetTimer(Handle, FTimerDelegate::CreateWeakLambda(&Character, [WeakBody = TWeakObjectPtr<USkeletalMeshComponent>(Body)]()
+	{
+		// Still playing means this emote was cancelled and a newer one started; that one has its own timer.
+		if (WeakBody.IsValid() && WeakBody->GetAnimationMode() == EAnimationMode::AnimationSingleNode && !WeakBody->IsPlaying())
+		{
+			WeakBody->SetAnimationMode(EAnimationMode::AnimationBlueprint);
+			LTTStopEmoteMusic(WeakBody->GetWorld());
+		}
+	}), Emote->GetPlayLength() + 0.1f, false);
+}
 
 ACleanCutActionCharacter::ACleanCutActionCharacter()
 {
@@ -98,6 +195,32 @@ void ACleanCutActionCharacter::SetupPlayerInputComponent(UInputComponent* Player
 		if (Crouch)
 		{
 			EnhancedInputComponent->BindAction(Crouch, ETriggerEvent::Started, this, &ACleanCutActionCharacter::DoCrouchToggle);
+		}
+
+		// Emote (G / d-pad up / UI_TouchSimple's Btn_Emote, which injects IA_Emote): the action asset is loaded by path,
+		// the key mapping is a runtime context like crouch's. Kept out of the header so it can go in through Live Coding.
+		if (UInputAction* EmoteAction = LoadObject<UInputAction>(nullptr, LTTEmoteActionPath))
+		{
+			APlayerController* PC = Cast<APlayerController>(GetController());
+			if (UEnhancedInputLocalPlayerSubsystem* Subsystem = PC ? ULocalPlayer::GetSubsystem<UEnhancedInputLocalPlayerSubsystem>(PC->GetLocalPlayer()) : nullptr)
+			{
+				UInputMappingContext* EmoteContext = NewObject<UInputMappingContext>(this, TEXT("IMC_Emote_Runtime"));
+				EmoteContext->MapKey(EmoteAction, EKeys::G);
+				EmoteContext->MapKey(EmoteAction, EKeys::Gamepad_DPad_Up);
+				Subsystem->AddMappingContext(EmoteContext, 1);
+			}
+			EnhancedInputComponent->BindActionValueLambda(EmoteAction, ETriggerEvent::Started,
+				[WeakThis = TWeakObjectPtr<ACleanCutActionCharacter>(this)](const FInputActionValue&)
+				{
+					if (WeakThis.IsValid())
+					{
+						LTTPlayEmote(*WeakThis);
+					}
+				});
+		}
+		else
+		{
+			UE_LOG(LogCleanCutAction, Warning, TEXT("Emote input action not found: %s"), LTTEmoteActionPath);
 		}
 	}
 	else

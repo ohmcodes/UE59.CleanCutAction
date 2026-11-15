@@ -5,6 +5,7 @@
 #include "CleanCutActionPlayerController.h"
 #include "Interaction/LTTInteractableBase.h"
 #include "Interaction/LTTCleanupHUD.h"
+#include "Interaction/LTTWaterPuddle.h"
 #include "Interaction/LTTEndScreen.h"
 #include "UI/LTTBriefingScreen.h"
 #include "UI/LTTEndingOverlay.h"
@@ -143,7 +144,7 @@ void ALTTMessDirector::SetupTasks()
 	}
 
 	UE_LOG(LogTemp, Log, TEXT("MessDirector: %d cleanup props."), Tasks.Num());
-	OnProgressChanged.Broadcast(PlacedCount, Tasks.Num());
+	OnProgressChanged.Broadcast(GetPlacedCount(), GetTotalCount());
 
 	if (bEarthquakeOnStart)
 	{
@@ -490,7 +491,27 @@ void ALTTMessDirector::NotifyPlaced(ALTTInteractableBase* Prop)
 			++PlacedCount;
 		}
 	}
-	OnProgressChanged.Broadcast(PlacedCount, Tasks.Num());
+	OnProgressChanged.Broadcast(GetPlacedCount(), GetTotalCount());
+	CheckComplete();
+}
+
+void ALTTMessDirector::RegisterExtraTask()
+{
+	++ExtraTaskTotal;
+	OnProgressChanged.Broadcast(GetPlacedCount(), GetTotalCount());
+}
+
+void ALTTMessDirector::NotifyExtraTaskDone()
+{
+	ExtraTaskDone = FMath::Min(ExtraTaskDone + 1, ExtraTaskTotal);
+	OnProgressChanged.Broadcast(GetPlacedCount(), GetTotalCount());
+	CheckComplete();
+}
+
+void ALTTMessDirector::RemoveExtraTask()
+{
+	ExtraTaskTotal = FMath::Max(ExtraTaskTotal - 1, ExtraTaskDone);
+	OnProgressChanged.Broadcast(GetPlacedCount(), GetTotalCount());
 	CheckComplete();
 }
 
@@ -543,13 +564,13 @@ void ALTTMessDirector::HandlePropDestroyed(AActor* DestroyedActor)
 	{
 		++BrokenCount; // shattered or disappeared before it was put back
 	}
-	OnProgressChanged.Broadcast(PlacedCount, Tasks.Num());
+	OnProgressChanged.Broadcast(GetPlacedCount(), GetTotalCount());
 	CheckComplete();
 }
 
 void ALTTMessDirector::CheckComplete()
 {
-	if (bAllPlaced || Tasks.Num() == 0 || PlacedCount < Tasks.Num())
+	if (bAllPlaced || GetTotalCount() == 0 || PlacedCount < Tasks.Num() || ExtraTaskDone < ExtraTaskTotal)
 	{
 		return;
 	}
@@ -1548,6 +1569,16 @@ int32 ALTTMessDirector::CheatPlaceAll(int32 LeaveCount)
 	ToPlace.Sort([](const ALTTInteractableBase& A, const ALTTInteractableBase& B) { return StackDepth(&A) < StackDepth(&B); });
 
 	ClearHint();
+	// Puddles too, or the ending couldn't be reached by placing the props that were left.
+	TArray<ALTTWaterPuddle*> Puddles;
+	for (TActorIterator<ALTTWaterPuddle> It(GetWorld()); It; ++It)
+	{
+		Puddles.Add(*It);
+	}
+	for (ALTTWaterPuddle* Puddle : Puddles)
+	{
+		Puddle->CleanInstantly();
+	}
 	for (ALTTInteractableBase* Prop : ToPlace)
 	{
 		Prop->SnapToHome(); // calls NotifyPlaced (and the end screen if nothing was left)

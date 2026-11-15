@@ -22,7 +22,8 @@ enum class ELTTPlaceHint : uint8
 	NeedsSupport,  // aiming at its home, but the prop under it (e.g. the table) isn't back yet: drops it
 	Fumble,        // aim just misses its home: dropping it here breaks it
 	Trash,         // holding trash, aiming at a trash bin: throws it away
-	Wash           // holding a dish, aiming at a sink: washes it
+	Wash,          // holding a dish, aiming at a sink: washes it
+	Mop            // holding the mop, aiming at a water puddle: mops it (the mop stays in the hand)
 };
 
 UCLASS(ClassGroup = (LTT), meta = (BlueprintSpawnableComponent))
@@ -62,6 +63,10 @@ public:
 	/** Max distance from the eye to a home silhouette for placing. */
 	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Interaction")
 	float PlaceDistance = 400.f;
+
+	/** How far from the eye the held mop reaches a water puddle (cm). */
+	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Interaction")
+	float MopReach = 260.f;
 
 	/** Dropping a cleanup prop while the aim only just misses its home silhouette breaks it (a fumbled placement). */
 	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Interaction|Fumble")
@@ -108,6 +113,10 @@ protected:
 
 	/** The sink the held dish is aimed at (PlaceHint Wash). */
 	TWeakObjectPtr<class ULTTWashStationComponent> TargetStation;
+
+	/** The puddle the held mop is aimed at (PlaceHint Mop), and where on it. */
+	TWeakObjectPtr<class ALTTWaterPuddle> TargetPuddle;
+	FVector TargetPuddlePoint = FVector::ZeroVector;
 	void SetSupportGhost(ALTTInteractableBase* Support);
 	TWeakObjectPtr<UInputComponent> BoundInputComponent;
 };

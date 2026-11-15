@@ -147,7 +147,8 @@ void ALTTInteractableBase::ApplyPhysicsSettings()
 	// Hit events drive the break-on-throw logic in BP_MasterInteractables.
 	Mesh->SetNotifyRigidBodyCollision(true);
 	constexpr float PawnIgnoreRadius = 30.f;
-	Mesh->SetCollisionResponseToChannel(ECC_Pawn, GetPropRadius() < PawnIgnoreRadius ? ECR_Ignore : ECR_Block);
+	// The mop is long but thin: lying on the floor it would trap the player, so it never blocks them either.
+	Mesh->SetCollisionResponseToChannel(ECC_Pawn, (GetPropRadius() < PawnIgnoreRadius || bIsMop) ? ECR_Ignore : ECR_Block);
 }
 
 float ALTTInteractableBase::GetPropRadius() const
@@ -1084,7 +1085,7 @@ AActor* ALTTInteractableBase::ShatterGeneric(FVector ImpactPoint, bool bDestroyP
 {
 	UGeometryCollection* Collection = GenericBreakCollection.LoadSynchronous();
 	UWorld* World = GetWorld();
-	if (!Collection || !World || !Mesh || !Mesh->GetStaticMesh())
+	if (!Collection || !World || !Mesh || !Mesh->GetStaticMesh() || bIsMop)
 	{
 		return nullptr;
 	}
@@ -1144,7 +1145,8 @@ void ALTTInteractableBase::K2_DestroyActor()
 
 void ALTTInteractableBase::BreakAway()
 {
-	if (bBrokenInPlace || bTrashed || IsActorBeingDestroyed())
+	// The mop never breaks: without it the puddles couldn't be cleaned.
+	if (bBrokenInPlace || bTrashed || bIsMop || IsActorBeingDestroyed())
 	{
 		return;
 	}
