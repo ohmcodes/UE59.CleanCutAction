@@ -18,6 +18,8 @@
 #include "TimerManager.h"
 #include "UObject/ConstructorHelpers.h"
 
+#include "UI/LTTInputDevice.h"
+
 #define LOCTEXT_NAMESPACE "LTTEffectStation"
 
 ALTTEffectStation::ALTTEffectStation()
@@ -272,6 +274,7 @@ void ALTTEffectStation::Tick(float DeltaSeconds)
 	}
 
 	TimeInStation += DeltaSeconds;
+	// Gamepad: RT is the action, B leaves (A stays jump, which still works here).
 	const bool bAction = PC->IsInputKeyDown(EKeys::LeftMouseButton) || PC->IsInputKeyDown(EKeys::Gamepad_RightTrigger);
 	const bool bExit = PC->IsInputKeyDown(EKeys::E) || PC->IsInputKeyDown(EKeys::RightMouseButton) || PC->IsInputKeyDown(EKeys::Gamepad_FaceButton_Right);
 	const bool bPressed = bAction && !bPrevAction;
@@ -394,11 +397,18 @@ void ALTTEffectStation::Tick(float DeltaSeconds)
 			{
 				Sign = MouseX > 0.f ? 1 : -1;
 			}
-			if (PC->WasInputKeyJustPressed(EKeys::A))
+			// Gamepad: waggle either stick left and right, or tap LB / RB.
+			const float StickX = FMath::Abs(PC->GetInputAnalogKeyState(EKeys::Gamepad_LeftX)) > FMath::Abs(PC->GetInputAnalogKeyState(EKeys::Gamepad_RightX))
+				? PC->GetInputAnalogKeyState(EKeys::Gamepad_LeftX) : PC->GetInputAnalogKeyState(EKeys::Gamepad_RightX);
+			if (FMath::Abs(StickX) > 0.6f)
+			{
+				Sign = StickX > 0.f ? 1 : -1;
+			}
+			if (PC->WasInputKeyJustPressed(EKeys::A) || PC->WasInputKeyJustPressed(EKeys::Gamepad_LeftShoulder))
 			{
 				Sign = -1;
 			}
-			else if (PC->WasInputKeyJustPressed(EKeys::D))
+			else if (PC->WasInputKeyJustPressed(EKeys::D) || PC->WasInputKeyJustPressed(EKeys::Gamepad_RightShoulder))
 			{
 				Sign = 1;
 			}
@@ -417,7 +427,7 @@ void ALTTEffectStation::Tick(float DeltaSeconds)
 		else
 		{
 			FlashElapsed += DeltaSeconds;
-			if (bPressed || PC->WasInputKeyJustPressed(EKeys::F))
+			if (bPressed || PC->WasInputKeyJustPressed(EKeys::F) || PC->WasInputKeyJustPressed(EKeys::Gamepad_FaceButton_Top))
 			{
 				Finish(FlashElapsed <= 0.4f ? ELTTGrade::Perfect : FlashElapsed <= 0.8f ? ELTTGrade::Good : ELTTGrade::Late);
 			}
@@ -445,11 +455,13 @@ void ALTTEffectStation::Tick(float DeltaSeconds)
 				SelectedChoice = i;
 			}
 		}
-		if (PC->WasInputKeyJustPressed(EKeys::MouseScrollDown) || PC->WasInputKeyJustPressed(EKeys::D))
+		if (PC->WasInputKeyJustPressed(EKeys::MouseScrollDown) || PC->WasInputKeyJustPressed(EKeys::D)
+			|| PC->WasInputKeyJustPressed(EKeys::Gamepad_DPad_Right) || PC->WasInputKeyJustPressed(EKeys::Gamepad_RightShoulder))
 		{
 			SelectedChoice = (SelectedChoice + 1) % Num;
 		}
-		if (PC->WasInputKeyJustPressed(EKeys::MouseScrollUp) || PC->WasInputKeyJustPressed(EKeys::A))
+		if (PC->WasInputKeyJustPressed(EKeys::MouseScrollUp) || PC->WasInputKeyJustPressed(EKeys::A)
+			|| PC->WasInputKeyJustPressed(EKeys::Gamepad_DPad_Left) || PC->WasInputKeyJustPressed(EKeys::Gamepad_LeftShoulder))
 		{
 			SelectedChoice = (SelectedChoice + Num - 1) % Num;
 		}
@@ -748,6 +760,37 @@ float ALTTEffectStation::GetProgress() const
 
 FText ALTTEffectStation::GetInstruction() const
 {
+	if (ULTTInputDeviceSubsystem::IsGamepad())
+	{
+		switch (Game)
+		{
+		case ELTTStationGame::Press:
+			return LOCTEXT("InsPressPad", "Press RT to clap the slate!");
+		case ELTTStationGame::Timing:
+			return LOCTEXT("InsTimingPad", "Press RT when the marker hits the green!");
+		case ELTTStationGame::HoldRelease:
+			return LOCTEXT("InsHoldPad", "Hold RT, release in the green. Don't overdo it!");
+		case ELTTStationGame::Sustain:
+			return LOCTEXT("InsSustainPad", "Hold and release RT to keep the needle in the green");
+		case ELTTStationGame::Shake:
+			return bFlashPhase ? LOCTEXT("InsFlashPad", "FLASH! PRESS RT NOW!") : LOCTEXT("InsShakePad", "Shake it! Waggle a stick left and right (or tap LB / RB)");
+		case ELTTStationGame::Choice:
+		{
+			FString Options;
+			for (int32 i = 0; i < Choices.Num(); ++i)
+			{
+				Options += FString::Printf(TEXT("%s%s%s   "), i == SelectedChoice ? TEXT(">> ") : TEXT(""),
+					*Choices[i].Name.ToString(), i == SelectedChoice ? TEXT(" <<") : TEXT(""));
+			}
+			return FText::Format(LOCTEXT("InsChoicePad", "{0}\nPick with the d-pad or LB / RB, RT to slide it in"), FText::FromString(Options.TrimEnd()));
+		}
+		case ELTTStationGame::Toss:
+			return bOnTarget ? LOCTEXT("InsTossOnPad", "ON TARGET - hold RT to charge, release in the green to throw!")
+				: FText::Format(LOCTEXT("InsTossPad", "Aim at {0} with the right stick, hold RT to charge, release in the green"), FText::FromName(TossTargetName));
+		default:
+			break;
+		}
+	}
 	switch (Game)
 	{
 	case ELTTStationGame::Press:

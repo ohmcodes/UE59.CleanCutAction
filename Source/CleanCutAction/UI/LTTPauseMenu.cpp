@@ -20,6 +20,8 @@
 #include "Kismet/GameplayStatics.h"
 #include "UI/LTTLeaderboardPanel.h"
 
+#include "UI/LTTInputDevice.h"
+
 #define LOCTEXT_NAMESPACE "LTTPauseMenu"
 
 namespace // names prefixed: unity builds can put this file next to other widgets with the same helpers
@@ -271,12 +273,25 @@ void ULTTPauseMenu::NativeTick(const FGeometry& MyGeometry, float InDeltaTime)
 	{
 		CheatButton->SetRenderOpacity(CheatButton->IsHovered() ? 1.f : 0.55f);
 	}
+	// Gamepad: focus on Resume so the left stick / d-pad move through the buttons and A presses them.
+	ULTTInputDeviceSubsystem::EnsureGamepadFocus(this, ResumeButton);
+	const int32 Device = static_cast<int32>(ULTTInputDeviceSubsystem::GetCurrent());
+	if (Device != AppliedInputDevice)
+	{
+		AppliedInputDevice = Device;
+		if (UTextBlock* KeysHint = Cast<UTextBlock>(GetWidgetFromName(TEXT("KeysHint"))))
+		{
+			KeysHint->SetText(ULTTInputDeviceSubsystem::IsGamepad()
+				? LOCTEXT("KeysHintPad", "Menu / B to resume     A to select")
+				: LOCTEXT("KeysHint", "P / Esc to resume"));
+		}
+	}
 }
 
 FReply ULTTPauseMenu::NativeOnKeyDown(const FGeometry& InGeometry, const FKeyEvent& InKeyEvent)
 {
 	const FKey Key = InKeyEvent.GetKey();
-	if (!InKeyEvent.IsRepeat() && (Key == EKeys::P || Key == EKeys::Escape || Key == EKeys::Gamepad_Special_Right))
+	if (!InKeyEvent.IsRepeat() && (Key == EKeys::P || Key == EKeys::Escape || Key == EKeys::Gamepad_Special_Right || ULTTInputDeviceSubsystem::IsBackKey(Key)))
 	{
 		Resume();
 		return FReply::Handled();

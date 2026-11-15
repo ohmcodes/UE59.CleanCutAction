@@ -20,7 +20,7 @@ DECLARE_LOG_CATEGORY_EXTERN(LogTemplateCharacter, Log, All);
 /**
  *  A basic first person character
  */
-UCLASS(abstract)
+UCLASS(abstract, config=Game)
 class ACleanCutActionCharacter : public ACharacter
 {
 	GENERATED_BODY()
@@ -62,6 +62,18 @@ protected:
 	UPROPERTY(Transient)
 	TObjectPtr<UInputAction> RuntimeCrouchAction;
 
+	/** Right stick turn speed at full tilt, degrees per second. The stick used to add a fixed angle every frame,
+	 *  so it spun far too fast (and faster at higher frame rates). Mouse and trackpad look are unchanged. */
+	UPROPERTY(EditAnywhere, Config, Category ="Input|Gamepad Look", meta = (ClampMin = "10", ClampMax = "720"))
+	float GamepadYawRate = 140.f;
+
+	UPROPERTY(EditAnywhere, Config, Category ="Input|Gamepad Look", meta = (ClampMin = "10", ClampMax = "720"))
+	float GamepadPitchRate = 95.f;
+
+	/** Response curve: 1 = linear, higher = finer aim near the centre of the stick, same top speed. */
+	UPROPERTY(EditAnywhere, Config, Category ="Input|Gamepad Look", meta = (ClampMin = "1", ClampMax = "4"))
+	float GamepadLookExponent = 1.8f;
+
 	UPROPERTY(Transient)
 	TObjectPtr<UInputMappingContext> RuntimeCrouchContext;
 
@@ -85,6 +97,9 @@ protected:
 
 	/** Called from Input Actions for looking input */
 	void LookInput(const FInputActionValue& Value);
+
+	/** Right stick look: scaled to GamepadYawRate / GamepadPitchRate per second with the response curve. */
+	void GamepadLookInput(const FInputActionValue& Value);
 
 	/** Handles aim inputs from either controls or UI interfaces */
 	UFUNCTION(BlueprintCallable, Category="Input")

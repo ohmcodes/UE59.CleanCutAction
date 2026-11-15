@@ -31,6 +31,7 @@
 #include "Interaction/LTTPowerSubsystem.h"
 #include "Blueprint/WidgetLayoutLibrary.h"
 #include "EngineUtils.h"
+#include "UI/LTTInputDevice.h"
 
 #define LOCTEXT_NAMESPACE "LTTCleanupHUD"
 
@@ -75,17 +76,18 @@ void ULTTCleanupHUD::NativeOnInitialized()
 	{
 		BuildControlsLegend(); // a WBP_ child baked before the legend existed
 	}
+	AddMissingLegendParts();
 	SetControlsLegendOpen(bControlsLegendStartsOpen);
 }
 
-UWidget* ULTTCleanupHUD::MakeKeyCap(const FText& Key) const
+UWidget* ULTTCleanupHUD::MakeKeyCap(const FText& Key, FName TextName) const
 {
 	UBorder* Cap = WidgetTree->ConstructWidget<UBorder>(UBorder::StaticClass());
 	LTTTheme::ApplyBrush(Cap, LTTTheme::Rounded(LTTTheme::Hex(0x52, 0x22, 0x08), 6.f, LTTTheme::WoodDark(), 1.5f));
 	Cap->SetPadding(FMargin(7.f, 1.f, 7.f, 2.f));
 	Cap->SetHorizontalAlignment(HAlign_Center);
 	Cap->SetVerticalAlignment(VAlign_Center);
-	UTextBlock* Text = WidgetTree->ConstructWidget<UTextBlock>(UTextBlock::StaticClass());
+	UTextBlock* Text = WidgetTree->ConstructWidget<UTextBlock>(UTextBlock::StaticClass(), TextName);
 	LTTTheme::StyleText(Text, 13, LTTTheme::TitleCream());
 	Text->SetText(Key);
 	Cap->SetContent(Text);
@@ -104,9 +106,9 @@ UWidget* ULTTCleanupHUD::MakeMouseCap(const TCHAR* IconName) const
 	return Cap;
 }
 
-void ULTTCleanupHUD::AddLegendRow(UVerticalBox* Box, const TArray<UWidget*>& Caps, const FText& Action) const
+void ULTTCleanupHUD::AddLegendRow(UVerticalBox* Box, const TArray<UWidget*>& Caps, const FText& Action, FName RowName) const
 {
-	UHorizontalBox* Row = WidgetTree->ConstructWidget<UHorizontalBox>(UHorizontalBox::StaticClass());
+	UHorizontalBox* Row = WidgetTree->ConstructWidget<UHorizontalBox>(UHorizontalBox::StaticClass(), RowName);
 	// Fixed-width key column so the action names line up.
 	USizeBox* KeyColumn = WidgetTree->ConstructWidget<USizeBox>(USizeBox::StaticClass());
 	KeyColumn->SetMinDesiredWidth(92.f);
@@ -179,11 +181,19 @@ void ULTTCleanupHUD::BuildControlsLegend()
 	AddLegendRow(List, { MakeKeyCap(LOCTEXT("KeySpace", "Space")) }, LOCTEXT("LegendJump", "Jump"));
 	AddLegendRow(List, { MakeKeyCap(LOCTEXT("KeyC", "C")), MakeKeyCap(LOCTEXT("KeyCtrl", "Ctrl")) }, LOCTEXT("LegendCrouch", "Crouch"));
 	AddLegendRow(List, { MakeKeyCap(LOCTEXT("KeyF", "F")) }, LOCTEXT("LegendHint", "Hint"));
+	AddLegendRow(List, { MakeKeyCap(LOCTEXT("KeyG", "G")) }, LOCTEXT("LegendDance", "Dance"), TEXT("LegendDanceRow"));
 	AddLegendRow(List, { MakeKeyCap(LOCTEXT("KeyP", "P")), MakeKeyCap(LOCTEXT("KeyEsc", "Esc")) }, LOCTEXT("LegendPause", "Pause / Unstuck"));
 
+	// Same list for a controller (Xbox / Steam Deck names); SetControlsLegendOpen shows one of the two.
+	UVerticalBox* PadList = WidgetTree->ConstructWidget<UVerticalBox>(UVerticalBox::StaticClass(), TEXT("ControlsListPad"));
+	ControlsListPad = PadList;
+	PadList->SetVisibility(ESlateVisibility::Collapsed);
+	Column->AddChildToVerticalBox(PadList);
+	FillGamepadLegend(PadList);
+
 	// Footer: "[H] Hide controls", or "[H] Controls" when folded.
-	UHorizontalBox* Footer = WidgetTree->ConstructWidget<UHorizontalBox>(UHorizontalBox::StaticClass());
-	if (UHorizontalBoxSlot* S = Footer->AddChildToHorizontalBox(MakeKeyCap(ToggleControlsKey.GetDisplayName())))
+	UHorizontalBox* Footer = WidgetTree->ConstructWidget<UHorizontalBox>(UHorizontalBox::StaticClass(), TEXT("ControlsFooter"));
+	if (UHorizontalBoxSlot* S = Footer->AddChildToHorizontalBox(MakeKeyCap(ToggleControlsKey.GetDisplayName(), TEXT("ControlsToggleKeyText"))))
 	{
 		S->SetVerticalAlignment(VAlign_Center);
 		S->SetPadding(FMargin(0.f, 0.f, 8.f, 0.f));
@@ -200,6 +210,80 @@ void ULTTCleanupHUD::BuildControlsLegend()
 	}
 }
 
+void ULTTCleanupHUD::FillGamepadLegend(UVerticalBox* List) const
+{
+	auto Pad = [this](const FKey& Key) { return MakeKeyCap(ULTTInputDeviceSubsystem::GamepadKeyLabel(Key)); };
+	AddLegendRow(List, { Pad(EKeys::Gamepad_Left2D) }, LOCTEXT("LegendMove", "Move"));
+	AddLegendRow(List, { Pad(EKeys::Gamepad_Right2D) }, LOCTEXT("LegendLook", "Look"));
+	AddLegendRow(List, { Pad(EKeys::Gamepad_FaceButton_Left) }, LOCTEXT("LegendGrab", "Pick up / Place"));
+	AddLegendRow(List, { Pad(EKeys::Gamepad_RightTrigger) }, LOCTEXT("LegendThrow", "Throw (breaks it!)"));
+	AddLegendRow(List, { Pad(EKeys::Gamepad_FaceButton_Bottom) }, LOCTEXT("LegendJump", "Jump"));
+	AddLegendRow(List, { Pad(EKeys::Gamepad_RightThumbstick) }, LOCTEXT("LegendCrouch", "Crouch"));
+	AddLegendRow(List, { Pad(EKeys::Gamepad_FaceButton_Top) }, LOCTEXT("LegendHint", "Hint"));
+	AddLegendRow(List, { Pad(EKeys::Gamepad_DPad_Up) }, LOCTEXT("LegendDance", "Dance"));
+	AddLegendRow(List, { Pad(EKeys::Gamepad_Special_Right) }, LOCTEXT("LegendPause", "Pause / Unstuck"));
+}
+
+void ULTTCleanupHUD::AddMissingLegendParts()
+{
+	if (!WidgetTree)
+	{
+		return;
+	}
+	if (!ControlsList)
+	{
+		ControlsList = GetWidgetFromName(TEXT("ControlsList"));
+	}
+	UVerticalBox* KbList = Cast<UVerticalBox>(ControlsList);
+
+	// Dance row in the keyboard list, just above Pause.
+	if (KbList && !GetWidgetFromName(TEXT("LegendDanceRow")))
+	{
+		AddLegendRow(KbList, { MakeKeyCap(LOCTEXT("KeyG", "G")) }, LOCTEXT("LegendDance", "Dance"), TEXT("LegendDanceRow"));
+		const int32 Last = KbList->GetChildrenCount() - 1;
+		if (Last >= 1)
+		{
+			UWidget* Row = KbList->GetChildAt(Last);
+			KbList->RemoveChildAt(Last);
+			if (UVerticalBoxSlot* S = Cast<UVerticalBoxSlot>(KbList->InsertChildAt(Last - 1, Row)))
+			{
+				S->SetPadding(FMargin(0.f, 2.f));
+			}
+		}
+	}
+
+	// Gamepad list right after the keyboard one.
+	if (!ControlsListPad)
+	{
+		ControlsListPad = GetWidgetFromName(TEXT("ControlsListPad"));
+	}
+	if (!ControlsListPad && KbList)
+	{
+		if (UVerticalBox* Column = Cast<UVerticalBox>(KbList->GetParent()))
+		{
+			UVerticalBox* PadList = WidgetTree->ConstructWidget<UVerticalBox>(UVerticalBox::StaticClass(), TEXT("ControlsListPad"));
+			PadList->SetVisibility(ESlateVisibility::Collapsed);
+			FillGamepadLegend(PadList);
+			Column->InsertChildAt(Column->GetChildIndex(KbList) + 1, PadList);
+			ControlsListPad = PadList;
+		}
+	}
+
+	// Footer key cap label: named in new layouts; older ones have it as the text in the cap left of ControlsToggleText.
+	ControlsToggleKeyText = Cast<UTextBlock>(GetWidgetFromName(TEXT("ControlsToggleKeyText")));
+	if (!ControlsToggleKeyText)
+	{
+		const UWidget* Toggle = GetWidgetFromName(TEXT("ControlsToggleText"));
+		if (const UHorizontalBox* Footer = Toggle ? Cast<UHorizontalBox>(Toggle->GetParent()) : nullptr)
+		{
+			if (const UBorder* Cap = Cast<UBorder>(Footer->GetChildAt(0)))
+			{
+				ControlsToggleKeyText = Cast<UTextBlock>(Cap->GetContent());
+			}
+		}
+	}
+}
+
 void ULTTCleanupHUD::SetControlsLegendOpen(bool bOpen)
 {
 	bLegendOpen = bOpen;
@@ -211,9 +295,19 @@ void ULTTCleanupHUD::SetControlsLegendOpen(bool bOpen)
 	{
 		ControlsToggleText = Cast<UTextBlock>(GetWidgetFromName(TEXT("ControlsToggleText")));
 	}
+	const bool bPad = ULTTInputDeviceSubsystem::IsGamepad();
+	bLegendShowsPad = bPad;
 	if (ControlsList)
 	{
-		ControlsList->SetVisibility(bOpen ? ESlateVisibility::HitTestInvisible : ESlateVisibility::Collapsed);
+		ControlsList->SetVisibility(bOpen && !bPad ? ESlateVisibility::HitTestInvisible : ESlateVisibility::Collapsed);
+	}
+	if (ControlsListPad)
+	{
+		ControlsListPad->SetVisibility(bOpen && bPad ? ESlateVisibility::HitTestInvisible : ESlateVisibility::Collapsed);
+	}
+	if (ControlsToggleKeyText)
+	{
+		ControlsToggleKeyText->SetText(ULTTInputDeviceSubsystem::KeyLabelFor(ToggleControlsKey, ToggleControlsGamepadKey));
 	}
 	if (ControlsToggleText)
 	{
@@ -229,11 +323,17 @@ void ULTTCleanupHUD::UpdateControlsLegend()
 	}
 	APlayerController* PC = GetOwningPlayer();
 	const ACleanCutActionPlayerController* CCPC = Cast<ACleanCutActionPlayerController>(PC);
-	const bool bTouch = CCPC && CCPC->ShouldUseTouchControls();
+	const bool bTouch = CCPC && CCPC->IsShowingTouchControls();
 	const ALTTMessDirector* D = Director.Get();
 	const bool bShow = !bTouch && !(D && (D->IsBriefingOpen() || D->IsSetClean() || D->IsTimeUp()));
 	ControlsLegend->SetVisibility(bShow ? ESlateVisibility::HitTestInvisible : ESlateVisibility::Collapsed);
-	if (bShow && PC && !PC->IsPaused() && ToggleControlsKey.IsValid() && PC->WasInputKeyJustPressed(ToggleControlsKey))
+	if (bLegendShowsPad != ULTTInputDeviceSubsystem::IsGamepad())
+	{
+		SetControlsLegendOpen(bLegendOpen); // swap the keyboard / gamepad lists
+	}
+	const bool bTogglePressed = PC && ((ToggleControlsKey.IsValid() && PC->WasInputKeyJustPressed(ToggleControlsKey))
+		|| (ToggleControlsGamepadKey.IsValid() && PC->WasInputKeyJustPressed(ToggleControlsGamepadKey)));
+	if (bShow && !PC->IsPaused() && bTogglePressed)
 	{
 		SetControlsLegendOpen(!bLegendOpen);
 	}
@@ -388,14 +488,14 @@ void ULTTCleanupHUD::UpdateTexts()
 	if (HintKeyText)
 	{
 		const float Cooldown = D ? D->GetHintCooldownRemaining() : 0.f;
-		const FText Key = D ? D->HintKey.GetDisplayName() : FText::GetEmpty();
+		const FText Key = D ? ULTTInputDeviceSubsystem::KeyLabelFor(D->HintKey, D->HintGamepadKey) : FText::GetEmpty();
 		HintKeyText->SetText(Cooldown > 0.f
 			? FText::Format(LOCTEXT("HintCooldown", "[{0}] Hint ({1}s)"), Key, FText::AsNumber(FMath::CeilToInt(Cooldown)))
 			: FText::Format(LOCTEXT("HintReady", "[{0}] Hint"), Key));
 		HintKeyText->SetColorAndOpacity(FSlateColor(Cooldown > 0.f ? LTTTheme::InkMuted() : LTTTheme::HeaderBrown()));
 		// Touch has its own Hint button (UI_TouchSimple), so the "[F] Hint" key prompt is desktop only.
 		const ACleanCutActionPlayerController* CCPC = Cast<ACleanCutActionPlayerController>(GetOwningPlayer());
-		const bool bTouch = CCPC && CCPC->ShouldUseTouchControls();
+		const bool bTouch = CCPC && CCPC->IsShowingTouchControls();
 		const ESlateVisibility HintVis = D && !bTouch && !D->IsSetClean() && !D->IsTimeUp() ? ESlateVisibility::HitTestInvisible : ESlateVisibility::Collapsed;
 		HintKeyText->SetVisibility(HintVis);
 		if (HintIcon)

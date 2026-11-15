@@ -17,6 +17,8 @@
 #include "Components/VerticalBoxSlot.h"
 #include "GameFramework/PlayerController.h"
 
+#include "UI/LTTInputDevice.h"
+
 #define LOCTEXT_NAMESPACE "LTTLeaderboardPanel"
 
 namespace LTTLeaderboardPanelPrivate
@@ -610,6 +612,9 @@ void ULTTLeaderboardPanel::NativeTick(const FGeometry& MyGeometry, float InDelta
 {
 	Super::NativeTick(MyGeometry, InDeltaTime);
 	AnimTime += InDeltaTime; // real time: runs while the game is paused
+
+	// Gamepad: focus a button (Close) so the left stick / d-pad and A work; B closes from anywhere.
+	ULTTInputDeviceSubsystem::EnsureGamepadFocus(this, CloseButton);
 
 	if (UWidget* Frame = CardFrame ? CardFrame.Get() : Card.Get())
 	{
