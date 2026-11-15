@@ -143,8 +143,16 @@ public:
 	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Interactable|Cleanup")
 	bool bIsCleanupTask = true;
 
-	/** Not part of the mess: no interaction, no physics, skipped by the earthquake and see-through for the aim trace. */
-	bool IsSetDressing() const { return !bIsCleanupTask; }
+	/** Not part of the mess: no interaction, no physics, skipped by the earthquake and see-through for the aim trace.
+	 *  The mop isn't a cleanup task either, but it's a tool: it can always be picked up. */
+	bool IsSetDressing() const { return !bIsCleanupTask && !bIsMop; }
+
+	/** Turns a cleanup prop into set dressing before the mess starts: it stays where it is, is never picked up and
+	 *  doesn't simulate. The mess director uses it to keep the job count at MaxCleanupTasks. */
+	void MakeSetDressing();
+
+	/** Has a light switch, an appliance or a music change: it does something when used where it stands. */
+	bool HasUseAction() const;
 
 	// ---- Director barks ----
 

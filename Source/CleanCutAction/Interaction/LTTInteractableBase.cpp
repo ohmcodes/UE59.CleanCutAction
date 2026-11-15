@@ -96,6 +96,27 @@ void ALTTInteractableBase::BeginPlay()
 	}
 }
 
+void ALTTInteractableBase::MakeSetDressing()
+{
+	bIsCleanupTask = false;
+	bCanBePickedUp = false;
+	if (Mesh)
+	{
+		Mesh->SetSimulatePhysics(false);
+	}
+	UpdateGhost(false, false, false);
+	// Like a set dressing lamp from the start: it never leaves home, so it's lit.
+	if (CachedLightSwitch)
+	{
+		CachedLightSwitch->SetLightOn(true);
+	}
+}
+
+bool ALTTInteractableBase::HasUseAction() const
+{
+	return CachedLightSwitch || CachedAppliance || bChangesMusic;
+}
+
 bool ALTTInteractableBase::HasSupportBelow() const
 {
 	const FBoxSphereBounds& B = Mesh->Bounds;
