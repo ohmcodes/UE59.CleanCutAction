@@ -108,6 +108,10 @@ public:
 	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Barks|Triggers", meta = (ClampMin = "5"))
 	float IdleRepeatSeconds = 60.f;
 
+	/** While the mains are off (the breaker starts off), seconds between Marlowe's "turn the power on" reminders. */
+	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Barks|Triggers", meta = (ClampMin = "5"))
+	float PowerNagSeconds = 45.f;
+
 	/** A placement within this many seconds of the last one adds to the streak (Docs/03 §3.14). */
 	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Barks|Triggers", meta = (ClampMin = "1"))
 	float StreakWindow = 6.f;
@@ -282,6 +286,9 @@ protected:
 	float StartTime = 0.f;
 	float LastActivityTime = 0.f;
 	float NextIdleTime = 0.f;
+	/** Marlowe has said the "power's out" line once (later ones are reminders). */
+	bool bPowerOutSaid = false;
+	float NextPowerNagTime = 0.f;
 	float LastPlaceTime = -100.f;
 	int32 Streak = 0;
 	int32 LastPlaced = 0;

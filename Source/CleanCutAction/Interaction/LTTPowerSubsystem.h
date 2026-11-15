@@ -8,7 +8,7 @@
 #include "Subsystems/WorldSubsystem.h"
 #include "LTTPowerSubsystem.generated.h"
 
-class ULightComponent;
+class USceneComponent;
 
 DECLARE_DYNAMIC_MULTICAST_DELEGATE_OneParam(FLTTOnPowerChanged, bool, bPowerOn);
 
@@ -35,6 +35,6 @@ protected:
 
 	bool bPowerOn = true;
 
-	/** Visibility of each local light when the power went off, restored when it comes back. */
-	TMap<TWeakObjectPtr<ULightComponent>, bool> SavedVisibility;
+	/** Visibility of each light, sky, fog and cloud component when the power went off, restored when it comes back. */
+	TMap<TWeakObjectPtr<USceneComponent>, bool> SavedVisibility;
 };

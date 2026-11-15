@@ -26,10 +26,43 @@
 #include "Interaction/LTTInteractionComponent.h"
 #include "Interaction/LTTInteractable.h"
 #include "Interaction/LTTWashStationComponent.h"
+#include "Interaction/LTTWaterPuddle.h"
+#include "Interaction/LTTPowerBox.h"
+#include "Interaction/LTTPowerSubsystem.h"
 #include "Blueprint/WidgetLayoutLibrary.h"
 #include "EngineUtils.h"
 
 #define LOCTEXT_NAMESPACE "LTTCleanupHUD"
+
+namespace
+{
+	/** The closest puddle still to be mopped, or null when they're all clean. */
+	const ALTTWaterPuddle* FindNearestWetPuddle(const UObject* WorldContext, const FVector& From)
+	{
+		UWorld* World = WorldContext ? WorldContext->GetWorld() : nullptr;
+		if (!World)
+		{
+			return nullptr;
+		}
+		const ALTTWaterPuddle* Best = nullptr;
+		double BestDistSq = TNumericLimits<double>::Max();
+		for (TActorIterator<ALTTWaterPuddle> It(World); It; ++It)
+		{
+			const ALTTWaterPuddle* Puddle = *It;
+			if (!IsValid(Puddle) || Puddle->IsCleaned())
+			{
+				continue;
+			}
+			const double DistSq = FVector::DistSquared(From, Puddle->GetActorLocation());
+			if (DistSq < BestDistSq)
+			{
+				BestDistSq = DistSq;
+				Best = Puddle;
+			}
+		}
+		return Best;
+	}
+}
 
 void ULTTCleanupHUD::NativeOnInitialized()
 {
@@ -444,17 +477,23 @@ void ULTTCleanupHUD::UpdateArrow()
 	const ALTTInteractableBase* Held = Carry ? Carry->GetHeldItem() : nullptr;
 	const ALTTInteractableBase* Hinted = (Pawn && !Held && Director.IsValid()) ? Director->GetHintTarget() : nullptr;
 
+	// Breaker off (it starts off): with empty hands and no hint up, the hint line and arrow lead to the electric box.
+	const ALTTPowerBox* PowerBox = (Pawn && !Held && !Hinted && Director.IsValid() && Director->HasMessStarted()
+		&& !ULTTPowerSubsystem::IsPowerOnIn(this)) ? ALTTPowerBox::FindFirst(this) : nullptr;
+
 	if (HintText)
 	{
-		if (Hinted && Hinted->Mesh)
+		const FVector HintTarget = Hinted && Hinted->Mesh ? Hinted->Mesh->Bounds.Origin
+			: PowerBox ? PowerBox->GetActorLocation() : FVector::ZeroVector;
+		if ((Hinted && Hinted->Mesh) || PowerBox)
 		{
-			const FVector Target = Hinted->Mesh->Bounds.Origin;
 			const FVector PawnLoc = Pawn->GetActorLocation();
-			const int32 Meters = FMath::RoundToInt(static_cast<float>(FVector::Dist(PawnLoc, Target)) / 100.f);
-			const float Up = static_cast<float>(Target.Z - PawnLoc.Z);
+			const int32 Meters = FMath::RoundToInt(static_cast<float>(FVector::Dist(PawnLoc, HintTarget)) / 100.f);
+			const float Up = static_cast<float>(HintTarget.Z - PawnLoc.Z);
 			const FText Floor = Up > FloorHeight ? LOCTEXT("Upstairs", " (upstairs)")
 				: Up < -FloorHeight ? LOCTEXT("Downstairs", " (downstairs)") : FText::GetEmpty();
-			HintText->SetText(FText::Format(LOCTEXT("HintTarget", "{0} - {1} m{2}"), Hinted->GetPropName(), FText::AsNumber(Meters), Floor));
+			const FText Name = Hinted ? Hinted->GetPropName() : LOCTEXT("PowerOffHint", "Power's off! Turn it on at the electric box");
+			HintText->SetText(FText::Format(LOCTEXT("HintTarget", "{0} - {1} m{2}"), Name, FText::AsNumber(Meters), Floor));
 			HintText->SetVisibility(ESlateVisibility::HitTestInvisible);
 		}
 		else
@@ -469,6 +508,7 @@ void ULTTCleanupHUD::UpdateArrow()
 	}
 	const FVector CamLoc = PC->PlayerCameraManager->GetCameraLocation();
 	const FRotator CamRot = PC->PlayerCameraManager->GetCameraRotation();
+	const ALTTWaterPuddle* WetPuddle = (Held && Held->bIsMop) ? FindNearestWetPuddle(this, CamLoc) : nullptr;
 
 	if (Held && Held->bIsTrash)
 	{
@@ -484,6 +524,11 @@ void ULTTCleanupHUD::UpdateArrow()
 			AimArrowAt(Sink->GetComponentLocation(), CamLoc, CamRot, ArrowColor);
 		}
 	}
+	else if (WetPuddle)
+	{
+		// The mop points at the nearest wet puddle; once they're all mopped it falls through to its home below.
+		AimArrowAt(WetPuddle->GetActorLocation(), CamLoc, CamRot, ArrowColor);
+	}
 	else if (Held)
 	{
 		if (Held->HasHome() && !Held->IsPlaced())
@@ -494,6 +539,10 @@ void ULTTCleanupHUD::UpdateArrow()
 	else if (Hinted && Hinted->Mesh)
 	{
 		AimArrowAt(Hinted->Mesh->Bounds.Origin, CamLoc, CamRot, HintArrowColor);
+	}
+	else if (PowerBox)
+	{
+		AimArrowAt(PowerBox->GetActorLocation(), CamLoc, CamRot, HintArrowColor);
 	}
 }
 

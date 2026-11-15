@@ -158,6 +158,14 @@ void ALTTCleanupBarker::BuildPools()
 
 	// 1.9 Cables, lights, reels, costumes, lens.
 	AddPool("Cable.Power", 2, 1.f, 0.f, { LOCTEXT("P1_Cable_01", "Power restored! I feel a tingle. Either it's art, or I'm being electrocuted.") });
+	// The breaker starts off: the first line after the intro, then reminders until the power is back.
+	AddPool("Power.Out", 3, 1.f, 0.f, {
+		LOCTEXT("P1_PowerOut_01", "And somebody tripped the breaker at the party. Find the electric box - look for the little red light - and turn the power back on.") }).bOneShot = true;
+	AddPool("Power.Remind", 2, 1.f, 0.f, {
+		LOCTEXT("P1_PowerRemind_01", "Still dark, Rookie! The electric box. Red light. Flip it. Let there be light."),
+		LOCTEXT("P1_PowerRemind_02", "I can't direct what I can't see. Power. Box. On. Now."),
+		LOCTEXT("P1_PowerRemind_03", "The breaker, Rookie! This is a film set, not a seance."),
+		LOCTEXT("P1_PowerRemind_04", "Follow the arrow to the electric box and turn the power on. I'll be here. In the dark. Brooding.") });
 	AddPool("Cable.Placed", 1, 1.f, 20.f, { LOCTEXT("P1_Cable_02", "That cable had more knots than this script.") });
 	AddPool("Light.Done", 1, 1.f, 15.f, {
 		LOCTEXT("P1_Light_01", "Look at that glow. That's called motivated lighting. I motivated it. With yelling."),
@@ -655,6 +663,16 @@ void ALTTCleanupBarker::TickTriggers()
 		FFormatOrderedArguments Args;
 		Args.Add(D->HintKey.GetDisplayName());
 		Trigger("Intro", Args);
+	}
+
+	// Breaker off: tell the player once the intro is done, then remind them until the power's back.
+	if (bIntroDone && !bTalking && Queue.Num() == 0 && T >= NextPowerNagTime && !ULTTPowerSubsystem::IsPowerOnIn(this))
+	{
+		if (Trigger(bPowerOutSaid ? FName("Power.Remind") : FName("Power.Out")))
+		{
+			bPowerOutSaid = true;
+			NextPowerNagTime = T + PowerNagSeconds;
+		}
 	}
 
 	// Countdown warnings (only when the clock is long enough for them to mean something).

@@ -2,12 +2,15 @@
 
 #include "Interaction/LTTPowerBox.h"
 #include "Interaction/LTTPowerSubsystem.h"
+#include "Interaction/LTTMessDirector.h"
 #include "Components/AudioComponent.h"
 #include "Components/PointLightComponent.h"
 #include "Components/StaticMeshComponent.h"
 #include "Engine/CollisionProfile.h"
 #include "NiagaraComponent.h"
 #include "Sound/SoundBase.h"
+#include "EngineUtils.h"
+#include "TimerManager.h"
 
 #define LOCTEXT_NAMESPACE "LTTPowerBox"
 
@@ -38,6 +41,45 @@ ALTTPowerBox::ALTTPowerBox()
 	Sparks = CreateDefaultSubobject<UNiagaraComponent>(TEXT("Sparks"));
 	Sparks->SetupAttachment(BoxMesh);
 	Sparks->SetAutoActivate(false);
+}
+
+void ALTTPowerBox::BeginPlay()
+{
+	Super::BeginPlay();
+	if (bStartsOff)
+	{
+		// Next tick, so every lamp has run its own BeginPlay and the subsystem remembers which lights were on.
+		GetWorldTimerManager().SetTimerForNextTick(this, &ALTTPowerBox::CutPowerAtStart);
+	}
+}
+
+void ALTTPowerBox::CutPowerAtStart()
+{
+	// Only the cleaning phase starts in the dark; the Phase 2 shoot (no mess director) keeps the power on.
+	if (!ALTTMessDirector::Get(this))
+	{
+		return;
+	}
+	if (ULTTPowerSubsystem* Power = GetWorld() ? GetWorld()->GetSubsystem<ULTTPowerSubsystem>() : nullptr)
+	{
+		Power->SetPowerOn(false); // silent: no sparks or click, the set is simply dark when the player arrives
+	}
+}
+
+ALTTPowerBox* ALTTPowerBox::FindFirst(const UObject* WorldContext)
+{
+	UWorld* World = WorldContext ? WorldContext->GetWorld() : nullptr;
+	if (World)
+	{
+		for (TActorIterator<ALTTPowerBox> It(World); It; ++It)
+		{
+			if (IsValid(*It))
+			{
+				return *It;
+			}
+		}
+	}
+	return nullptr;
 }
 
 bool ALTTPowerBox::IsPowerOn() const
