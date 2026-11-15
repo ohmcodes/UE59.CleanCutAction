@@ -133,9 +133,13 @@ public:
 
 	// ---- Cleanup: put the prop back where it was in the clean level ----
 
-	/** The set isn't clean until this prop is back home. Off for props that don't matter (trash, extras). */
+	/** The set isn't clean until this prop is back home. Off for set dressing: it can't be picked up or used and
+	 *  never simulates physics, so it stays exactly where it's placed in the level (see IsSetDressing). */
 	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Interactable|Cleanup")
 	bool bIsCleanupTask = true;
+
+	/** Not part of the mess: no interaction, no physics, skipped by the earthquake and see-through for the aim trace. */
+	bool IsSetDressing() const { return !bIsCleanupTask; }
 
 	// ---- Director barks ----
 

@@ -74,18 +74,25 @@ void ALTTInteractableBase::BeginPlay()
 	Mesh->BodyInstance.bUseCCD = true;
 	ApplyPhysicsSettings();
 
+	if (IsSetDressing())
+	{
+		// Not part of the mess: kinematic and solid, never picked up, woken or knocked around.
+		bCanBePickedUp = false;
+		Mesh->SetSimulatePhysics(false);
+	}
 	// Props resting on something simulate from the start so nothing is locked in place.
 	// Wall/ceiling-mounted props (nothing underneath) stay put until grabbed or disturbed.
-	if (bSimulatePhysicsOnBeginPlay && HasSupportBelow())
+	else if (bSimulatePhysicsOnBeginPlay && HasSupportBelow())
 	{
 		Mesh->SetSimulatePhysics(true);
 		Mesh->PutAllRigidBodiesToSleep();
 	}
 
 	// A lamp is dark until it's put back (the switch found its light at home, before the mess moves it).
+	// A set dressing lamp never leaves home, so it starts lit.
 	if (CachedLightSwitch)
 	{
-		CachedLightSwitch->SetLightOn(bPlaced);
+		CachedLightSwitch->SetLightOn(bPlaced || IsSetDressing());
 	}
 }
 
@@ -115,7 +122,7 @@ void ALTTInteractableBase::WakeTouchingProps()
 	for (const FOverlapResult& O : Overlaps)
 	{
 		ALTTInteractableBase* Other = Cast<ALTTInteractableBase>(O.GetActor());
-		if (Other && Other != this && !Other->IsHeld() && !Other->IsPlaced() && Other->Mesh)
+		if (Other && Other != this && !Other->IsHeld() && !Other->IsPlaced() && !Other->IsSetDressing() && Other->Mesh)
 		{
 			if (!Other->Mesh->IsSimulatingPhysics())
 			{
@@ -316,16 +323,22 @@ void ALTTInteractableBase::HandleFirstHitAfterRelease(AActor* Other, const FVect
 
 bool ALTTInteractableBase::IsSwitchableLamp() const
 {
-	return CachedLightSwitch && bPlaced && !bBrokenInPlace;
+	return CachedLightSwitch && (bPlaced || IsSetDressing()) && !bBrokenInPlace;
 }
 
 bool ALTTInteractableBase::IsUsableWhenPlaced() const
 {
-	return (CachedLightSwitch || CachedAppliance || bChangesMusic) && bPlaced && !bBrokenInPlace && !bTrashed;
+	// Set dressing never gets placed (it never leaves home), but its lamp / appliance still works where it stands.
+	return (CachedLightSwitch || CachedAppliance || bChangesMusic) && (bPlaced || IsSetDressing()) && !bBrokenInPlace && !bTrashed;
 }
 
 bool ALTTInteractableBase::CanInteract_Implementation(AActor* InstigatorActor) const
 {
+	// Set dressing isn't part of the mess: never picked up. A lamp or appliance can still be used where it stands.
+	if (IsSetDressing())
+	{
+		return IsUsableWhenPlaced();
+	}
 	// Placed props are locked: no pickup, no outline. A placed lamp or appliance can still be used.
 	if (IsUsableWhenPlaced())
 	{

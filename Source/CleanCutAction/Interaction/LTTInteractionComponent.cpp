@@ -214,7 +214,7 @@ void ULTTInteractionComponent::UpdateFocus()
 	FHitResult Hit;
 	AActor* NewFocus = nullptr;
 	// Placed props are see-through for the trace, so a cup already put back on a table doesn't block
-	// grabbing the plate behind it. Walls and static set pieces still block.
+	// grabbing the plate behind it. Set dressing props are see-through too, unless they can be used (a lamp, an appliance). Walls and static set pieces still block.
 	for (int32 Pass = 0; Pass < MaxPlacedPassThrough + 1; ++Pass)
 	{
 		if (!GetWorld()->SweepSingleByChannel(Hit, ViewLoc, End, FQuat::Identity, TraceChannel, FCollisionShape::MakeSphere(TraceRadius), Params))
@@ -223,7 +223,7 @@ void ULTTInteractionComponent::UpdateFocus()
 		}
 		AActor* HitActor = Hit.GetActor();
 		const ALTTInteractableBase* HitProp = Cast<ALTTInteractableBase>(HitActor);
-		if (HitProp && (HitProp->IsHeld() || (HitProp->IsPlaced() && !HitProp->IsUsableWhenPlaced())))
+		if (HitProp && (HitProp->IsHeld() || ((HitProp->IsPlaced() || HitProp->IsSetDressing()) && !HitProp->IsUsableWhenPlaced())))
 		{
 			Params.AddIgnoredActor(HitActor);
 			continue;
