@@ -81,3 +81,6 @@ DerivedDataCache/*
 
 # Visual Studio upgrade report
 UpgradeLog*.htm
+
+# NVIDIA NGX import libraries are build inputs (needed to link the DLSS plugin)
+!Plugins/DLSS/Source/ThirdParty/NGX/Lib/**/*.lib

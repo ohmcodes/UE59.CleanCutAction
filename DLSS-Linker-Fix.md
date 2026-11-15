@@ -1,31 +1,30 @@
-# Debug x64 Linker Fix (DLSS/NGX)
+# DLSS/NGX Linker Fix
 
 ## Issue
-The project failed to link in **Debug x64** with:
+Every configuration (Development and Debug, editor and game) failed to link the DLSS plugin modules with:
 
 - `LNK1181: cannot open input file ...\Plugins\DLSS\Source\ThirdParty\NGX\Lib\x64\nvsdk_ngx_d.lib`
 
-The NGX import libraries were not present in the workspace plugin copy.
+`.gitignore` ignores `*.lib`, so the NGX import libraries in `Plugins/DLSS/Source/ThirdParty/NGX/Lib/` were never committed. A fresh clone had no `Lib` folder. The DLSS plugins are enabled in `CleanCutAction.uproject`, so UBT builds them and the link fails.
 
-## Changes Applied
+## Fix
 
-### 1) `CleanCutAction.uproject`
-Disabled NVIDIA plugin entries that require missing NGX libs:
+1. Copied `Plugins/DLSS/Source/ThirdParty/NGX/Lib/` (x64 and arm64 `nvsdk_ngx_*.lib`) from the NVIDIA package `UE5.8_DLSS4.5Plugin_v8.9.0`. Only the missing files were copied; the 5.9 patches in the plugin (`bValidateFormatStrings = false`, `EngineVersion 5.9.0`) are untouched.
+2. Added a `.gitignore` exception so the NGX import libraries are committed:
+   `!Plugins/DLSS/Source/ThirdParty/NGX/Lib/**/*.lib`
 
-- `DLSS`
-- `StreamlineCore`
-- `StreamlineNGXCommon`
-- `StreamlineDLSSG`
-- `StreamlineReflex`
+The DLSS plugins stay enabled for Win64 in the `.uproject`.
 
-### 2) `Source/CleanCutAction/CleanCutAction.Build.cs`
-Added a runtime check for NGX import library folder presence before adding DLSS/Streamline module dependencies on Win64.
+## `CleanCutAction.Build.cs` guard
+`CleanCutAction.Build.cs` adds the DLSS/Streamline dependencies and sets `WITH_LTT_DLSS=1` only if `Plugins/DLSS/Source/ThirdParty/NGX/Lib` exists. With the libraries committed, the folder is present and DLSS is compiled in. The guard only affects the game module; it does not stop the plugins themselves from building.
 
-- If `Plugins/DLSS/Source/ThirdParty/NGX/Lib` exists, DLSS deps are added.
-- If it does not exist, `WITH_LTT_DLSS=0` is set and those deps are skipped.
+## Runtime DLLs (still not committed)
+`Plugins/**/Binaries/*` is ignored, so the runtime DLLs must be copied from the NVIDIA package on a fresh clone. The game builds without them, but DLSS, Frame Generation and Reflex will not run:
+
+- `Plugins/DLSS/Binaries/ThirdParty/Win64/` (`nvngx_dlss.dll`, `nvngx_dlssd.dll`, plus `Development/`)
+- `Plugins/StreamlineCore/Binaries/ThirdParty/Win64/` (`sl.*.dll`, `nvngx_dlssg.dll`, `nvngx_deepdvc.dll`, plus `development/`)
+
+Copy only missing files (for example `robocopy <src> <dst> /E /XC /XN /XO`) so the 5.9-patched plugin files are not replaced.
 
 ## Result
-`Intermediate/ProjectFiles/CleanCutAction.vcxproj` builds successfully after the change.
-
-## Notes
-Full solution build may still include unrelated Unreal Engine program-rule errors from the engine installation, but the game project linker error is resolved.
+`CleanCutActionEditor Win64 Development` builds successfully (2026-11-15).
