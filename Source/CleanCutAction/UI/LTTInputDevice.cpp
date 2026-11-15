@@ -28,6 +28,37 @@ namespace
 	/** Sticks under this don't count as "using the gamepad" (resting drift). */
 	constexpr float LTTGamepadAnalogThreshold = 0.4f;
 
+	/** After any gamepad input, mouse clicks and keys don't switch away from the gamepad for this long. Steam Input
+	 *  sends the Steam Controller / Deck trackpads and some buttons as mouse clicks or keyboard keys, mixed in with
+	 *  real gamepad input; without this the prompts flip back to the keyboard every time. */
+	constexpr double LTTGamepadStickySeconds = 1.5;
+	double GLTTLastGamepadInputTime = -1000.0;
+
+	/** Switch to keyboard / mouse or touch, unless the gamepad was used a moment ago. */
+	void LTTSetNonGamepad(ELTTInputDevice Device, const FKey& Cause)
+	{
+		if (ULTTInputDeviceSubsystem::GetCurrent() == ELTTInputDevice::Gamepad
+			&& FPlatformTime::Seconds() - GLTTLastGamepadInputTime < LTTGamepadStickySeconds)
+		{
+			return;
+		}
+		if (ULTTInputDeviceSubsystem::GetCurrent() != Device)
+		{
+			UE_LOG(LogTemp, Log, TEXT("LTTInputDevice: %s (from %s)"), Device == ELTTInputDevice::Touch ? TEXT("touch") : TEXT("keyboard/mouse"), *Cause.ToString());
+		}
+		ULTTInputDeviceSubsystem::SetCurrent(Device);
+	}
+
+	void LTTSetGamepad(const FKey& Cause)
+	{
+		GLTTLastGamepadInputTime = FPlatformTime::Seconds();
+		if (ULTTInputDeviceSubsystem::GetCurrent() != ELTTInputDevice::Gamepad)
+		{
+			UE_LOG(LogTemp, Log, TEXT("LTTInputDevice: gamepad (from %s)"), *Cause.ToString());
+		}
+		ULTTInputDeviceSubsystem::SetCurrent(ELTTInputDevice::Gamepad);
+	}
+
 	/** Buttons whose look was swapped to the focus style, with the style to put back. */
 	TMap<TWeakObjectPtr<UButton>, FButtonStyle> GLTTFocusStyled;
 }
@@ -43,11 +74,11 @@ public:
 		const FKey Key = InKeyEvent.GetKey();
 		if (Key.IsGamepadKey())
 		{
-			ULTTInputDeviceSubsystem::SetCurrent(ELTTInputDevice::Gamepad);
+			LTTSetGamepad(Key);
 		}
 		else if (!Key.IsTouch() && !Key.IsMouseButton())
 		{
-			ULTTInputDeviceSubsystem::SetCurrent(ELTTInputDevice::KeyboardMouse);
+			LTTSetNonGamepad(ELTTInputDevice::KeyboardMouse, Key);
 		}
 		return false;
 	}
@@ -56,14 +87,14 @@ public:
 	{
 		if (InAnalogInputEvent.GetKey().IsGamepadKey() && FMath::Abs(InAnalogInputEvent.GetAnalogValue()) > LTTGamepadAnalogThreshold)
 		{
-			ULTTInputDeviceSubsystem::SetCurrent(ELTTInputDevice::Gamepad);
+			LTTSetGamepad(InAnalogInputEvent.GetKey());
 		}
 		return false;
 	}
 
 	virtual bool HandleMouseButtonDownEvent(FSlateApplication& SlateApp, const FPointerEvent& MouseEvent) override
 	{
-		ULTTInputDeviceSubsystem::SetCurrent(MouseEvent.IsTouchEvent() ? ELTTInputDevice::Touch : ELTTInputDevice::KeyboardMouse);
+		LTTSetNonGamepad(MouseEvent.IsTouchEvent() ? ELTTInputDevice::Touch : ELTTInputDevice::KeyboardMouse, MouseEvent.GetEffectingButton());
 		return false;
 	}
 
