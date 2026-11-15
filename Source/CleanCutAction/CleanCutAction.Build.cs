@@ -1,6 +1,7 @@
 // Copyright Epic Games, Inc. All Rights Reserved.
 
 using UnrealBuildTool;
+using System.IO;
 
 public class CleanCutAction : ModuleRules
 {
@@ -38,7 +39,9 @@ public class CleanCutAction : ModuleRules
 
 		// NVIDIA DLSS / Frame Generation / Reflex (Plugins/DLSS, Plugins/Streamline*): Windows only.
 		// UI/LTTGraphicsSettings.cpp wraps every call in WITH_LTT_DLSS.
-		if (Target.Platform == UnrealTargetPlatform.Win64)
+		bool bHasNgxImportLibs = Directory.Exists(Path.Combine(ModuleDirectory, "../../Plugins/DLSS/Source/ThirdParty/NGX/Lib"));
+
+		if (Target.Platform == UnrealTargetPlatform.Win64 && bHasNgxImportLibs)
 		{
 			PrivateDependencyModuleNames.AddRange(new string[] {
 				"DLSSBlueprint",
