@@ -145,6 +145,9 @@ protected:
 	 *  aren't there yet. Part of BuildDefaultLayout (so the baker can copy them into WBP_Briefing), and run again at
 	 *  startup for a WBP_ child baked before crouch existed. */
 	void AddCrouchRows();
+
+	/** Device the controls / texts were last laid out for (they follow keyboard, gamepad or touch). */
+	int32 AppliedInputDevice = -1;
 	/** Shows ControlsDesktop or ControlsTouch and sets the StartHint text for the current input. */
 	void ApplyInputVariant();
 	void ApplyTexts();

@@ -2,8 +2,11 @@
 
 #include "Interaction/LTTPowerSubsystem.h"
 #include "Interaction/LTTLightSwitchComponent.h"
-#include "Components/LocalLightComponent.h"
-#include "Engine/Light.h"
+#include "Interaction/LTTPowerBox.h"
+#include "Components/LightComponentBase.h"
+#include "Components/SkyAtmosphereComponent.h"
+#include "Components/ExponentialHeightFogComponent.h"
+#include "Components/VolumetricCloudComponent.h"
 #include "Engine/World.h"
 #include "EngineUtils.h"
 #include "UObject/UObjectIterator.h"
@@ -35,25 +38,34 @@ void ULTTPowerSubsystem::SetPowerOn(bool bOn)
 
 	if (!bOn)
 	{
-		// Remember every local light, then switch them all off.
+		// A full blackout: every light in the world (lamps, the sun, the sky light) and the sky, fog and clouds, so the
+		// set is pitch black. Only the power box's own red indicator stays on. Remember each one to restore it later.
 		SavedVisibility.Reset();
-		for (TActorIterator<ALight> It(World); It; ++It)
+		for (TActorIterator<AActor> It(World); It; ++It)
 		{
-			ULocalLightComponent* L = Cast<ULocalLightComponent>(It->GetLightComponent());
-			if (L)
+			if (It->IsA<ALTTPowerBox>())
 			{
-				SavedVisibility.Add(L, L->IsVisible());
-				L->SetVisibility(false);
+				continue;
+			}
+			for (UActorComponent* Comp : It->GetComponents())
+			{
+				USceneComponent* Scene = Cast<USceneComponent>(Comp);
+				if (Scene && (Scene->IsA<ULightComponentBase>() || Scene->IsA<USkyAtmosphereComponent>()
+					|| Scene->IsA<UExponentialHeightFogComponent>() || Scene->IsA<UVolumetricCloudComponent>()))
+				{
+					SavedVisibility.Add(Scene, Scene->IsVisible());
+					Scene->SetVisibility(false);
+				}
 			}
 		}
 	}
 	else
 	{
-		for (const TPair<TWeakObjectPtr<ULightComponent>, bool>& Saved : SavedVisibility)
+		for (const TPair<TWeakObjectPtr<USceneComponent>, bool>& Saved : SavedVisibility)
 		{
-			if (ULightComponent* L = Saved.Key.Get())
+			if (USceneComponent* Scene = Saved.Key.Get())
 			{
-				L->SetVisibility(Saved.Value);
+				Scene->SetVisibility(Saved.Value);
 			}
 		}
 		SavedVisibility.Reset();

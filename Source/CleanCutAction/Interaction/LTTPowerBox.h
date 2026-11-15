@@ -49,6 +49,11 @@ public:
 	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Power Box|Sound", meta = (ClampMin = "100"))
 	float SoundFalloff = 1500.f;
 
+	/** The mains start switched off: the set is dark until the player finds this box and turns the power on.
+	 *  Only on a map with a mess director (the cleaning phase); the Phase 2 shoot always starts with the power on. */
+	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Power Box")
+	bool bStartsOff = true;
+
 	/** Seconds before it can be switched again. */
 	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Power Box", meta = (ClampMin = "0"))
 	float Cooldown = 0.6f;
@@ -59,6 +64,9 @@ public:
 
 	UFUNCTION(BlueprintPure, Category = "Power Box")
 	bool IsPowerOn() const;
+
+	/** First power box in WorldContext's world, or null. */
+	static ALTTPowerBox* FindFirst(const UObject* WorldContext);
 
 	/** Blueprint hook for extra effects. */
 	UFUNCTION(BlueprintImplementableEvent, Category = "Power Box", meta = (DisplayName = "On Power Switched"))
@@ -74,6 +82,8 @@ public:
 	virtual void OnInteract_Implementation(AActor* InstigatorActor) override { TogglePower(); }
 
 protected:
+	virtual void BeginPlay() override;
+	void CutPowerAtStart();
 	void PlayBoxSound(USoundBase* Sound);
 
 	float ReadyTime = 0.f;

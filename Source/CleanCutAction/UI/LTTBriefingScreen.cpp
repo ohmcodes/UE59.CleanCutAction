@@ -26,6 +26,8 @@
 #include "UI/LTTLeaderboardPanel.h"
 #include "UI/LTTVirtualKeyboard.h"
 
+#include "UI/LTTInputDevice.h"
+
 #define LOCTEXT_NAMESPACE "LTTBriefingScreen"
 
 namespace
@@ -141,6 +143,7 @@ void ULTTBriefingScreen::ApplyInputVariant()
 {
 	// Works for the C++ layout and for a WBP_ child, as long as the widgets keep these names.
 	const bool bTouch = IsTouch();
+	AppliedInputDevice = static_cast<int32>(ULTTInputDeviceSubsystem::GetCurrent());
 	if (UWidget* Desktop = GetWidgetFromName(TEXT("ControlsDesktop")))
 	{
 		Desktop->SetVisibility(bTouch ? ESlateVisibility::Collapsed : ESlateVisibility::SelfHitTestInvisible);
@@ -152,7 +155,9 @@ void ULTTBriefingScreen::ApplyInputVariant()
 	if (UTextBlock* StartHint = Cast<UTextBlock>(GetWidgetFromName(TEXT("StartHint"))))
 	{
 		StartHint->SetText(bTouch ? LOCTEXT("StartHintTouch", "Tap a button to start")
-			: LOCTEXT("StartHint", "Time trial: Enter / gamepad A     No timer: N / gamepad Y"));
+			: ULTTInputDeviceSubsystem::IsGamepad()
+				? LOCTEXT("StartHintPad", "Time trial: A     No timer: Y     Pages: LB / RB     Leaderboard: View")
+				: LOCTEXT("StartHintKb", "Time trial: Enter     No timer: N     Pages: Left / Right"));
 	}
 }
 
@@ -279,8 +284,14 @@ void ULTTBriefingScreen::AddCrouchRows()
 	{
 		if (!GetWidgetFromName(TEXT("CrouchRowDesktop")) && BriefingFindRow(Desktop, Crouch.ToString()) == INDEX_NONE)
 		{
-			AddControlRow(Desktop, Crouch, LOCTEXT("CrouchKb", "C / Ctrl"), LOCTEXT("CrouchPad", "R-stick click"), TEXT("CrouchRowDesktop"));
+			AddControlRow(Desktop, Crouch, LOCTEXT("CrouchKb", "C / Ctrl"), LOCTEXT("CrouchPad", "R3 (click R-stick)"), TEXT("CrouchRowDesktop"));
 			BriefingMoveLastAfter(Desktop, LOCTEXT("Jump", "Jump").ToString());
+		}
+		// Dance (emote): G / d-pad up. WBP_Briefing was baked before it existed.
+		if (!GetWidgetFromName(TEXT("DanceRowDesktop")) && BriefingFindRow(Desktop, LOCTEXT("Dance", "Dance").ToString()) == INDEX_NONE)
+		{
+			AddControlRow(Desktop, LOCTEXT("Dance", "Dance"), LOCTEXT("DanceKb", "G"), LOCTEXT("DancePad", "D-pad Up"), TEXT("DanceRowDesktop"));
+			BriefingMoveLastAfter(Desktop, LOCTEXT("Hint", "Hint").ToString());
 		}
 	}
 	if (UVerticalBox* Touch = Cast<UVerticalBox>(GetWidgetFromName(TEXT("ControlsTouch"))))
@@ -290,6 +301,12 @@ void ULTTBriefingScreen::AddCrouchRows()
 		{
 			AddTouchRow(Touch, TEXT("T_Icon_Crouch"), TouchCrouch, LOCTEXT("TouchCrouchHow", "Crouch button (tap again to stand)"), TEXT("CrouchRowTouch"));
 			BriefingMoveLastAfter(Touch, LOCTEXT("TouchJump", "Jump").ToString());
+		}
+		const FText TouchDance = LOCTEXT("TouchDance", "Dance");
+		if (!GetWidgetFromName(TEXT("DanceRowTouch")) && BriefingFindRow(Touch, TouchDance.ToString()) == INDEX_NONE)
+		{
+			AddTouchRow(Touch, nullptr, TouchDance, LOCTEXT("TouchDanceHow", "Dance button (tap again to stop)"), TEXT("DanceRowTouch"));
+			BriefingMoveLastAfter(Touch, LOCTEXT("TouchHint", "Hint").ToString());
 		}
 	}
 }
@@ -306,7 +323,7 @@ bool ULTTBriefingScreen::IsTouch() const
 		PC = UGameplayStatics::GetPlayerController(this, 0);
 	}
 	const ACleanCutActionPlayerController* CCPC = Cast<ACleanCutActionPlayerController>(PC);
-	return CCPC && CCPC->ShouldUseTouchControls();
+	return CCPC && CCPC->IsShowingTouchControls();
 }
 
 void ULTTBriefingScreen::AddTouchRow(UVerticalBox* Box, const TCHAR* IconName, const FText& Action, const FText& How, FName RowName) const
@@ -568,9 +585,10 @@ void ULTTBriefingScreen::AddPages(UVerticalBox* Box)
 	AddControlRow(ControlsDesktop, LOCTEXT("Look", "Look"), LOCTEXT("LookKb", "Mouse"), LOCTEXT("LookPad", "Right stick"));
 	AddControlRow(ControlsDesktop, LOCTEXT("Jump", "Jump"), LOCTEXT("JumpKb", "Space"), LOCTEXT("JumpPad", "A"));
 	AddControlRow(ControlsDesktop, LOCTEXT("Grab", "Pick up / Place / Drop"), LOCTEXT("GrabKb", "Left click / E"), LOCTEXT("GrabPad", "X"));
-	AddControlRow(ControlsDesktop, LOCTEXT("Throw", "Throw (breaks it!)"), LOCTEXT("ThrowKb", "Right click"), LOCTEXT("ThrowPad", "Right trigger"));
+	AddControlRow(ControlsDesktop, LOCTEXT("Throw", "Throw (breaks it!)"), LOCTEXT("ThrowKb", "Right click"), LOCTEXT("ThrowPad", "RT"));
 	AddControlRow(ControlsDesktop, LOCTEXT("Hint", "Hint"), LOCTEXT("HintKb", "F"), LOCTEXT("HintPad", "Y"));
-	AddControlRow(ControlsDesktop, LOCTEXT("Pause", "Pause"), LOCTEXT("PauseKb", "P / Esc"), LOCTEXT("PausePad", "Start"));
+	AddControlRow(ControlsDesktop, LOCTEXT("Dance", "Dance"), LOCTEXT("DanceKb", "G"), LOCTEXT("DancePad", "D-pad Up"), TEXT("DanceRowDesktop"));
+	AddControlRow(ControlsDesktop, LOCTEXT("Pause", "Pause"), LOCTEXT("PauseKb", "P / Esc"), LOCTEXT("PausePad", "Menu"));
 
 	AddHeader(Right, LOCTEXT("ScoringHeader", "SCORING"), 0.f, TEXT("coins"));
 	ScorePlacedText = AddIconTextRow(Right, TEXT("ScorePlacedText"), TEXT("coffee"));
@@ -861,7 +879,8 @@ void ULTTBriefingScreen::ApplyTexts()
 	const ALTTMessDirector* D = Director.Get();
 	// The player picks time trial or not with the start buttons, so the texts describe both.
 	const int32 Minutes = FMath::Max(FMath::RoundToInt((D ? D->TimeLimitSeconds : 1800.f) / 60.f), 1);
-	const FText HintKey = D ? D->HintKey.GetDisplayName() : LOCTEXT("F", "F");
+	const FText HintKey = D ? ULTTInputDeviceSubsystem::KeyLabelFor(D->HintKey, D->HintGamepadKey) : LOCTEXT("F", "F");
+	const FText PlaceHow = ULTTInputDeviceSubsystem::Pick(LOCTEXT("PlaceHowKb", "click"), LOCTEXT("PlaceHowPad", "press X"));
 
 	if (StoryText)
 	{
@@ -890,10 +909,10 @@ void ULTTBriefingScreen::ApplyTexts()
 		{
 			HowToPlayText->SetText(FText::Format(LOCTEXT("HowTo",
 				"-  Pick up a scattered prop. A glowing silhouette shows where it belongs.\n"
-				"-  Blue = its spot.  Yellow = you're aiming at it: click to place it.\n"
+				"-  Blue = its spot.  Yellow = you're aiming at it: {1} to place it.\n"
 				"-  Orange = put the thing underneath back first (the table before the cup).\n"
 				"-  Aim right at the silhouette. Drop it just beside the mark and it slips and breaks. Thrown props break too.\n"
-				"-  Lost? Press {0} to highlight the nearest prop and follow the arrow."), HintKey));
+				"-  Lost? Press {0} to highlight the nearest prop and follow the arrow."), HintKey, PlaceHow));
 		}
 	}
 
@@ -958,6 +977,17 @@ void ULTTBriefingScreen::NativeTick(const FGeometry& MyGeometry, float InDeltaTi
 	{
 		OpenNameKeyboard();
 	}
+	// Keyboard / gamepad / touch: swap the control list and texts when the player changes device.
+	if (AppliedInputDevice != static_cast<int32>(ULTTInputDeviceSubsystem::GetCurrent()))
+	{
+		ApplyInputVariant();
+		ApplyTexts();
+	}
+	// Gamepad: keep focus on a button so the left stick / d-pad move between them and A presses.
+	if (!NameKeyboard)
+	{
+		ULTTInputDeviceSubsystem::EnsureGamepadFocus(this, StartButton);
+	}
 	// Start buttons breathe (out of step) so it's obvious what to do.
 	if (StartButton)
 	{
@@ -976,6 +1006,12 @@ FReply ULTTBriefingScreen::NativeOnKeyDown(const FGeometry& InGeometry, const FK
 	const FKey Key = InKeyEvent.GetKey();
 	if (NameInput && NameInput->HasKeyboardFocus())
 	{
+		// Gamepad on the name box: A opens the on-screen keyboard (there's no other way to type).
+		if (!InKeyEvent.IsRepeat() && Key == EKeys::Gamepad_FaceButton_Bottom && !NameKeyboard)
+		{
+			OpenNameKeyboard();
+			return FReply::Handled();
+		}
 		return Super::NativeOnKeyDown(InGeometry, InKeyEvent); // typing a name: N and Space are letters, not shortcuts
 	}
 	if (!InKeyEvent.IsRepeat() && (Key == EKeys::Enter || Key == EKeys::SpaceBar || Key == EKeys::Gamepad_FaceButton_Bottom || Key == EKeys::Gamepad_Special_Right))

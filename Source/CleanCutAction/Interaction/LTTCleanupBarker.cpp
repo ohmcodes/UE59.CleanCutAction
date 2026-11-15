@@ -20,6 +20,7 @@
 #include "Sound/SoundBase.h"
 #include "TimerManager.h"
 #include "UObject/ConstructorHelpers.h"
+#include "UI/LTTInputDevice.h"
 
 #define LOCTEXT_NAMESPACE "LTTCleanupBarker"
 
@@ -84,7 +85,7 @@ void ALTTCleanupBarker::BuildPools()
 	// 1.2 First-time tutorials (one-shot).
 	AddPool("First.Pickup", 3, 1.f, 0.f, { LOCTEXT("P1_First_Pickup", "Look at you, holding a prop. Your parents must be so proud.") }).bOneShot = true;
 	AddPool("First.Place", 3, 1.f, 0.f, { LOCTEXT("P1_First_Place", "Hear that? That's the sound of order. Burn it into your memory.") }).bOneShot = true;
-	AddPool("First.Throw", 3, 1.f, 0.f, { LOCTEXT("P1_First_Throw", "Right-click to throw. Wait, why am I teaching you to throw props on my set? It BREAKS them!") }).bOneShot = true;
+	AddPool("First.Throw", 3, 1.f, 0.f, { LOCTEXT("P1_First_Throw", "{0} to throw. Wait, why am I teaching you to throw props on my set? It BREAKS them!") }).bOneShot = true;
 	AddPool("First.Stack", 3, 1.f, 0.f, { LOCTEXT("P1_First_Stack", "Stacking! Efficient. Reckless. I respect both.") }).bOneShot = true;
 	AddPool("First.Bin", 3, 1.f, 0.f, { LOCTEXT("P1_First_Bin", "Trash goes in the bin. Revolutionary, I know. Write it down.") }).bOneShot = true;
 	AddPool("First.Broom", 3, 1.f, 0.f, { LOCTEXT("P1_First_Broom", "That's cleaning gear. Push it at the mess. It's basically filmmaking.") }).bOneShot = true;
@@ -158,6 +159,14 @@ void ALTTCleanupBarker::BuildPools()
 
 	// 1.9 Cables, lights, reels, costumes, lens.
 	AddPool("Cable.Power", 2, 1.f, 0.f, { LOCTEXT("P1_Cable_01", "Power restored! I feel a tingle. Either it's art, or I'm being electrocuted.") });
+	// The breaker starts off: the first line after the intro, then reminders until the power is back.
+	AddPool("Power.Out", 3, 1.f, 0.f, {
+		LOCTEXT("P1_PowerOut_01", "And somebody tripped the breaker at the party. Find the electric box - look for the little red light - and turn the power back on.") }).bOneShot = true;
+	AddPool("Power.Remind", 2, 1.f, 0.f, {
+		LOCTEXT("P1_PowerRemind_01", "Still dark, Rookie! The electric box. Red light. Flip it. Let there be light."),
+		LOCTEXT("P1_PowerRemind_02", "I can't direct what I can't see. Power. Box. On. Now."),
+		LOCTEXT("P1_PowerRemind_03", "The breaker, Rookie! This is a film set, not a seance."),
+		LOCTEXT("P1_PowerRemind_04", "Follow the arrow to the electric box and turn the power on. I'll be here. In the dark. Brooding.") });
 	AddPool("Cable.Placed", 1, 1.f, 20.f, { LOCTEXT("P1_Cable_02", "That cable had more knots than this script.") });
 	AddPool("Light.Done", 1, 1.f, 15.f, {
 		LOCTEXT("P1_Light_01", "Look at that glow. That's called motivated lighting. I motivated it. With yelling."),
@@ -653,8 +662,18 @@ void ALTTCleanupBarker::TickTriggers()
 	{
 		bIntroDone = true;
 		FFormatOrderedArguments Args;
-		Args.Add(D->HintKey.GetDisplayName());
+		Args.Add(ULTTInputDeviceSubsystem::KeyLabelFor(D->HintKey, D->HintGamepadKey));
 		Trigger("Intro", Args);
+	}
+
+	// Breaker off: tell the player once the intro is done, then remind them until the power's back.
+	if (bIntroDone && !bTalking && Queue.Num() == 0 && T >= NextPowerNagTime && !ULTTPowerSubsystem::IsPowerOnIn(this))
+	{
+		if (Trigger(bPowerOutSaid ? FName("Power.Remind") : FName("Power.Out")))
+		{
+			bPowerOutSaid = true;
+			NextPowerNagTime = T + PowerNagSeconds;
+		}
 	}
 
 	// Countdown warnings (only when the clock is long enough for them to mean something).
@@ -682,7 +701,7 @@ void ALTTCleanupBarker::TickTriggers()
 	if (T - LastActivityTime >= IdleSeconds && T >= NextIdleTime && !bTalking && Queue.Num() == 0)
 	{
 		FFormatOrderedArguments Args;
-		Args.Add(D->HintKey.GetDisplayName());
+		Args.Add(ULTTInputDeviceSubsystem::KeyLabelFor(D->HintKey, D->HintGamepadKey));
 		if (Trigger("Idle", Args))
 		{
 			NextIdleTime = T + IdleRepeatSeconds;
@@ -1080,7 +1099,9 @@ void ALTTCleanupBarker::HandleReleased(ALTTInteractableBase* Item, bool bThrown)
 	LastReleased = Item;
 	if (bThrown)
 	{
-		if (!Trigger("First.Throw"))
+		FFormatOrderedArguments ThrowArgs;
+		ThrowArgs.Add(ULTTInputDeviceSubsystem::Pick(LOCTEXT("ThrowKeyKb", "Right-click"), LOCTEXT("ThrowKeyPad", "Right trigger")));
+		if (!Trigger("First.Throw", ThrowArgs))
 		{
 			Trigger("Throw");
 		}
