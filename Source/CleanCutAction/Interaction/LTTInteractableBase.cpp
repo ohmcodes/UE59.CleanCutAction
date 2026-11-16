@@ -1,6 +1,7 @@
 // Clean! Cut! Action!
 
 #include "Interaction/LTTInteractableBase.h"
+#include "VR/LTTVR.h"
 #include "Components/StaticMeshComponent.h"
 #include "Engine/StaticMesh.h"
 #include "Engine/OverlapResult.h"
@@ -213,7 +214,8 @@ void ALTTInteractableBase::BeginHold(AActor* InHolder)
 	Mesh->SetCollisionEnabled(ECollisionEnabled::NoCollision);
 
 	// Render like the first person arms: own FOV + depth scale so the prop never clips into walls.
-	Mesh->SetFirstPersonPrimitiveType(EFirstPersonPrimitiveType::FirstPerson);
+	// Not in VR: there the prop is in a tracked hand, at its real size and depth.
+	Mesh->SetFirstPersonPrimitiveType(LTTVR::IsActive() ? EFirstPersonPrimitiveType::None : EFirstPersonPrimitiveType::FirstPerson);
 	Mesh->SetRenderCustomDepth(false);
 
 	UpdateGhost(true, false, IsHomeSupportReady());

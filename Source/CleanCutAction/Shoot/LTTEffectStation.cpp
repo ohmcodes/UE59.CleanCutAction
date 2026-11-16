@@ -1,6 +1,8 @@
 // Clean! Cut! Action!
 
 #include "Shoot/LTTEffectStation.h"
+#include "VR/LTTVRComponent.h"
+#include "VR/LTTVR.h"
 #include "Components/AudioComponent.h"
 #include "Sound/SoundBase.h"
 #include "Shoot/LTTSceneDirector.h"
@@ -275,8 +277,11 @@ void ALTTEffectStation::Tick(float DeltaSeconds)
 
 	TimeInStation += DeltaSeconds;
 	// Gamepad: RT is the action, B leaves (A stays jump, which still works here).
-	const bool bAction = PC->IsInputKeyDown(EKeys::LeftMouseButton) || PC->IsInputKeyDown(EKeys::Gamepad_RightTrigger);
-	const bool bExit = PC->IsInputKeyDown(EKeys::E) || PC->IsInputKeyDown(EKeys::RightMouseButton) || PC->IsInputKeyDown(EKeys::Gamepad_FaceButton_Right);
+	// VR: either trigger is the action, B leaves; sticks and a hand waggle stand in for the keys below.
+	const ULTTVRComponent* VR = LTTVR::FindActive(PC);
+	const bool bAction = PC->IsInputKeyDown(EKeys::LeftMouseButton) || PC->IsInputKeyDown(EKeys::Gamepad_RightTrigger) || (VR && VR->IsTriggerDown());
+	const bool bExit = PC->IsInputKeyDown(EKeys::E) || PC->IsInputKeyDown(EKeys::RightMouseButton) || PC->IsInputKeyDown(EKeys::Gamepad_FaceButton_Right) || (VR && VR->IsBackDown());
+	const int32 VRFlick = VR ? VR->GetStickFlick() : 0;
 	const bool bPressed = bAction && !bPrevAction;
 	const bool bExitPressed = bExit && !bPrevExit;
 	bPrevAction = bAction;
@@ -360,7 +365,7 @@ void ALTTEffectStation::Tick(float DeltaSeconds)
 
 	case ELTTStationGame::Sustain:
 	{
-		const bool bPush = bAction || PC->IsInputKeyDown(EKeys::W) || PC->IsInputKeyDown(EKeys::Gamepad_LeftStick_Up);
+		const bool bPush = bAction || PC->IsInputKeyDown(EKeys::W) || PC->IsInputKeyDown(EKeys::Gamepad_LeftStick_Up) || (VR && VR->GetMoveStick().Y > 0.5f);
 		RawMeter = FMath::Clamp(RawMeter + (bPush ? SustainRise : -SustainFall) * DeltaSeconds, 0.f, 1.f);
 		const float Sway = SustainWobble > 0.f ? FMath::PerlinNoise1D(TimeInStation * 1.7f) * SustainWobble : 0.f;
 		Meter = FMath::Clamp(RawMeter + Sway, 0.f, 1.f);
@@ -403,6 +408,19 @@ void ALTTEffectStation::Tick(float DeltaSeconds)
 			if (FMath::Abs(StickX) > 0.6f)
 			{
 				Sign = StickX > 0.f ? 1 : -1;
+			}
+			// VR: waggle a stick, or shake the right hand side to side.
+			if (VR)
+			{
+				const float VRStickX = FMath::Abs(VR->GetMoveStick().X) > FMath::Abs(VR->GetTurnStick().X) ? VR->GetMoveStick().X : VR->GetTurnStick().X;
+				if (FMath::Abs(VRStickX) > 0.6f)
+				{
+					Sign = VRStickX > 0.f ? 1 : -1;
+				}
+				else if (const int32 HandSign = VR->GetHandShakeSign())
+				{
+					Sign = HandSign;
+				}
 			}
 			if (PC->WasInputKeyJustPressed(EKeys::A) || PC->WasInputKeyJustPressed(EKeys::Gamepad_LeftShoulder))
 			{
@@ -456,12 +474,12 @@ void ALTTEffectStation::Tick(float DeltaSeconds)
 			}
 		}
 		if (PC->WasInputKeyJustPressed(EKeys::MouseScrollDown) || PC->WasInputKeyJustPressed(EKeys::D)
-			|| PC->WasInputKeyJustPressed(EKeys::Gamepad_DPad_Right) || PC->WasInputKeyJustPressed(EKeys::Gamepad_RightShoulder))
+			|| PC->WasInputKeyJustPressed(EKeys::Gamepad_DPad_Right) || PC->WasInputKeyJustPressed(EKeys::Gamepad_RightShoulder) || VRFlick > 0)
 		{
 			SelectedChoice = (SelectedChoice + 1) % Num;
 		}
 		if (PC->WasInputKeyJustPressed(EKeys::MouseScrollUp) || PC->WasInputKeyJustPressed(EKeys::A)
-			|| PC->WasInputKeyJustPressed(EKeys::Gamepad_DPad_Left) || PC->WasInputKeyJustPressed(EKeys::Gamepad_LeftShoulder))
+			|| PC->WasInputKeyJustPressed(EKeys::Gamepad_DPad_Left) || PC->WasInputKeyJustPressed(EKeys::Gamepad_LeftShoulder) || VRFlick < 0)
 		{
 			SelectedChoice = (SelectedChoice + Num - 1) % Num;
 		}
@@ -500,7 +518,7 @@ void ALTTEffectStation::TickToss(APlayerController* PC, float Dt, bool bAction)
 	const ALTTFilmActor* Target = Director.IsValid() ? Director->FindFilmActor(TossTargetName) : nullptr;
 	FVector ViewLoc;
 	FRotator ViewRot;
-	PC->GetPlayerViewPoint(ViewLoc, ViewRot);
+	LTTVR::GetAimViewPoint(PC, ViewLoc, ViewRot); // VR: tossed along the right hand's laser
 	const FVector ViewDir = ViewRot.Vector();
 	// No actor placed yet: a spot in front of the station so the mini-game still works.
 	const FVector TargetLoc = Target ? Target->GetCatchLocation() : GetActorLocation() + GetActorForwardVector() * 500.f + FVector(0.f, 0.f, 120.f);

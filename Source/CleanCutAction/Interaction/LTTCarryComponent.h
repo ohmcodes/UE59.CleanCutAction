@@ -57,6 +57,10 @@ public:
 	UFUNCTION(BlueprintCallable, Category = "Carry")
 	void Throw();
 
+	/** Throw with this velocity (VR: the hand's swing), plus the player's own velocity. */
+	UFUNCTION(BlueprintCallable, Category = "Carry")
+	void ThrowWithVelocity(const FVector& Velocity);
+
 	/** Puts the held prop back on its home spot and locks it there. */
 	UFUNCTION(BlueprintCallable, Category = "Carry")
 	bool PlaceHeld();
@@ -87,6 +91,10 @@ public:
 
 	UPROPERTY(BlueprintAssignable, Category = "Carry")
 	FLTTOnReleased OnReleased;
+
+	/** VR: the hold parent is a tracked hand, so props sit in the palm instead of out in front of the camera. */
+	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Carry|Hold")
+	bool bHoldInHand = false;
 
 	// ---- Tuning ----
 
@@ -133,7 +141,7 @@ protected:
 	virtual void BeginPlay() override;
 	virtual void TickComponent(float DeltaTime, ELevelTick TickType, FActorComponentTickFunction* ThisTickFunction) override;
 
-	void Release(bool bThrow);
+	void Release(bool bThrow, const FVector* ThrowVelocity = nullptr);
 	void ComputeHoldTarget(FVector& OutRelLocation, FRotator& OutRelRotation) const;
 	void UpdateHandIK(float DeltaTime);
 	USceneComponent* ResolveHoldParent();

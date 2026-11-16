@@ -29,6 +29,7 @@ The design docs live in `Docs/`. The overview below is imported in full; read th
 - Packaging: `NNEDenoiser` is disabled so its 54 MB of path-tracer models are not force-cooked. `AllToolsets` is disabled in the `.uproject` for packaging (its game feature plugins fail the cook); re-enable it locally only for editor/MCP work. Keep `bSkipEditorContent=False`: the Landmass plugin's startup materials reference `/Engine/EditorMaterials`, and skipping editor content fails the cook.
 - The editor's default map is `L_NYC_Cafe_Michael` (`Config/DefaultEngine.ini`), a per-dev copy of the cafe level.
 - Set art comes from the StylizedNewYorkCity pack (`/Game/StylizedNewYorkCity`).
+- **VR (`vr` branch):** OpenXR (PC VR + Meta Quest). `ULTTVRComponent` (`Source/CleanCutAction/VR/`) is on the character and only wakes up when a headset is active: headset camera on a floor origin, tracked hands, right-hand laser for interaction, grip-grab / flick-throw, and a floating screen that every viewport widget is moved onto (so use `LTTVR::IsOnScreen()` instead of `IsInViewport()`, and `LTTVR::GetAimViewPoint()` instead of `GetPlayerViewPoint()` for aiming). Controller bindings are in `/Game/_CleanCutAction/Input/VR/IMC_VR`, which must stay a default mapping context in `DefaultInput.ini` (OpenXR only builds actions from those). Tuning is in `[/Script/CleanCutAction.LTTVRComponent]` in `DefaultGame.ini`.
 
 ## Ownership and copyright
 

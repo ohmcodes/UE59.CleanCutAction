@@ -80,7 +80,10 @@ public:
 	static void EnsureGamepadFocus(UUserWidget* Menu, UWidget* Preferred = nullptr);
 
 	/** True for keys that mean "back / cancel" in a menu (gamepad B). */
-	static bool IsBackKey(const FKey& Key) { return Key == EKeys::Gamepad_FaceButton_Right; }
+	static bool IsBackKey(const FKey& Key)
+	{
+		return Key == EKeys::Gamepad_FaceButton_Right || Key == EKeys::OculusTouch_Right_B_Click || Key == EKeys::ValveIndex_Right_B_Click;
+	}
 
 private:
 	TSharedPtr<class FLTTInputDeviceProcessor> Processor;

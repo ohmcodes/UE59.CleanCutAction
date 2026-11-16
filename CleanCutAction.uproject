@@ -42,10 +42,51 @@
 		{
 			"Name": "NNEDenoiser",
 			"Enabled": false
+		},
+		{
+			"Name": "AllToolsets",
+			"Enabled": false
+		},
+		{
+			"Name": "OpenXR",
+			"Enabled": true,
+			"PlatformAllowList": [
+				"Win64",
+				"Android",
+				"Linux"
+			]
+		},
+		{
+			"Name": "OpenXREyeTracker",
+			"Enabled": true,
+			"PlatformAllowList": [
+				"Win64",
+				"Android",
+				"Linux"
+			]
+		},
+		{
+			"Name": "OpenXRHandTracking",
+			"Enabled": true,
+			"PlatformAllowList": [
+				"Win64",
+				"Android",
+				"Linux"
+			]
+		},
+		{
+			"Name": "OpenXRRenderModel",
+			"Enabled": true,
+			"PlatformAllowList": [
+				"Win64",
+				"Android",
+				"Linux"
+			]
 		}
 	],
 	"TargetPlatforms": [
 		"Android",
-		"Wasm"
+		"Wasm",
+		"Windows"
 	]
 }

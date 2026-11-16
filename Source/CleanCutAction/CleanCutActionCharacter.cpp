@@ -21,6 +21,7 @@
 #include "Kismet/GameplayStatics.h"
 #include "Sound/SoundBase.h"
 #include "EngineUtils.h"
+#include "VR/LTTVRComponent.h"
 
 /** Emote animation and input action, loaded by path (both are in MapsToCook). */
 static const TCHAR* LTTEmoteAnimPath = TEXT("/Game/_CleanCutAction/Character/Rookie/Anims/A_Emote_Rookie.A_Emote_Rookie");
@@ -134,6 +135,8 @@ ACleanCutActionCharacter::ACleanCutActionCharacter()
 	FirstPersonCameraComponent->bEnableFirstPersonScale = true;
 	FirstPersonCameraComponent->FirstPersonFieldOfView = 70.0f;
 	FirstPersonCameraComponent->FirstPersonScale = 0.6f;
+
+	VRComponent = CreateDefaultSubobject<ULTTVRComponent>(TEXT("VR"));
 
 	// configure the character comps
 	GetMesh()->SetOwnerNoSee(true);
@@ -271,6 +274,11 @@ void ACleanCutActionCharacter::GamepadLookInput(const FInputActionValue& Value)
 
 void ACleanCutActionCharacter::DoAim(float Yaw, float Pitch)
 {
+	// In VR the headset aims and the right stick turns; a bumped mouse or stick mustn't swing the view.
+	if (VRComponent && VRComponent->IsVRActive())
+	{
+		return;
+	}
 	if (GetController())
 	{
 		// pass the rotation inputs

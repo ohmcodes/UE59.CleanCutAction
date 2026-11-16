@@ -30,19 +30,21 @@ namespace
 	constexpr float ToolAimSpeed = 10.f;
 
 	/** SwingT: 0..1 during a mop stroke, < 0 otherwise. */
-	void ComputeToolTarget(const USceneComponent* Parent, float DeltaTime, float SwingT, FVector& OutRelLocation, FRotator& OutRelRotation)
+	void ComputeToolTarget(const USceneComponent* Parent, float DeltaTime, float SwingT, FVector& OutRelLocation, FRotator& OutRelRotation, bool bInHand = false)
 	{
 		const FTransform& Cam = Parent->GetComponentTransform();
+		// VR: the parent is the hand itself, so the grip is at its origin.
+		const FVector GripAt = bInHand ? FVector::ZeroVector : ToolGripOffset;
 
 		// Carried: head out in front of the grip.
 		FVector WantDir = ToolIdleAim.Vector();
-		FVector WantHead = ToolGripOffset + WantDir * ToolGripHeight;
+		FVector WantHead = GripAt + WantDir * ToolGripHeight;
 		FVector ScrubAxis = WantDir;
 		if (GToolAimSet)
 		{
 			// Mopping: the head rests on the water, on the way from the player to the aimed spot (no further out
 			// than ToolFloorReach), and the handle runs from there up to the hand, at about 45 degrees.
-			const FVector Grip = Cam.TransformPosition(ToolGripOffset);
+			const FVector Grip = Cam.TransformPosition(GripAt);
 			const FVector Base(Grip.X, Grip.Y, GToolAimPoint.Z);
 			const FVector Along = GToolAimPoint - Base;
 			const float Dist = static_cast<float>(Along.Size());
@@ -160,6 +162,11 @@ void ULTTCarryComponent::Throw()
 	Release(true);
 }
 
+void ULTTCarryComponent::ThrowWithVelocity(const FVector& Velocity)
+{
+	Release(true, &Velocity);
+}
+
 bool ULTTCarryComponent::PlaceHeld()
 {
 	ALTTInteractableBase* Item = HeldItem;
@@ -174,7 +181,7 @@ bool ULTTCarryComponent::PlaceHeld()
 	return true;
 }
 
-void ULTTCarryComponent::Release(bool bThrow)
+void ULTTCarryComponent::Release(bool bThrow, const FVector* ThrowVelocity)
 {
 	ALTTInteractableBase* Item = HeldItem;
 	if (!IsValid(Item) || !HoldParent)
@@ -206,7 +213,12 @@ void ULTTCarryComponent::Release(bool bThrow)
 	const FVector OwnerVelocity = GetOwner() ? GetOwner()->GetVelocity() : FVector::ZeroVector;
 	FVector LinearVelocity;
 	FVector AngularVelocity = FVector::ZeroVector;
-	if (bThrow)
+	if (bThrow && ThrowVelocity)
+	{
+		LinearVelocity = OwnerVelocity + *ThrowVelocity;
+		AngularVelocity = FMath::VRand() * 120.f;
+	}
+	else if (bThrow)
 	{
 		const FVector Dir = (Fwd + Up * FMath::Tan(FMath::DegreesToRadians(ThrowUpAngle))).GetSafeNormal();
 		LinearVelocity = OwnerVelocity + Dir * ThrowSpeed * Item->GetEffectiveThrowMultiplier();
@@ -230,7 +242,10 @@ void ULTTCarryComponent::ComputeHoldTarget(FVector& OutRelLocation, FRotator& Ou
 	const bool bTwoHands = HeldItem->UsesTwoHands();
 
 	const float Dist = HeldItem->HoldDistance > 0.f ? HeldItem->HoldDistance : FMath::Max(BaseHoldDistance, Radius * 1.1f + 18.f);
-	const FVector CenterRel = FVector(Dist, bTwoHands ? 0.f : OneHandSideOffset, -(HoldDownOffset + Radius * 0.5f)) + HeldItem->HoldOffset;
+	// VR: just past the fingertips of the tracked hand (the per-prop offsets are tuned for the camera hold).
+	const FVector CenterRel = bHoldInHand
+		? FVector(Radius * 0.6f + 6.f, 0.f, 0.f)
+		: FVector(Dist, bTwoHands ? 0.f : OneHandSideOffset, -(HoldDownOffset + Radius * 0.5f)) + HeldItem->HoldOffset;
 
 	const float Yaw = HeldItem->bKeepPickupYaw ? HeldRelativeYaw : 0.f;
 	const FQuat RelQuat = FRotator(0.f, Yaw, 0.f).Quaternion() * HeldItem->HoldRotationOffset.Quaternion();
@@ -274,7 +289,7 @@ void ULTTCarryComponent::TickComponent(float DeltaTime, ELevelTick TickType, FAc
 		if (HeldItem->bIsMop && HoldParent)
 		{
 			// The mop is held by its handle and points at the puddle being mopped.
-			ComputeToolTarget(HoldParent, DeltaTime, SwingT, TargetLoc, TargetRot);
+			ComputeToolTarget(HoldParent, DeltaTime, SwingT, TargetLoc, TargetRot, bHoldInHand);
 		}
 		else
 		{

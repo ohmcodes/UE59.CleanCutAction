@@ -1,6 +1,7 @@
 // Clean! Cut! Action!
 
 #include "UI/LTTVirtualKeyboard.h"
+#include "VR/LTTVR.h"
 #include "UI/LTTUITheme.h"
 #include "Blueprint/WidgetTree.h"
 #include "Components/Border.h"
@@ -420,7 +421,7 @@ void ULTTVirtualKeyboard::Finish()
 	RemoveFromParent();
 	if (UUserWidget* Back = ReturnFocus.Get())
 	{
-		if (PC && Back->IsInViewport())
+		if (PC && LTTVR::IsOnScreen(Back))
 		{
 			FInputModeUIOnly Mode;
 			Mode.SetWidgetToFocus(Back->TakeWidget());

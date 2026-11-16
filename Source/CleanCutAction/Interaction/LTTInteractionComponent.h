@@ -91,6 +91,10 @@ public:
 	UFUNCTION(BlueprintCallable, Category = "Interaction")
 	void ThrowHeld();
 
+	/** Lets go of the held prop (VR grip release): places, bins or washes it when aimed right, otherwise drops it. */
+	UFUNCTION(BlueprintCallable, Category = "Interaction")
+	void ReleaseHeld();
+
 protected:
 	virtual void BeginPlay() override;
 	virtual void TickComponent(float DeltaTime, ELevelTick TickType, FActorComponentTickFunction* ThisTickFunction) override;

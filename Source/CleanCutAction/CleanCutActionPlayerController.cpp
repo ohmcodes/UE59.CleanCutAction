@@ -2,6 +2,7 @@
 
 
 #include "CleanCutActionPlayerController.h"
+#include "VR/LTTVR.h"
 #include "EnhancedInputSubsystems.h"
 #include "EnhancedInputComponent.h"
 #include "InputAction.h"
@@ -406,5 +407,10 @@ void ACleanCutActionPlayerController::ResetGameInput(APlayerController* PC)
 bool ACleanCutActionPlayerController::ShouldUseTouchControls() const
 {
 	// are we on a mobile platform? Should we force touch?
+	// A Quest is an Android device, but the headset has no touch screen.
+	if (LTTVR::IsActive())
+	{
+		return false;
+	}
 	return SVirtualJoystick::ShouldDisplayTouchInterface() || bForceTouchControls;
 }

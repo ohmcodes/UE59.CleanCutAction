@@ -1,6 +1,7 @@
 // Clean! Cut! Action!
 
 #include "Interaction/LTTInteractionComponent.h"
+#include "VR/LTTVR.h"
 #include "Interaction/LTTCleanupBarker.h"
 #include "Interaction/LTTCarryComponent.h"
 #include "Interaction/LTTInteractable.h"
@@ -90,7 +91,7 @@ void ULTTInteractionComponent::UpdatePlaceHint()
 
 	FVector ViewLoc;
 	FRotator ViewRot;
-	Controller->GetPlayerViewPoint(ViewLoc, ViewRot);
+	LTTVR::GetAimViewPoint(Controller, ViewLoc, ViewRot); // the right hand's laser in VR
 
 	// Trash has no home: it goes in a bin. Aiming at one within reach = "Throw in the bin".
 	if (Held->bIsTrash)
@@ -227,7 +228,7 @@ void ULTTInteractionComponent::UpdateFocus()
 
 	FVector ViewLoc;
 	FRotator ViewRot;
-	Controller->GetPlayerViewPoint(ViewLoc, ViewRot);
+	LTTVR::GetAimViewPoint(Controller, ViewLoc, ViewRot); // the right hand's laser in VR
 	const FVector End = ViewLoc + ViewRot.Vector() * TraceDistance;
 
 	FCollisionQueryParams Params(SCENE_QUERY_STAT(LTTInteractTrace), false, GetOwner());
@@ -288,6 +289,11 @@ void ULTTInteractionComponent::SetFocus(AActor* NewFocus)
 
 void ULTTInteractionComponent::Interact()
 {
+	// VR: the trigger is clicking a button on the floating screen.
+	if (LTTVR::IsPointingAtUI(GetOwner()))
+	{
+		return;
+	}
 	ULTTCarryComponent* Carry = GetCarry();
 	if (Carry && Carry->IsHolding())
 	{
@@ -363,6 +369,23 @@ void ULTTInteractionComponent::Interact()
 	}
 
 	ILTTInteractable::Execute_OnInteract(Target, GetOwner());
+}
+
+void ULTTInteractionComponent::ReleaseHeld()
+{
+	ULTTCarryComponent* Carry = GetCarry();
+	if (!Carry || !Carry->IsHolding())
+	{
+		return;
+	}
+	UpdatePlaceHint();
+	if (PlaceHint == ELTTPlaceHint::Mop)
+	{
+		Carry->Drop(); // letting go of the mop drops it rather than scrubbing
+		PlaceHint = ELTTPlaceHint::None;
+		return;
+	}
+	Interact();
 }
 
 void ULTTInteractionComponent::ThrowHeld()

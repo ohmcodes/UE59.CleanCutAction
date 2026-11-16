@@ -1,6 +1,7 @@
 // Clean! Cut! Action!
 
 #include "Interaction/LTTMessDirector.h"
+#include "VR/LTTVR.h"
 #include "UI/LTTUITheme.h"
 #include "CleanCutActionPlayerController.h"
 #include "Interaction/LTTInteractableBase.h"
@@ -476,7 +477,7 @@ const bool bShouldStartHidden = bFadeInOnStart && !bIntroDone;
 		M->SetPhysicsAngularVelocityInDegrees(Spin);
 	}
 
-	if (EarthquakeShake && !bShouldStartHidden)
+	if (EarthquakeShake && !bShouldStartHidden && !LTTVR::IsActive()) // shaking the view in a headset makes people sick
 	{
 		if (APlayerController* PC = UGameplayStatics::GetPlayerController(this, 0))
 		{
@@ -1178,7 +1179,7 @@ void ALTTMessDirector::ShowEndingOverlay(bool bWithSkip)
 	{
 		return;
 	}
-	if (!EndingOverlay || !EndingOverlay->IsInViewport())
+	if (!EndingOverlay || !LTTVR::IsOnScreen(EndingOverlay))
 	{
 		EndingOverlay = CreateWidget<ULTTEndingOverlay>(PC, LTTTheme::PreferWBP<ULTTEndingOverlay>(EndingOverlayClass, TEXT("WBP_EndingOverlay")));
 		if (!EndingOverlay)

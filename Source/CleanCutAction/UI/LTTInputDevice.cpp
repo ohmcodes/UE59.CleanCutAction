@@ -1,6 +1,7 @@
 // Copyright © 2026 QLE OPC. All Rights Reserved.
 
 #include "UI/LTTInputDevice.h"
+#include "VR/LTTVR.h"
 #include "Framework/Application/IInputProcessor.h"
 #include "Framework/Application/SlateApplication.h"
 #include "Framework/Application/SlateUser.h"
@@ -164,6 +165,23 @@ void ULTTInputDeviceSubsystem::SetCurrent(ELTTInputDevice NewDevice)
 
 FText ULTTInputDeviceSubsystem::GamepadKeyLabel(const FKey& Key)
 {
+	// VR: the controllers are reported as a gamepad; name the VR button that does the same job (IMC_VR).
+	if (LTTVR::IsActive())
+	{
+		if (Key == EKeys::Gamepad_FaceButton_Left) return LOCTEXT("VRInteract", "Trigger");
+		if (Key == EKeys::Gamepad_RightTrigger || Key == EKeys::Gamepad_RightTriggerAxis) return LOCTEXT("VRThrow", "A / flick");
+		if (Key == EKeys::Gamepad_FaceButton_Right) return LOCTEXT("VRBack", "B");
+		if (Key == EKeys::Gamepad_FaceButton_Bottom) return LOCTEXT("VRJump", "X");
+		if (Key == EKeys::Gamepad_FaceButton_Top) return LOCTEXT("VRConfirm", "Trigger");
+		if (Key == EKeys::Gamepad_LeftShoulder || Key == EKeys::Gamepad_DPad_Left) return LOCTEXT("VRLeft", "Stick Left");
+		if (Key == EKeys::Gamepad_RightShoulder || Key == EKeys::Gamepad_DPad_Right) return LOCTEXT("VRRight", "Stick Right");
+		if (Key == EKeys::Gamepad_DPad_Up) return LOCTEXT("VREmote", "Y");
+		if (Key == EKeys::Gamepad_RightThumbstick) return LOCTEXT("VRCrouch", "R-Stick Click");
+		if (Key == EKeys::Gamepad_LeftThumbstick) return LOCTEXT("VRRecenter", "L-Stick Click");
+		if (Key == EKeys::Gamepad_Special_Right) return LOCTEXT("VRMenu", "Menu");
+		if (Key == EKeys::Gamepad_Left2D) return LOCTEXT("VRLS", "Left stick");
+		if (Key == EKeys::Gamepad_Right2D) return LOCTEXT("VRRS", "Right stick");
+	}
 	// Xbox / Steam Deck face-button names; both put A at the bottom.
 	if (Key == EKeys::Gamepad_FaceButton_Bottom) return LOCTEXT("PadA", "A");
 	if (Key == EKeys::Gamepad_FaceButton_Right) return LOCTEXT("PadB", "B");
@@ -319,7 +337,7 @@ UWidget* ULTTInputDeviceSubsystem::FocusFirstButton(UUserWidget* Menu, UWidget* 
 
 void ULTTInputDeviceSubsystem::EnsureGamepadFocus(UUserWidget* Menu, UWidget* Preferred)
 {
-	if (!Menu || !Menu->IsInViewport() || !Menu->IsVisible())
+	if (!Menu || !LTTVR::IsOnScreen(Menu) || !Menu->IsVisible())
 	{
 		return;
 	}

@@ -1,6 +1,7 @@
 // Clean! Cut! Action!
 
 #include "UI/LTTLeaderboardPanel.h"
+#include "VR/LTTVR.h"
 #include "UI/LTTUITheme.h"
 #include "Blueprint/WidgetTree.h"
 #include "Components/Border.h"
@@ -448,7 +449,7 @@ void ULTTLeaderboardPanel::Open(UUserWidget* ReturnFocusTo)
 			}
 		}
 	}
-	if (!IsInViewport())
+	if (!LTTVR::IsOnScreen(this))
 	{
 		AddToViewport(100); // above the end screen (10) and the briefing (20)
 	}
@@ -472,7 +473,7 @@ void ULTTLeaderboardPanel::Close()
 		HiddenUnderCard = nullptr;
 	}
 	RemoveFromParent();
-	if (PC && Back && Back->IsInViewport())
+	if (PC && Back && LTTVR::IsOnScreen(Back))
 	{
 		FInputModeUIOnly Mode;
 		Mode.SetWidgetToFocus(Back->TakeWidget());
