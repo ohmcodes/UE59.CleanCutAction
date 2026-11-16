@@ -45,7 +45,7 @@
 		},
 		{
 			"Name": "AllToolsets",
-			"Enabled": false
+			"Enabled": true
 		},
 		{
 			"Name": "OpenXR",
