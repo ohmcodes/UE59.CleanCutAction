@@ -47,7 +47,8 @@ ALTTFilmCamera* ALTTFilmCamera::Get(const UObject* WorldContext)
 	UWorld* World = WorldContext ? WorldContext->GetWorld() : nullptr;
 	if (World)
 	{
-		for (TActorIterator<ALTTFilmCamera> It(World); It; ++It)
+		// The first one found (a loop that always returns trips Clang's -Wunreachable-code-loop-increment on Android).
+		if (TActorIterator<ALTTFilmCamera> It(World); It)
 		{
 			return *It;
 		}

@@ -24,6 +24,7 @@ class UInputAction;
 class UInputMappingContext;
 class UMotionControllerComponent;
 class UWidgetComponent;
+class UStereoLayerComponent;
 class UWidgetInteractionComponent;
 class UStaticMeshComponent;
 class UStaticMesh;
@@ -254,6 +255,11 @@ private:
 
 	UPROPERTY(Transient)
 	TObjectPtr<UWidgetComponent> Screen;
+
+	/** Shows the screen's render target as a headset compositor layer: drawn over the scene, so camera fades
+	 *  (the level's intro blackout) and walls never hide the menus, and text stays sharp. */
+	UPROPERTY(Transient)
+	TObjectPtr<UStereoLayerComponent> ScreenLayer;
 
 	UPROPERTY(Transient)
 	TObjectPtr<UWidgetInteractionComponent> Pointer;

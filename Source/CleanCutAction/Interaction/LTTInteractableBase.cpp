@@ -896,7 +896,7 @@ bool ALTTInteractableBase::ChangeMusic()
 		ALTTMusicPlayer::SetMusicMuted(false); // resumes the music
 		return true;
 	}
-	for (TActorIterator<ALTTMusicPlayer> It(GetWorld()); It; ++It)
+	if (TActorIterator<ALTTMusicPlayer> It(GetWorld()); It)
 	{
 		It->Skip(); // crossfades to the next track (starts the music if it wasn't playing)
 		return true;

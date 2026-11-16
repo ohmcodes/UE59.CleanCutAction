@@ -17,6 +17,8 @@
 #include "Components/CapsuleComponent.h"
 #include "Components/SkeletalMeshComponent.h"
 #include "Components/StaticMeshComponent.h"
+#include "Components/StereoLayerComponent.h"
+#include "Engine/TextureRenderTarget2D.h"
 #include "Components/WidgetComponent.h"
 #include "Components/WidgetInteractionComponent.h"
 #include "Engine/Engine.h"
@@ -225,6 +227,26 @@ void ULTTVRComponent::ActivateVR()
 	Screen->RegisterComponent();
 	Screen->SetWidget(ScreenWidget);
 	Screen->SetVisibility(false);
+	// The quad in the world is invisible (it still draws the widgets to its render target); the stereo layer shows them.
+	Screen->SetTintColorAndOpacity(FLinearColor(1.f, 1.f, 1.f, 0.f));
+
+	ScreenLayer = NewObject<UStereoLayerComponent>(Char, TEXT("VR_ScreenLayer"));
+	// World locked (the default is face locked, which would drag the menus around with the head). The setting is
+	// protected and read when the layer is created, so it's set through reflection before registering.
+	if (FByteProperty* LayerType = FindFProperty<FByteProperty>(UStereoLayerComponent::StaticClass(), TEXT("StereoLayerType")))
+	{
+		LayerType->SetPropertyValue_InContainer(ScreenLayer, static_cast<uint8>(SLT_WorldLocked));
+	}
+	ScreenLayer->SetupAttachment(VROrigin);
+	ScreenLayer->SetUsingAbsoluteLocation(true);
+	ScreenLayer->SetUsingAbsoluteRotation(true);
+	ScreenLayer->SetUsingAbsoluteScale(true);
+	ScreenLayer->bLiveTexture = true;
+	ScreenLayer->bSupportsDepth = false;
+	ScreenLayer->bNoAlphaChannel = false;
+	ScreenLayer->SetTickableWhenPaused(true);
+	ScreenLayer->SetVisibility(false);
+	ScreenLayer->RegisterComponent();
 
 	// The laser clicks the screen. Its hit is computed here (Custom source), so the screen needs no collision
 	// and never blocks the interaction trace.
@@ -643,7 +665,7 @@ void ULTTVRComponent::CaptureViewportWidgets()
 	}
 	TArray<UUserWidget*> Found;
 	UWidgetBlueprintLibrary::GetAllWidgetsOfClass(World, Found, UUserWidget::StaticClass(), true);
-	UGameViewportSubsystem* ViewportSubsystem = UGameViewportSubsystem::Get(World);
+	UGameViewportSubsystem* ViewportSubsystem = UGameViewportSubsystem::Get();
 	for (UUserWidget* Widget : Found)
 	{
 		if (!Widget || Widget == ScreenWidget || !Widget->IsInViewport())
@@ -677,6 +699,20 @@ void ULTTVRComponent::UpdateScreen(float DeltaTime)
 	if (Screen->IsVisible() != bVisible)
 	{
 		Screen->SetVisibility(bVisible);
+	}
+	// The layer waits for the first draw of the render target.
+	UTextureRenderTarget2D* ScreenTexture = Screen->GetRenderTarget();
+	const bool bLayerVisible = bVisible && ScreenTexture != nullptr;
+	if (ScreenLayer)
+	{
+		if (ScreenTexture && ScreenLayer->GetTexture() != ScreenTexture)
+		{
+			ScreenLayer->SetTexture(ScreenTexture);
+		}
+		if (ScreenLayer->IsVisible() != bLayerVisible)
+		{
+			ScreenLayer->SetVisibility(bLayerVisible);
+		}
 	}
 	if (!bVisible)
 	{
@@ -732,8 +768,19 @@ void ULTTVRComponent::UpdateScreen(float DeltaTime)
 	}
 	const float Scale = (ScreenWidth / FMath::Max(ScreenResolution.X, 1)) * (Distance / ScreenDistance);
 	Screen->SetWorldScale3D(FVector(Scale));
-	// The widget's right is +Y, so its X axis points away from the viewer.
-	Screen->SetWorldLocationAndRotation(FVector(Head.X, Head.Y, ScreenZ) + Dir * Distance, FRotator(0.f, ScreenYaw, 0.f));
+	// The widget's right is +Y, so its X axis points away from the viewer (stereo layer quads face the same way).
+	const FVector ScreenLocation = FVector(Head.X, Head.Y, ScreenZ) + Dir * Distance;
+	const FRotator ScreenRotation(0.f, ScreenYaw, 0.f);
+	Screen->SetWorldLocationAndRotation(ScreenLocation, ScreenRotation);
+	if (ScreenLayer)
+	{
+		ScreenLayer->SetWorldLocationAndRotation(ScreenLocation, ScreenRotation);
+		const FVector2D QuadSize(ScreenResolution.X * Scale, ScreenResolution.Y * Scale);
+		if (!ScreenLayer->GetQuadSize().Equals(QuadSize, 0.5))
+		{
+			ScreenLayer->SetQuadSize(QuadSize);
+		}
+	}
 }
 
 void ULTTVRComponent::UpdateVignette(float DeltaTime)

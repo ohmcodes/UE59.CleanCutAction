@@ -75,7 +75,8 @@ ALTTMessDirector* ALTTMessDirector::Get(const UObject* WorldContext)
 	{
 		return nullptr;
 	}
-	for (TActorIterator<ALTTMessDirector> It(World); It; ++It)
+	// The first one found (a loop that always returns trips Clang's -Wunreachable-code-loop-increment on Android).
+	if (TActorIterator<ALTTMessDirector> It(World); It)
 	{
 		return *It;
 	}
