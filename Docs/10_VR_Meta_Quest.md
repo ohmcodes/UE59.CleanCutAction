@@ -137,11 +137,13 @@ Tunables on the component (`Details > VR`): `SnapTurnDegrees` (45), `PanelDistan
 | Left trigger | Interact | `IA_Interact` |
 | A | Jump | `IA_Jump` |
 | B | Throw | `IA_Throw` |
-| X | Hint | `IA_VR_Hint` |
+| X | **Info menu** above the left controller (score, hint timer, controls, buttons: Hint, Pause, Jump, Throw, Turn, Dance, Recenter). Point with the right controller, trigger to press. X again closes it; a pause or end menu closes it too | `IA_VR_Hint` -> `ALTTMessDirector::HandleVRHintInput` -> `ULTTVRComponent::ToggleControllerMenu` |
 | Y | Dance (emote; in the XR Simulator Y is the **N** key, which also presses B = throw while *Use same input for both sides* is on) | `IA_Emote` |
 | Left menu button | Pause | `IA_VR_Pause` |
 
-Crouch has no button in VR; crouching for real lowers the view (the capsule stays tall). The in-game controls legend shows this table in VR.
+Crouch has no button in VR; crouching for real lowers the view (the capsule stays tall).
+
+**In-headset UI (2026-11-17):** the HUD's top-left score card and the controls card are hidden in VR, with controllers as well as hands: both live on the wrist / info menu (left palm with hands, X with controllers), which the player brings into view instead of reading the lens edge. The head-locked UI panel (pause menu, briefing, end screen, timer) now fills **62 %** of the headset's field of view instead of 85 % (`ltt.VR.UIScreenFill`), so its corners sit in the clear part of the lens. The trigger doesn't pick anything up while the laser is on a menu button (`ULTTVRComponent::IsPointerOnUI`, checked in `ULTTInteractionComponent::Interact`).
 
 ## 5b. Controls (hand tracking, no controller)
 
@@ -267,8 +269,10 @@ Checked against Meta's docs on 2026-11-17: *Application Manifests for Release Bu
 
 ### 9.1 One-time setup (this PC has no Android SDK yet)
 
+0. **Engine Android component** (launcher install): Epic Games Launcher > *Unreal Engine > Library* > the 5.9 tile's **v** arrow > **Options** > tick **Android** under *Target Platforms* > **Apply**. Without it `Engine\Build\Android` (the Java / Gradle template) and the Android engine libraries are missing: *Project Settings > Android > APK Packaging > Configure Now* fails, and packaging can't work. Checked 2026-11-17: missing on this PC (also in 5.6 - 5.8).
 1. Install **Android Studio** from `developer.android.com/studio` (default location). Open it once and finish the setup wizard. It downloads the SDK to `%LOCALAPPDATA%\Android\Sdk`.
 2. Close the editor. Run `D:\UE5 Engines\UE_5.9\Engine\Extras\Android\SetupAndroid.bat`. It installs what this engine needs (`Engine\Config\Android\Android_SDK.json`: platform android-36, build-tools 36, NDK 27.2.12479018, CMake 3.22.1), asks you to **accept the SDK licenses**, and sets `ANDROID_HOME`, `NDKROOT` and `JAVA_HOME` for your user.
+   If you set them by hand instead (*Start > Edit environment variables for your account*): `ANDROID_HOME` = `C:\Users\<you>\AppData\Local\Android\Sdk`, `NDKROOT` = `%ANDROID_HOME%\ndk\27.2.12479018`, `JAVA_HOME` = `C:\Program Files\Android\Android Studio\jbr`. The SDK still needs the `android-36` platform and CMake `3.22.1` (Android Studio installed `android-37` only); `SetupAndroid.bat` installs both.
 3. Sign out and back in (or reboot) so every program sees the new environment variables. `Saved\Logs\AutoSDKInfo.txt` should then show `Android - buildable: True`.
 4. Headset: Developer Mode on (Meta Horizon app on the phone, *Devices > Headset settings > Developer mode*), USB cable, allow USB debugging in the headset.
 
@@ -302,10 +306,13 @@ Checked against Meta's docs on 2026-11-17: *Application Manifests for Release Bu
 | `bBuildForES31` | False | Vulkan only (Meta recommendation; Quest uses Vulkan) |
 | `bRemoveOSIG` | False | Must stay unchecked (Meta) |
 | `Orientation`, `bShowLaunchImage` | Landscape, False | Phone settings, unused in VR |
-| `ExtraManifestNodeTags` | `android.hardware.vr.headtracking` required, version 1 | Required for immersive apps |
+| `Build/Android/ManifestRequirementsAdditions.txt` (file, not an ini key) | `<uses-feature android:name="android.hardware.vr.headtracking" android:required="true" android:version="1" />` | Required for immersive apps. The packager appends this file to the manifest's requirements. `Build/` is git-ignored: commit it with `git add -f` |
 | `ExtraActivitySettings` | intent filter with `MAIN` + `com.oculus.intent.category.VR` | Required for OpenXR apps: launches the game as VR, not as a 2D panel |
 | `ExtraActivityNodeTags` | `android:excludeFromRecents="true"` | Required by the Store |
-| `ExtraApplicationNodeTags` | `com.oculus.supportedDevices` = `quest2\|questpro\|quest3\|quest3s`; hand tracking `HIGH` frequency, `V2.0` | Device list for the Store; better hand tracking |
+| `ExtraApplicationSettings` | `<meta-data>` children: `com.oculus.supportedDevices` = `quest2\|questpro\|quest3\|quest3s`; hand tracking `HIGH` frequency, `V2.0` | Device list for the Store; better hand tracking |
+
+**Careful with the manifest keys** (UE 5.9 `UEDeployAndroid.cs`): `ExtraManifestNodeTags`, `ExtraApplicationNodeTags` and `ExtraActivityNodeTags` add **attributes** inside the `<manifest>`, `<application>` and `<activity>` tags (e.g. `android:excludeFromRecents="true"`). Whole elements (`<meta-data>`, `<intent-filter>`) go in `ExtraApplicationSettings` / `ExtraActivitySettings` (one string, lines separated by `
+`; in the editor: *Extra Settings for <application> / <activity> section*), and manifest-level elements in `Build/Android/ManifestRequirementsAdditions.txt`. An element in a `*NodeTags` key makes the manifest invalid XML and the package fails. Don't enter the same `<meta-data>` twice.
 
 `Config/Android/AndroidDeviceProfiles.ini`, new `[Android_OpenXR DeviceProfile]` section (every Quest profile, such as `Oculus_Quest2`, inherits it; it in turn inherits the phone tiers above it):
 
@@ -331,6 +338,37 @@ Unchanged from the Android phone work and still in effect on Quest: textures cap
 3. *Project Settings > Packaging*: tick **For Distribution** (`ForDistribution=True`). That makes the manifest `android:debuggable="false"`, which the Store requires.
 4. Package (`Scripts\Package_Quest.bat`), then upload the APK to the **Competition** release channel in the Developer Dashboard (or `ovr-platform-util upload-quest-build`).
 5. Each new upload needs a higher `StoreVersion` (`[AndroidRuntimeSettings]`).
+
+### 9.6 Quest 2 performance pass (2026-11-17)
+
+**Measured first** (Shipping APK on a Quest 2, `adb logcat -s VrApi`, one line per second): **10 - 18 fps** against 72, GPU at 97 - 99 %, 60 - 90 ms of GPU time per frame (budget about 13.9 ms). Hand tracking and pinches are read once per frame, so at that rate pinches were missed or late. Over Quest Link the same scene felt fine because the PC renders it; Link numbers say nothing about the APK.
+
+How to read the `VrApi` line: `FPS=12/72` = frames delivered / display rate; `Stale` = frames the compositor had to repeat; `GPU%` near 1.0 = GPU bound; `App=` = the app's GPU time per frame. Meta Quest Developer Hub's OVR Metrics Tool shows the same live in the headset.
+
+**What the level had** (`L_NYC_Cafe_Michael`): 37 **movable** local lights (16 spot, 11 rect, 10 point; about 22 on at the start, nearly all after the power is fixed), a movable sun with a dynamic shadow, sky atmosphere, height fog, 7 Niagara systems, the mirror's two scene captures, and the ParisStreet street (`SampleMap` level instance: 189 actors, 184 meshes) outside the windows.
+
+**Changes:**
+
+| Change | Where | Why |
+|---|---|---|
+| ParisStreet street removed from the cafe level | `L_NYC_Cafe_Michael` (script: `Scripts/Python/quest_remove_samplemap.py`); its `MapsToCook` entry commented out | 184 meshes drawn through the windows, for both eyes |
+| Phase 2 left out | `ALTTMessDirector::bOfferPhase2 = false` clears `NextLevelName` (the end screen hides "Shoot the Scene!"); the Phase 2 `MapsToCook` entry commented out | Competition build is Phase 1 only; smaller APK |
+| Quest light budget | `LTTApplyQuestRenderBudget` in `LTTVRComponent.cpp`, run when VR starts on Android | Local lights: no shadows, no translucency lighting, no volumetric scattering, attenuation radius capped (`ltt.Quest.MaxLightRadius`, 450 cm). Sun shadow off (`ltt.Quest.SunShadows 0`). Rect lights can be taken out entirely (`ltt.Quest.RectLights 0`). Re-run live with `ltt.Quest.ApplyBudget`; `ltt.Quest.Budget 2` previews it on PC |
+| Mirror updates one eye per frame on Quest | `ALTTMirror::Tick` (`#if PLATFORM_ANDROID`) | Each eye's reflection is a full extra scene render |
+| UI panel redraws at 36 Hz on Quest | `UIPanel->SetRedrawTime` | The 1920 x 1080 widget tree was re-rendered into its texture every frame |
+| Pinch threshold 1.0 -> 1.4 cm | `ULTTVRComponent::PinchDistance` | Quest standalone tracking reads touching fingertips a little further apart |
+
+**Live tuning on a Development APK** (`Scripts\Package_Quest.bat dev`): console commands go in over USB, for example
+
+```
+adb shell "am broadcast -a android.intent.action.RUN -e cmd 'ltt.Quest.MaxLightRadius 300'"
+adb shell "am broadcast -a android.intent.action.RUN -e cmd 'ltt.Quest.ApplyBudget'"
+adb shell "am broadcast -a android.intent.action.RUN -e cmd 'ShowFlag.RectLights 0'"
+```
+
+and `adb logcat -s VrApi` shows the effect within a second. Values that work go into the cvar defaults in `LTTVRComponent.cpp` (or `[Android_OpenXR DeviceProfile]` for engine cvars).
+
+**Project location:** the D: drive (Sabrent Rocket nano) started dropping out and returning stale or unreadable data on 2026-11-17, so the working copy moved to `C:\UE5 Projects\CCA_VR` (copied with robocopy, git history included). Build and package from there.
 
 ## 8. Known limits and follow-ups
 

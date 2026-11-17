@@ -137,12 +137,20 @@ public:
 	/** True while the player plays with tracked hands instead of controllers (HUD labels switch to gestures). */
 	static bool IsUsingHands();
 
+	/** Controllers: X opens / closes the info menu above the left controller (score, hint, buttons). Returns true if a
+	 *  VR pawn took the press (the caller then skips its own X action). */
+	static bool ToggleControllerMenu();
+
+	/** True while the VR pointer (controller laser or hand ray) is on a clickable menu button, so a trigger press there
+	 *  clicks the button instead of picking something up. */
+	static bool IsPointerOnUI();
+
 	/** Runs a wrist menu action (same result as the matching controller button). */
 	void DoHandAction(ELTTVRHandAction Action);
 
 	/** Gap between the thumb and a fingertip that counts as a pinch, cm (released again at twice this). */
 	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "VR|Hands", meta = (ClampMin = "0.2", ClampMax = "5"))
-	float PinchDistance = 1.f;
+	float PinchDistance = 1.4f;
 
 	/** Walking speed while the left index pinch is held, as a share of full stick (0.1 - 1). */
 	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "VR|Hands", meta = (ClampMin = "0.1", ClampMax = "1"))
@@ -345,6 +353,9 @@ private:
 	bool bHandAimValid = false;
 	FVector HandAimStart = FVector::ZeroVector;
 	FVector HandAimDir = FVector::ForwardVector;
+
+	/** Controllers: the info menu above the left controller is open (toggled with X). */
+	bool bControllerMenuOpen = false;
 
 	// Right palm pause.
 	float PausePalmTime = 0.f;

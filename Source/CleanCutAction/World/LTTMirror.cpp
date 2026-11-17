@@ -335,11 +335,26 @@ void ALTTMirror::Tick(float DeltaSeconds)
 	if (bStereo)
 	{
 		// VR: one reflection per eye (the glass material picks the right one per eye).
+#if PLATFORM_ANDROID
+		// Quest: each reflection is a full extra scene render, so update one eye per frame, alternating (36 Hz per eye
+		// at 72 Hz). The other eye keeps last frame's image, which is hard to notice in a mirror.
+		++StereoCaptureFrame;
+		const bool bLeftThisFrame = (StereoCaptureFrame & 1) == 0 || !RenderTargetRight;
+		if (bLeftThisFrame)
+		{
+			CaptureEye(Capture, 0, CamLoc, CamRot);
+		}
+		else
+		{
+			CaptureEye(CaptureRight, 1, CamLoc, CamRot);
+		}
+#else
 		CaptureEye(Capture, 0, CamLoc, CamRot);
 		if (RenderTargetRight)
 		{
 			CaptureEye(CaptureRight, 1, CamLoc, CamRot);
 		}
+#endif
 		return;
 	}
 	Capture->bUseCustomProjectionMatrix = false;

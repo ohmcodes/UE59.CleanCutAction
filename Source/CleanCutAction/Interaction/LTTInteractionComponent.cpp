@@ -1,6 +1,7 @@
 // Clean! Cut! Action!
 
 #include "Interaction/LTTInteractionComponent.h"
+#include "VR/LTTVRComponent.h"
 #include "Interaction/LTTCleanupBarker.h"
 #include "Interaction/LTTCarryComponent.h"
 #include "Interaction/LTTInteractable.h"
@@ -288,6 +289,11 @@ void ULTTInteractionComponent::SetFocus(AActor* NewFocus)
 
 void ULTTInteractionComponent::Interact()
 {
+	// VR: the trigger is also the menu click. On a button it clicks; it doesn't grab the prop behind the menu.
+	if (ULTTVRComponent::IsPointerOnUI())
+	{
+		return;
+	}
 	ULTTCarryComponent* Carry = GetCarry();
 	if (Carry && Carry->IsHolding())
 	{

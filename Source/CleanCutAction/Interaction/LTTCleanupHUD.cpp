@@ -398,7 +398,7 @@ void ULTTCleanupHUD::UpdateControlsLegend()
 	const bool bHandsNow = bVRNow && ULTTVRComponent::IsUsingHands();
 	// With hand tracking the gesture list and the score live on the wrist menu (left palm to face), so the view stays
 	// clear; only the timer stays on screen.
-	const bool bShow = !bTouch && !bHandsNow && !(D && (D->IsBriefingOpen() || D->IsSetClean() || D->IsTimeUp()));
+	const bool bShow = !bTouch && !bVRNow && !(D && (D->IsBriefingOpen() || D->IsSetClean() || D->IsTimeUp()));
 	ControlsLegend->SetVisibility(bShow ? ESlateVisibility::HitTestInvisible : ESlateVisibility::Collapsed);
 	if (PlacedText)
 	{
@@ -414,7 +414,7 @@ void ULTTCleanupHUD::UpdateControlsLegend()
 		}
 		if (Stats && Stats != WidgetTree->RootWidget)
 		{
-			const ESlateVisibility StatsVis = bHandsNow ? ESlateVisibility::Collapsed : ESlateVisibility::HitTestInvisible;
+			const ESlateVisibility StatsVis = bVRNow ? ESlateVisibility::Collapsed : ESlateVisibility::HitTestInvisible;
 			if (Stats->GetVisibility() != StatsVis)
 			{
 				Stats->SetVisibility(StatsVis);

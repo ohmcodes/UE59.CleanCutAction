@@ -110,6 +110,9 @@ private:
 	bool GetViewerCamera(FVector& OutLocation, FRotator& OutRotation, float& OutFOV) const;
 	/** Renders the reflection seen from one headset eye with that eye's own projection (VR). */
 	void CaptureEye(USceneCaptureComponent2D* EyeCapture, int32 EyeIndex, const FVector& HeadLocation, const FRotator& HeadRotation);
+
+	/** Quest: which eye's reflection updates this frame (they alternate). */
+	uint32 StereoCaptureFrame = 0;
 	/** Near plane for a reflected camera: the closest corner of the glass, so the wall behind isn't drawn. */
 	float NearPlaneFor(const FVector& MirroredLocation, const FVector& Forward) const;
 };

@@ -74,8 +74,6 @@
 		}
 	],
 	"TargetPlatforms": [
-		"Windows",
-		"Android",
-		"Wasm"
+		"Android"
 	]
 }

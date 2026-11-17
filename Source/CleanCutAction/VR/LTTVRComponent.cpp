@@ -45,6 +45,10 @@
 #include "Interaction/LTTInteractionComponent.h"
 #include "Interaction/LTTInteractableBase.h"
 #include "HAL/PlatformTime.h"
+#include "Components/LocalLightComponent.h"
+#include "Components/DirectionalLightComponent.h"
+#include "Components/RectLightComponent.h"
+#include "UObject/UObjectIterator.h"
 #include "ISpectatorScreenController.h"
 #include "HeadMountedDisplayTypes.h"
 #include "Blueprint/WidgetTree.h"
@@ -114,7 +118,7 @@ namespace
 
 	/** Share of the headset's horizontal field of view the UI panel covers. */
 	TAutoConsoleVariable<float> CVarLTTVRUIScreenFill(
-		TEXT("ltt.VR.UIScreenFill"), 0.85f,
+		TEXT("ltt.VR.UIScreenFill"), 0.62f,
 		TEXT("VR UI panel width as a share of the headset's horizontal field of view (0.5 - 1)."));
 
 	/** 1: the UI panel is glued to the view like a screen. 0: it lazily follows the head (world-space menu). */
@@ -280,6 +284,81 @@ namespace
 		GLTTSavedVRCVars.Reset();
 	}
 
+	// ---- Quest render budget (see Docs/10_VR_Meta_Quest.md section 9.6) ----
+	// The cafe has 37 movable local lights, and on Quest's mobile forward renderer each one adds per-pixel work to
+	// everything it reaches. Measured on a Quest 2 before this: 10 - 18 fps, GPU 98 %. Applied when VR starts on Android
+	// (or anywhere with ltt.Quest.Budget 2), and again by the console command ltt.Quest.ApplyBudget after a change.
+	TAutoConsoleVariable<int32> CVarLTTQuestBudget(TEXT("ltt.Quest.Budget"),
+		1, TEXT("Quest render budget: 0 = off, 1 = on Android only (default), 2 = everywhere (to preview it on PC)."));
+	TAutoConsoleVariable<float> CVarLTTQuestLightRadius(TEXT("ltt.Quest.MaxLightRadius"),
+		450.f, TEXT("Quest: largest attenuation radius of a point / spot / rect light, cm (0 = leave them)."));
+	TAutoConsoleVariable<int32> CVarLTTQuestSunShadows(TEXT("ltt.Quest.SunShadows"),
+		0, TEXT("Quest: 1 = keep the sun's dynamic shadow, 0 = no sun shadow (saves its shadow depth pass)."));
+	TAutoConsoleVariable<int32> CVarLTTQuestRectLights(TEXT("ltt.Quest.RectLights"),
+		1, TEXT("Quest: 1 = keep rect lights, 0 = take them out of the renderer (the costliest local light type on mobile)."));
+
+	bool LTTQuestBudgetActive()
+	{
+		const int32 Mode = CVarLTTQuestBudget.GetValueOnGameThread();
+		return Mode >= 2 || (Mode == 1 && PLATFORM_ANDROID);
+	}
+
+	void LTTApplyQuestRenderBudget(UWorld* World)
+	{
+		if (!World || !LTTQuestBudgetActive())
+		{
+			return;
+		}
+		const float MaxRadius = CVarLTTQuestLightRadius.GetValueOnGameThread();
+		const bool bSunShadows = CVarLTTQuestSunShadows.GetValueOnGameThread() != 0;
+		const bool bRectLights = CVarLTTQuestRectLights.GetValueOnGameThread() != 0;
+		int32 Local = 0;
+		int32 Rect = 0;
+		for (TObjectIterator<ULightComponent> It; It; ++It)
+		{
+			ULightComponent* Light = *It;
+			if (!Light || Light->IsTemplate() || Light->GetWorld() != World)
+			{
+				continue;
+			}
+			if (UDirectionalLightComponent* Sun = Cast<UDirectionalLightComponent>(Light))
+			{
+				Sun->SetCastShadows(bSunShadows);
+				continue;
+			}
+			ULocalLightComponent* LocalLight = Cast<ULocalLightComponent>(Light);
+			if (!LocalLight)
+			{
+				continue;
+			}
+			// Light switches and the power box toggle visibility, so these per-light settings stay in force.
+			LocalLight->SetCastShadows(false);
+			LocalLight->SetAffectTranslucentLighting(false);
+			LocalLight->SetVolumetricScatteringIntensity(0.f);
+			if (MaxRadius > 0.f && LocalLight->AttenuationRadius > MaxRadius)
+			{
+				LocalLight->SetAttenuationRadius(MaxRadius);
+			}
+			if (Cast<URectLightComponent>(LocalLight))
+			{
+				++Rect;
+				if (!bRectLights)
+				{
+					// Out of the renderer entirely (visibility toggles from switches don't bring it back).
+					LocalLight->bAffectsWorld = false;
+					LocalLight->MarkRenderStateDirty();
+				}
+			}
+			++Local;
+		}
+		UE_LOG(LogCleanCutAction, Log, TEXT("VR: Quest render budget: %d local lights (%d rect%s), radius <= %.0f, sun shadow %s"),
+			Local, Rect, bRectLights ? TEXT("") : TEXT(", off"), MaxRadius, bSunShadows ? TEXT("on") : TEXT("off"));
+	}
+
+	FAutoConsoleCommandWithWorld GLTTQuestApplyBudgetCmd(TEXT("ltt.Quest.ApplyBudget"),
+		TEXT("Re-applies the Quest render budget (ltt.Quest.*) to the current level."),
+		FConsoleCommandWithWorldDelegate::CreateStatic(&LTTApplyQuestRenderBudget));
+
 	/** UI panel pitch (single local player), kept here so the header doesn't change. */
 	float GLTTPanelPitch = 0.f;
 
@@ -385,6 +464,17 @@ void ULTTVRHandMenu::NativeOnInitialized()
 
 	const FLinearColor Head = LTTTheme::HeaderBrown();
 	const FLinearColor Body = LTTTheme::Ink();
+	// Controllers: the button list, shown instead of the hand gestures while no hand is tracked.
+	UVerticalBox* PadLegend = WidgetTree->ConstructWidget<UVerticalBox>(UVerticalBox::StaticClass(), TEXT("HandMenuPadLegend"));
+	Info->AddChildToVerticalBox(PadLegend);
+	AddText(PadLegend, NAME_None, NSLOCTEXT("LTTVR", "PadLegendHead", "CONTROLLERS"), 20, Head, 12.f);
+	AddText(PadLegend, NAME_None, NSLOCTEXT("LTTVR", "PadLegend0", "L stick: move   R stick: turn"), 18, Body);
+	AddText(PadLegend, NAME_None, NSLOCTEXT("LTTVR", "PadLegend1", "Trigger: pick up / place, press buttons"), 18, Body);
+	AddText(PadLegend, NAME_None, NSLOCTEXT("LTTVR", "PadLegend2", "A: jump   B: throw   Y: dance"), 18, Body);
+	AddText(PadLegend, NAME_None, NSLOCTEXT("LTTVR", "PadLegend3", "X: this menu   Menu: pause"), 18, Body);
+	UVerticalBox* HandLegend = WidgetTree->ConstructWidget<UVerticalBox>(UVerticalBox::StaticClass(), TEXT("HandMenuHandLegend"));
+	Info->AddChildToVerticalBox(HandLegend);
+	Info = HandLegend; // the hand gesture lines below go into their own group
 	AddText(Info, NAME_None, NSLOCTEXT("LTTVR", "HandLegendLeft", "LEFT HAND"), 20, Head, 12.f);
 	AddText(Info, NAME_None, NSLOCTEXT("LTTVR", "HandLegendL0", "Index pinch (hold): walk where you look"), 18, Body);
 	AddText(Info, NAME_None, NSLOCTEXT("LTTVR", "HandLegendL1", "Middle pinch: turn left"), 18, Body);
@@ -445,6 +535,16 @@ void ULTTVRHandMenu::NativeOnInitialized()
 void ULTTVRHandMenu::NativeTick(const FGeometry& MyGeometry, float InDeltaTime)
 {
 	Super::NativeTick(MyGeometry, InDeltaTime);
+	// Gesture list with hands, button list with controllers.
+	const bool bHands = ULTTVRComponent::IsUsingHands();
+	if (UWidget* HandLegend = GetWidgetFromName(TEXT("HandMenuHandLegend")))
+	{
+		HandLegend->SetVisibility(bHands ? ESlateVisibility::HitTestInvisible : ESlateVisibility::Collapsed);
+	}
+	if (UWidget* PadLegend = GetWidgetFromName(TEXT("HandMenuPadLegend")))
+	{
+		PadLegend->SetVisibility(bHands ? ESlateVisibility::Collapsed : ESlateVisibility::HitTestInvisible);
+	}
 	// The same numbers as the cleanup HUD's top-left panel (hidden while playing with hands). Phase 2 has no mess
 	// director, so the block folds away there.
 	const ALTTMessDirector* D = ALTTMessDirector::Get(this);
@@ -512,6 +612,40 @@ bool ULTTVRComponent::IsHeadsetActive()
 bool ULTTVRComponent::IsUsingHands()
 {
 	return ActiveCount > 0 && HandsCount > 0;
+}
+
+bool ULTTVRComponent::ToggleControllerMenu()
+{
+	if (ActiveCount <= 0 || IsUsingHands())
+	{
+		return false;
+	}
+	for (TObjectIterator<ULTTVRComponent> It; It; ++It)
+	{
+		if (It->bVRActive && !It->IsTemplate())
+		{
+			It->bControllerMenuOpen = !It->bControllerMenuOpen;
+			UE_LOG(LogCleanCutAction, Log, TEXT("VR: controller info menu %s"), It->bControllerMenuOpen ? TEXT("open") : TEXT("closed"));
+			return true;
+		}
+	}
+	return false;
+}
+
+bool ULTTVRComponent::IsPointerOnUI()
+{
+	if (ActiveCount <= 0)
+	{
+		return false;
+	}
+	for (TObjectIterator<ULTTVRComponent> It; It; ++It)
+	{
+		if (It->bVRActive && !It->IsTemplate() && It->Pointer && It->Pointer->IsOverInteractableWidget())
+		{
+			return true;
+		}
+	}
+	return false;
 }
 
 void ULTTVRComponent::BeginPlay()
@@ -627,6 +761,8 @@ void ULTTVRComponent::EnterVR()
 	LTTSetVRCVar(TEXT("r.SceneColorFringeQuality"), TEXT("0"));
 	// The street outside the cafe is mostly seen through windows: draw less of it far away.
 	LTTSetVRCVar(TEXT("r.ViewDistanceScale"), TEXT("0.6"));
+	// Quest: light radii, no light shadows, optional sun shadow / rect lights (ltt.Quest.*).
+	LTTApplyQuestRenderBudget(GetWorld());
 	// Optional per-eye resolution (ltt.VR.ScreenPercentage; 100 = the headset's own and leaves it alone). Below 100 the
 	// engine recreates the headset swapchain at the smaller size, which left the Quest over Link showing nothing.
 	const float ScreenPercentage = FMath::Clamp(CVarLTTVRScreenPercentage.GetValueOnGameThread(), 50.f, 150.f);
@@ -770,6 +906,11 @@ void ULTTVRComponent::EnterVR()
 			UE_LOG(LogCleanCutAction, Warning, TEXT("VR: M_VRWidget_OnTop not found, the UI panel can clip into walls"));
 		}
 		UIPanel->SetTranslucentSortPriority(10000);
+#if PLATFORM_ANDROID
+		// Quest: redrawing the 1920 x 1080 widget tree into its texture every frame costs game thread and GPU time.
+		// 36 Hz (every other frame at 72 Hz) is plenty for menus and the HUD.
+		UIPanel->SetRedrawTime(1.f / 36.f);
+#endif
 		UIPanel->RegisterComponent();
 	}
 
@@ -1821,7 +1962,19 @@ void ULTTVRComponent::UpdateHandMenu(const FXRHandTrackingState& Left, const FVe
 	bool bShow = false;
 	FVector Palm = FVector::ZeroVector;
 	FVector Normal = FVector::UpVector;
-	if (LTTHandTracked(Left) && !IsMenuOpen() && !(PC && PC->IsPaused()))
+	const bool bBlocked = IsMenuOpen() || (PC && PC->IsPaused());
+	if (bBlocked || IsUsingHands())
+	{
+		bControllerMenuOpen = false; // a pause / end menu takes over; X opens it again afterwards
+	}
+	if (!LTTHandTracked(Left) && bControllerMenuOpen && LeftController && LeftController->IsTracked())
+	{
+		// Controllers: the info menu (X) floats just above the left controller, turned to the eyes.
+		Palm = LeftController->GetComponentLocation();
+		Normal = (Head - Palm).GetSafeNormal2D();
+		bShow = true;
+	}
+	else if (LTTHandTracked(Left) && !bBlocked)
 	{
 		Palm = LTTJoint(Left, EHandKeypoint::Palm);
 		Normal = LTTPalmNormal(Left);

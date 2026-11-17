@@ -75,16 +75,18 @@ ALTTMessDirector* ALTTMessDirector::Get(const UObject* WorldContext)
 	{
 		return nullptr;
 	}
-	for (TActorIterator<ALTTMessDirector> It(World); It; ++It)
-	{
-		return *It;
-	}
-	return nullptr;
+	// First (only) mess director in the world. Not a for loop: clang's -Wunreachable-code-loop-increment (Android) fails it.
+	TActorIterator<ALTTMessDirector> It(World);
+	return It ? *It : nullptr;
 }
 
 void ALTTMessDirector::BeginPlay()
 {
 	Super::BeginPlay();
+	if (!bOfferPhase2)
+	{
+		NextLevelName = NAME_None; // hides the end screen's "Shoot the Scene" button (Phase 2 isn't in this build)
+	}
 	CreateHUD();
 	BlackOut();
 	// Every prop records its home in its own BeginPlay; wait one tick so all of them have.
@@ -231,7 +233,7 @@ void ALTTMessDirector::SetupHintInput()
 	// loaded by path, in MapsToCook.
 	if (const UInputAction* VRHint = LoadObject<UInputAction>(nullptr, TEXT("/Game/_CleanCutAction/Input/VR/IA_VR_Hint.IA_VR_Hint")))
 	{
-		EIC->BindAction(VRHint, ETriggerEvent::Started, this, &ALTTMessDirector::HandleHintInput);
+		EIC->BindAction(VRHint, ETriggerEvent::Started, this, &ALTTMessDirector::HandleVRHintInput);
 	}
 	bHintInputBound = true;
 }
@@ -239,6 +241,16 @@ void ALTTMessDirector::SetupHintInput()
 void ALTTMessDirector::HandleHintInput()
 {
 	ShowHint();
+}
+
+void ALTTMessDirector::HandleVRHintInput()
+{
+	// Controllers in VR: X opens the info menu above the left controller (score, Hint button, controls), easier to
+	// read than the HUD's corner. Without a VR pawn to take it, X is the hint as before.
+	if (!ULTTVRComponent::ToggleControllerMenu())
+	{
+		ShowHint();
+	}
 }
 
 bool ALTTMessDirector::IsHintCandidate(const ALTTInteractableBase* Prop) const
