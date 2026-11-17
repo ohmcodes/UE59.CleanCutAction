@@ -36,6 +36,7 @@
 #include "EngineUtils.h"
 #include "Engine/World.h"
 #include "TimerManager.h"
+#include "VR/LTTVRComponent.h"
 
 namespace
 {
@@ -226,6 +227,12 @@ void ALTTMessDirector::SetupHintInput()
 	}
 
 	EIC->BindAction(Action, ETriggerEvent::Started, this, &ALTTMessDirector::HandleHintInput);
+	// VR: X on the left controller. IMC_VR maps it (OpenXR only sees asset actions in default mapping contexts);
+	// loaded by path, in MapsToCook.
+	if (const UInputAction* VRHint = LoadObject<UInputAction>(nullptr, TEXT("/Game/_CleanCutAction/Input/VR/IA_VR_Hint.IA_VR_Hint")))
+	{
+		EIC->BindAction(VRHint, ETriggerEvent::Started, this, &ALTTMessDirector::HandleHintInput);
+	}
 	bHintInputBound = true;
 }
 
@@ -889,6 +896,16 @@ void ALTTMessDirector::FinishIntro()
 	if (BriefingWidget)
 	{
 		bFinishIntroPending = true; // stay black until the player presses Start
+		// VR: the briefing floats in the world, so a held black screen would hide it too. Fade the set in now;
+		// the clock and movement still wait for Start.
+		if (ULTTVRComponent::IsHeadsetActive())
+		{
+			APlayerController* VRPC = UGameplayStatics::GetPlayerController(this, 0);
+			if (VRPC && VRPC->PlayerCameraManager)
+			{
+				VRPC->PlayerCameraManager->StartCameraFade(1.f, 0.f, FMath::Max(FadeInTime, 0.01f), FadeColor);
+			}
+		}
 		return;
 	}
 	bIntroDone = true;
@@ -897,7 +914,8 @@ void ALTTMessDirector::FinishIntro()
 		RescueStuckProps(); // still black: anything the earthquake pushed through the floor or into furniture comes back unseen
 	}
 	APlayerController* PC = UGameplayStatics::GetPlayerController(this, 0);
-	if (PC && PC->PlayerCameraManager)
+	// Skip the fade if VR already faded the set in behind the briefing.
+	if (PC && PC->PlayerCameraManager && PC->PlayerCameraManager->FadeAmount > KINDA_SMALL_NUMBER)
 	{
 		PC->PlayerCameraManager->StartCameraFade(1.f, 0.f, FMath::Max(FadeInTime, 0.01f), FadeColor);
 	}

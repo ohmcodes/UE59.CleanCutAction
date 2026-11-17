@@ -29,7 +29,9 @@ Details and rationale: [`10_VR_Meta_Quest.md`](10_VR_Meta_Quest.md).
 - [x] **V1-04 [M]** World-space UI panel: viewport widgets moved onto it, lazy head follow, laser + widget interaction.
 - [x] **V1-05 [M]** `IMC_VR` + `IA_VR_Turn` / `IA_VR_UIClick` / `IA_VR_Pause` (script `create_vr_input.py`), registered as a default mapping context, in `MapsToCook`.
 - [x] **V1-06 [M]** VR pause on the left menu button; pause menu keeps game input in VR.
-- [ ] **V1-07 [M]** Play-test Phase 1 and Phase 2 end to end in the Meta XR Simulator (or Link): pick up, place, trash, menus, end screens, leaderboard keyboard.
+- [x] **V1-07 [M]** Play-test Phase 1 in the Meta XR Simulator: briefing, menus, pointer, HUD, power box, mirror. (Phase 2 still to check.)
+- [x] **V1-08 [M]** VR UI: head-locked, sized to the headset FOV, always on top (no wall clipping), VR controls legend and prompts, X = hint.
+- [x] **V1-09 [M]** Capsule follows the head with wall collision; mirror body follows the head.
 
 ### V2 - Hands-first (competition pass/fail)
 - [ ] **V2-01 [M]** Hand tracking input: pinch = interact / UI click, pinch-hold + release = throw.

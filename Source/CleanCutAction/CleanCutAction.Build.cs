@@ -25,7 +25,8 @@ public class CleanCutAction : ModuleRules
 			"Chaos",
 			"LevelSequence",
 			"MovieScene",
-			"Niagara"
+			"Niagara",
+			"HeadMountedDisplay" // VR: motion controllers, XR tracking system
 		});
 
 		PrivateDependencyModuleNames.AddRange(new string[] { "HTTP", "Json" });

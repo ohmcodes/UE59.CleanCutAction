@@ -40,12 +40,16 @@ Side awards worth aiming at: **Best First Five Minutes** (Marlowe's heckling dou
 
 | File | What it is |
 |---|---|
-| `Source/CleanCutAction/VR/LTTVRComponent.h/.cpp` | `ULTTVRComponent` (the whole VR mode) and `ULTTVRUIHost` (overlay widget the UI moves into). |
-| `Scripts/Python/create_vr_input.py` | Creates the VR input assets below. Safe to re-run; rebuilds `IMC_VR`'s mappings each time. |
+| `Source/CleanCutAction/VR/LTTVRComponent.h/.cpp` | `ULTTVRComponent` (the whole VR mode: camera, controllers, snap turn, UI panel and pointer, body following, VR render settings) and `ULTTVRUIHost` (overlay widget the UI moves into, with the pointer dots). |
+| `Scripts/Python/create_vr_input.py` | Creates / updates the VR input assets below. Safe to re-run; rebuilds `IMC_VR`'s mappings each time. |
+| `Scripts/RunVR_Standalone.bat` | Runs the game outside the editor in VR (`-game -vr`); `build` argument builds first. Much faster than VR Preview. |
 | `Content/_CleanCutAction/Input/VR/IA_VR_Turn` | Axis1D. Right stick X, snap turn. |
-| `Content/_CleanCutAction/Input/VR/IA_VR_UIClick` | Bool, *Trigger When Paused*. Right trigger, clicks the UI panel. |
+| `Content/_CleanCutAction/Input/VR/IA_VR_UIClick` | Bool, *Trigger When Paused*. Right trigger (also left mouse / Enter for testing), clicks the UI panel. |
 | `Content/_CleanCutAction/Input/VR/IA_VR_Pause` | Bool, *Trigger When Paused*. Left menu button, pause menu. |
+| `Content/_CleanCutAction/Input/VR/IA_VR_Hint` | Bool. X (left controller), hint. |
 | `Content/_CleanCutAction/Input/VR/IMC_VR` | Touch controller mappings (table in section 5). Description "VR Touch Controllers". |
+| `Content/_CleanCutAction/Materials/VR/M_VRWidgetBase_OnTop` | Copy of the engine's `Widget3DPassThrough` with **Disable Depth Test** on. |
+| `Content/_CleanCutAction/Materials/VR/M_VRWidget_OnTop` | Instance of it used by the VR UI panel, so walls never cut through the HUD. |
 | `Docs/10_VR_Meta_Quest.md` | This file. |
 
 ### Changed files
@@ -53,15 +57,21 @@ Side awards worth aiming at: **Best First Five Minutes** (Marlowe's heckling dou
 | File | Change |
 |---|---|
 | `CleanCutAction.uproject` | Enabled `OpenXR`, `OpenXRHandTracking`, and (editor only) `PythonScriptPlugin`, `EditorScriptingUtilities`, `AllToolsets` (tools for the `unreal-mcp` server). Added `Windows` to `TargetPlatforms`. |
-| `Source/CleanCutAction/CleanCutAction.Build.cs` | Added the `HeadMountedDisplay` module (motion controllers, XR tracking system). |
+| `Source/CleanCutAction/CleanCutAction.Build.cs` | Added the `HeadMountedDisplay` module (motion controllers, XR tracking system, spectator screen). |
 | `Source/CleanCutAction/CleanCutActionCharacter.h/.cpp` | Creates the `VR` component (`ULTTVRComponent`). `DoMove` moves relative to the head's yaw while VR is active. |
-| `Source/CleanCutAction/CleanCutActionPlayerController.cpp` | Binds `IA_VR_Pause` to the pause toggle. In VR the pause menu keeps *Game and UI* input (instead of UI only) so the controller laser can click it. |
+| `Source/CleanCutAction/CleanCutActionPlayerController.cpp` | Binds `IA_VR_Pause` to the pause toggle. In VR the pause menu keeps *Game and UI* input so the laser can click it. The interact prompt shows **Trigger** / **B** in VR (instead of E / mouse or gamepad labels). |
+| `Source/CleanCutAction/Interaction/LTTMessDirector.cpp` | VR: fades the set in behind the briefing instead of holding black (the clock still waits for Start); binds `IA_VR_Hint`. |
+| `Source/CleanCutAction/Interaction/LTTCleanupHUD.cpp` | VR controls legend (Touch labels) shown instead of the keyboard / gamepad lists; "[H] Hide controls" footer hidden in VR; hint label "[X] Hint" in VR. |
+| `Source/CleanCutAction/Interaction/LTTFirstPersonAnimInstance.cpp` | VR: free hands' IK follows the controllers' grip poses (carry IK keeps priority). |
 | `Source/CleanCutAction/Shoot/LTTShootEndScreen.cpp` | Overwrites the baked `CopyrightText` with the Ohmcodes line at runtime (the `WBP_ShootEndScreen` asset still has the old text baked in). |
+| `Source/CleanCutAction/Interaction/LTTCleanupBarker.cpp` | Comment wording only (no "jam"). |
 | `Config/DefaultInput.ini` | New `[/Script/EnhancedInput.EnhancedInputDeveloperSettings]`: `bEnableDefaultMappingContexts=True`, `IMC_VR` as a default mapping context. |
-| `Config/DefaultGame.ini` | `bStartInVR=True`; `MapsToCook` entries for `IMC_VR` and the three `IA_VR_*` actions; company / copyright set to Ohmcodes (old company URLs and contact removed). |
+| `Config/DefaultGame.ini` | `bStartInVR=True`; `MapsToCook` entries for `IMC_VR`, the four `IA_VR_*` actions and both `M_VRWidget*` materials; company / copyright set to Ohmcodes (old company URLs and contact removed). |
 | `Config/DefaultEngine.ini` | Android `PackageName=com.ohmcodes.cleancutaction`. |
-| `COPYRIGHT.md`, `LICENSE`, `README.md`, `Docs/Itch_Page.md`, `UI/LTTInputDevice.*`, `Shoot/LTTShootEndScreen.cpp` | Owner changed to **Ohmcodes**. |
-| `CLAUDE.md`, `Docs/00_README.md`, `Docs/01_Master_Checklist.md`, `Docs/02_Architecture_and_Systems.md`, `Docs/06_UI_and_Tweening.md`, `Docs/PackagingGuide/README.md`, `README.md` | Rewritten or extended for the Quest VR branch. |
+| `COPYRIGHT.md`, `LICENSE`, `README.md`, `Docs/Itch_Page.md`, `itch/ITCH_THEME_SETTINGS.md`, `UI/LTTInputDevice.*`, `Shoot/LTTShootEndScreen.cpp` | Owner changed to **Ohmcodes**; the competition is credited instead of the earlier jam. |
+| `CLAUDE.md`, `Docs/00_README.md`, `Docs/01_Master_Checklist.md`, `Docs/02_Architecture_and_Systems.md`, `Docs/06_UI_and_Tweening.md`, `Docs/07_Audio_List.md`, `Docs/CleanCutAction_Design.md`, `Docs/PackagingGuide/README.md`, `Docs/PackagingGuide/03_Android_Changes.md`, `README.md` | Rewritten or extended for the Quest VR branch and the Meta VR Start Developer Competition 2026; CLAUDE.md documents the rebuild routine. |
+
+Editor-only, not in the repo: **Use Less CPU when in Background** turned off in Editor Preferences (per-user setting) so the XR Simulator keeps getting frames.
 
 ---
 
@@ -73,18 +83,28 @@ Side awards worth aiming at: **Best First Five Minutes** (Marlowe's heckling dou
 - Tracking origin `Local` and a recentre (`ResetOrientationAndPosition(0)`): the start pose of the head becomes the origin, facing the pawn's forward.
 - Spawns `VROrigin` on the capsule at `BaseEyeHeight` (64 cm above the capsule centre, about 160 cm above the floor). A seated player sees the set from standing height.
 - Moves the camera from the arms' animated `head` bone onto `VROrigin`; turns off `bUsePawnControlRotation` and the first-person FOV / scale; `bLockToHmd` on. The headset now drives the camera.
-- Hides the first-person arms mesh.
+- Hides the first-person mesh (see *Body follows the headset*).
+- Turns Lumen GI off (`r.DynamicGlobalIlluminationMethod 0`) and switches to screen-space reflections (`r.ReflectionMethod 2`) for frame rate; `ExitVR()` / `EndPlay` restore them.
+- Sets the desktop mirror to the full eye, letterboxed (`ESpectatorScreenMode::SingleEyeLetterboxed`).
 - Levels the control rotation (pitch 0). Only yaw matters in VR; snap turn changes it, and the pawn follows it (`bUseControllerRotationYaw`).
-- Spawns motion controllers: `Left` and `Right` grip poses (each with a 6 cm sphere marker) and `RightAim` (aim pose, no marker). All tick while paused so the pause menu can still be pointed at.
+- Spawns motion controllers: `Left` and `Right` grip poses and `RightAim` (aim pose). No visible markers (they blocked the view in the XR Simulator); hand visuals come with the hands-first work. All tick while paused so the pause menu can still be pointed at.
 - Spawns `VR_Laser` (stretched engine cylinder) and `VR_Pointer` (`UWidgetInteractionComponent`, custom hit source) on `RightAim`.
 - Spawns `VR_UIPanel`, a world-space `UWidgetComponent` (1920 x 1080 draw size, 150 cm wide, transparent, no collision) hosting a `ULTTVRUIHost` overlay. It renders the captured widgets into a render target and gives the laser a plane to hit.
 - Spawns `VR_UILayer`, a world-locked quad stereo layer (`UStereoLayerComponent`, `SLT_WorldLocked` set through reflection, live texture, no depth) showing the same render target. Console variable **`ltt.VR.UILayer`** picks which one is visible: **0 (default)** draws the widget panel in the scene; 1 hides it from the scene and shows the stereo layer, which the XR runtime composites on top of everything (no clipping into walls, not covered by fades). Layer mode isn't verified in the XR Simulator yet, so it's off by default.
 
 **Intro in VR.** The flat game holds the screen black (`ALTTMessDirector::BlackOut()`, a manual camera fade) until the player presses Start on the briefing; on a monitor the briefing draws over the black. In VR the panel is in the scene, so that fade hid it and the whole view was black. Now `FinishIntro()` fades the set in behind the briefing when `ULTTVRComponent::IsHeadsetActive()`; the clock and movement still wait for Start, and the second fade is skipped if the set is already visible. The set is still dark at the start by design ("Power's off! Turn it on at the electric box").
 
-**UI panel.** Screen-space UMG isn't drawn in a headset. Every 0.1 s the component finds the top-level `UUserWidget`s that are in the viewport (HUD, interact prompt, briefing, barks, pause menu, end screens, leaderboard, virtual keyboard), removes them from the viewport and inserts them into the overlay, sorted by their viewport Z order (read from `UGameViewportSubsystem`). The game still controls them as usual: a later `RemoveFromParent()` takes a widget off the panel. The panel floats 140 cm in front of the eyes, 10 cm low, and follows the head lazily (stays put until the head turns more than 30 degrees away). It hides when nothing is captured. `ExitVR()` puts every widget back in the viewport at its old Z order.
+**UI panel.** Screen-space UMG isn't drawn in a headset. Every 0.1 s the component finds the top-level `UUserWidget`s that are in the viewport (HUD, interact prompt, briefing, barks, pause menu, end screens, leaderboard, virtual keyboard), removes them from the viewport and inserts them into the overlay, sorted by their viewport Z order (read from `UGameViewportSubsystem`). The game still controls them as usual: a later `RemoveFromParent()` takes a widget off the panel. The panel sits 140 cm in front of the eyes and is sized from the headset's reported horizontal field of view (**`ltt.VR.UIScreenFill`**, default 0.85 of it; about 2.7 m wide on a Quest profile), so the HUD sits where a screen HUD would. In VR the flat game's `Crosshair` (in `WBP_InteractPrompt`) is collapsed and `ULTTCleanupHUD::bShowPickupRing` is turned off (the ring is placed with the flat screen's projection). The desktop window mirrors the full eye letterboxed (`ESpectatorScreenMode::SingleEyeLetterboxed`) instead of the default crop, so it matches the headset view. **`ltt.VR.UIHeadLocked`** picks how it moves: **1 (default)** = head-locked, glued to the view like a screen (level, no roll); 0 = lazy follow (stays in the world and glides back in front once the head turns more than 30 degrees away, pitch clamped to 40 degrees, 10 cm below eye level). With head-locked UI the gaze always lands mid-panel, so menu buttons are clicked with the controller ray. It hides when nothing is captured. `ExitVR()` puts every widget back in the viewport at its old Z order.
 
-**Pointer.** Each tick the right aim ray is intersected with the panel plane in code (the panel has no collision, so it never blocks gameplay traces) and fed to the widget interaction component with `SetCustomHitResult`. If the right controller isn't tracked or misses the panel, the **head's gaze** is used instead (keyboard-and-mouse testing). The laser only shows while the controller is over something clickable. `IA_VR_UIClick` (right trigger, **left mouse button**, **Enter**) presses / releases a virtual left mouse button. When a new widget is captured, the player controller is switched to *Game and UI* input (menus set UI-only, which would swallow the laser / gaze click).
+**Pointer.** Each tick the right aim ray is intersected with the panel plane in code (the panel has no collision, so it never blocks gameplay traces) and fed to the widget interaction component with `SetCustomHitResult`. If the right controller isn't tracked or misses the panel, the **head's gaze** is used instead (keyboard-and-mouse testing). Two dots drawn on the panel itself, **only while a menu that takes clicks is open** (or the pointer is over a button): yellow `VR_DotPointer` where the pointer lands (bigger over a button), cyan `VR_DotGaze` where the head looks. The laser follows the same rule, so nothing crosshair-like shows during play. **Click fallback:** if a click arrives while the controller ray isn't on a button, the pointer is re-aimed along the gaze (`SimulatePointerMovement` through an access shim) and clicks there if that's a button, holding the gaze until release (needed in the XR Simulator, whose hands sit off to the side). Each click logs `VR: UI click (over panel, over button, aimed by controller|gaze)`. `IA_VR_UIClick` (right trigger, **left mouse button**, **Enter**) presses / releases a virtual left mouse button. When a new widget is captured, the player controller is switched to *Game and UI* input (menus set UI-only, which would swallow the laser / gaze click), with keyboard focus on the top focusable captured menu so the menus' own shortcuts keep working (briefing: Enter = time trial, N = no timer, Left / Right = pages). Verified in VR Preview: N closes the briefing; the UI-click action on the pause menu's Resume button closes it.
+
+**Body follows the headset** (`LTTUpdateVRBody` in `LTTVRComponent.cpp`, every tick in VR):
+- *Capsule:* sweeps horizontally to wherever the head moved (walking in the room, the XR Simulator's WASD), stopping at walls; the VR origin shifts back by the same amount so the view stays at the capsule's centre. The head can't leave the body or pass through walls.
+- *Meshes:* both Rookie meshes turn to the head's yaw and slide so their `head` bone sits 8 cm behind and 6 cm under the eyes: the first-person mesh (owner-only: arms and hands) exactly, the world body (`CharacterMesh0`, seen in mirrors / by others) horizontally only, feet on the floor.
+- *Hands:* the first-person mesh is **hidden in the headset**. Shown, the full body seen from just behind the eyes (torso, arms reaching to the controllers) filled the view in the XR Simulator; its neck/head bones are hidden as well. `ULTTFirstPersonAnimInstance` still puts each free hand's IK on its controller's grip pose (wrist 8 cm behind the grip, elbow hint below and outside the shoulder; carry IK keeps priority), ready for a hands-only look. Visible hands are planned with OpenXR hand-tracking meshes (hands-first work). The world body has no hand IK, so in a mirror its arms play the normal animation.
+- Verified in VR Preview: both meshes face the head's yaw, the first-person head bone sits 8 cm behind / 6 cm under the eyes, and a view from in front of the player (what a mirror captures) shows the Rookie standing at the player's position, facing where the head looks.
+
+**Controls legend and prompts.** In VR `ULTTCleanupHUD` builds a third legend list, `ControlsListVR`, with the Touch bindings (L Stick move, R Stick turn, Trigger pick up / place, B throw, A jump, Duck = crouch for real, X hint, Y dance, Menu pause) and shows it instead of the keyboard / gamepad lists; the "[H] Hide controls" footer is hidden (no VR button for it). The score box reads "[X] Hint". The interact prompt (`WBP_InteractPrompt`, labelled in `ACleanCutActionPlayerController::ApplyInputDevice`) reads **Trigger** for pick up / place and **B** for throw. Verified in VR Preview: legend and labels switch, and X triggers the hint (its cooldown starts).
 
 **Movement and turning.** The left stick goes through the existing `IA_Move` binding; `DoMove` uses the camera's yaw while VR is active, so "forward" is where the head faces. The right stick snap-turns 45 degrees (fires past 0.6 tilt, re-arms below 0.3); disabled while paused.
 
@@ -105,10 +125,11 @@ Tunables on the component (`Details > VR`): `SnapTurnDegrees` (45), `PanelDistan
 | Left trigger | Interact | `IA_Interact` |
 | A | Jump | `IA_Jump` |
 | B | Throw | `IA_Throw` |
-| Y | Emote | `IA_Emote` |
+| X | Hint | `IA_VR_Hint` |
+| Y | Dance (emote) | `IA_Emote` |
 | Left menu button | Pause | `IA_VR_Pause` |
 
-Crouch has no button in VR; crouching for real lowers the view (the capsule stays tall).
+Crouch has no button in VR; crouching for real lowers the view (the capsule stays tall). The in-game controls legend shows this table in VR.
 
 **Why the bindings are assets.** The OpenXR input plugin builds the runtime's action bindings only from the Enhanced Input **default mapping contexts** (`Config/DefaultInput.ini`), and it injects input straight into those actions. Runtime-created actions and contexts (the project makes some for crouch, pause and emote) are invisible to OpenXR. Any new VR control needs an `IA_` asset mapped in `IMC_VR` (re-run or extend `create_vr_input.py`) and a `MapsToCook` entry if it's loaded by path.
 
@@ -131,8 +152,11 @@ Meta XR Simulator is a standalone OpenXR runtime for Windows that simulates a Qu
 2. Open the simulator and turn on the **XR Simulator runtime toggle** in its header. This makes it the active OpenXR runtime (it shows under `HKLM\SOFTWARE\Khronos\OpenXR\1\ActiveRuntime`). Turn it off again before using Link with a real headset.
 3. Open the project and use **Play > VR Preview**. (If VR Preview is greyed out, the editor didn't find an OpenXR runtime: check the toggle, then restart the editor.)
 4. In the simulator: **Inputs > Device info > Device** = Meta Quest 3 (restart Play after changing it). Keyboard and mouse drive the head and the controllers **while the simulator window has focus**; the bindings are in the **Input bindings** panel. An Xbox controller also works.
-   - The simulator only receives frames while the VR Preview window isn't minimized; it shows *"No frames received"* otherwise.
-   - To press a menu button without a controller: aim your head at it in the simulator, then click (left mouse) or press Enter in the VR Preview window.
+   - **Frame rate matters.** Below roughly 30 fps the simulator logs *"Client `Alpha` is not responsive"*, shows *"No frames received"* and **drops controller input (T does nothing)**. Measured on 2026-11-17: VR Preview in the editor ran at 18 fps (game thread 42 ms: editor Slate UI plus PIE; GPU 15 ms), 24 fps with Lumen off. `ULTTVRComponent` now switches Lumen GI off (`r.DynamicGlobalIlluminationMethod 0`) and uses screen-space reflections (`r.ReflectionMethod 2`) while in VR, restoring them on exit. For a usable rate, run the game outside the editor: `Scripts\RunVR_Standalone.bat` (`build` argument builds first; close the editor for that, since a standalone run doesn't include Live Coding patches). Restart the simulator if it reports *"Invalid session"* after sessions were started and stopped.
+   - Turn off **Editor Preferences > General > Performance > Use Less CPU when in Background** (done on this machine). Otherwise the editor throttles itself while the simulator window has focus, and the simulator reports *"Client `Alpha` is not responsive"* / *"No frames received"*. Keep the VR Preview window open, not minimized.
+   - Simulator keyboard bindings (Input bindings panel, keyboard and mouse): **W A S D R F** move the headset in the room (physical walking, not game locomotion), **arrow keys** rotate the head, **Q / E** tilt, **T** = index trigger, **U** = grip, **B** = A/X, **N** = B/Y, **M** = menu, **I** = thumbstick press, **Y** = thumbstick up (more stick keys further down the list). Game walking is the left thumbstick and snap turn the right thumbstick. *Use same input for both sides* sends every key to both controllers.
+   - Pointer dots are drawn on the UI panel itself: **yellow** = where the pointer is (bigger over a button), **cyan** = where the head looks while the controller has the pointer. Aim the cyan dot at a button with the arrow keys and press T; the click falls back to the gaze when the controller ray misses.
+   - To press a menu button without a controller: use the menu's keyboard shortcuts in the VR Preview window (briefing: **N** = just clean, **Enter** = time trial), or aim your head so the cursor dot grows on the button, then left-click / Enter in the VR Preview window.
    - WASD / mouse in the **VR Preview** window drive the game pawn (move head-relative, mouse turns), after Start; movement is blocked while the briefing is up, as in flat play.
 5. For the hands-first work: pick a profile with hand tracking and switch the inputs to hands; the simulator reports pinch and grab.
 6. The simulator can record a session (VRS) for repeatable bug repros, and its footage is allowed for the competition video.
@@ -145,12 +169,14 @@ Logs: the editor log shows `VR: headset active, switching ... to VR mode` when t
 
 ## 8. Known limits and follow-ups
 
-- **Not tested in a headset or the simulator yet.** The editor build compiles and the input assets were checked by script.
-- **No hands-first input yet.** This blocks the competition's pass/fail stage.
-- In the default panel mode the UI is scene geometry: full-black fades (ending, tour cuts) and nearby walls can still hide or clip it. `ltt.VR.UILayer 1` avoids that once it's verified in the simulator / on Quest.
+- **Tested in the Meta XR Simulator only** (VR Preview and standalone), not on a Quest headset yet.
+- **No hands-first input yet.** This blocks the competition's pass/fail stage. Visible hands should come with it (OpenXR hand-tracking meshes); the first-person body stays hidden until then.
+- **Frame rate:** VR Preview in the editor runs at roughly 18 - 24 fps on this PC, below what the simulator accepts; use `Scripts\RunVR_Standalone.bat` for real testing. The Quest build still needs the mobile renderer and its own performance pass (60 fps minimum).
+- Full-black camera fades (ending, tour cuts) still cover the UI panel for their duration; `ltt.VR.UILayer 1` (stereo layer) would avoid that but isn't verified in the simulator.
+- The world body has no hand IK, so in a mirror its arms play the normal animation.
+- The Phase 2 (shoot) HUD hasn't been reviewed in VR yet; its key labels may still show keyboard keys.
 - Widgets that call `AddToViewport` again while already on the panel log a "has a parent" warning and stay where they are.
-- The panel is 16:9 and HUD corners sit at the edge of view; the HUD may need a VR layout.
 - Jump in VR can be uncomfortable; consider removing it.
-- Room-scale drift: leaning or stepping moves the camera away from the capsule. Fine for seated play.
 - `AllToolsets` is enabled for the editor; it failed the cook once before (game feature plugins). Cook-test before the Quest package and disable it for that build if needed.
 - `WBP_ShootEndScreen` still has the old copyright text baked into the asset (fixed at runtime). Re-bake or edit it in the editor when convenient.
+- **Build machine clock:** on 2026-11-16 the PC clock jumped back about 11 hours, which made Live Coding report "no changes" and left stale unity objects (link errors). Keep Windows time synced; if it happens again, delete `Intermediate/Build/Win64/x64/UnrealEditor/Development/CleanCutAction` and rebuild.

@@ -39,13 +39,16 @@ The original design docs live in `Docs/` and describe the flat game. The overvie
 ## VR implementation (current state)
 
 - XR runs on the engine's **OpenXR** plugin (+ `OpenXRHandTracking`), not the Meta XR plugin (no 5.9 build; it could be compiled from source later for Meta-only features).
-- `Source/CleanCutAction/VR/LTTVRComponent` (`ULTTVRComponent`, on the character): switches the pawn into VR when a headset renders (camera on a VR origin at eye height, controllers, snap turn, laser pointer) and moves every viewport widget onto a world-space UI panel. Flat play is untouched.
+- `Source/CleanCutAction/VR/LTTVRComponent` (`ULTTVRComponent`, on the character): switches the pawn into VR when a headset renders (camera on a VR origin at eye height, controllers, snap turn, laser pointer, capsule and body following the head, Lumen off) and moves every viewport widget onto a head-locked, always-on-top UI panel (`M_VRWidget_OnTop`). HUD legend and prompts show Touch controller labels in VR. Flat play is untouched.
+- Real testing in the XR Simulator needs a decent frame rate: use `Scripts\RunVR_Standalone.bat` (after a rebuild) rather than VR Preview.
 - Interaction aims with the head (`GetPlayerViewPoint` is the HMD view); carry holds props in front of the camera.
 - **OpenXR only sees input from Enhanced Input default mapping contexts** (`Config/DefaultInput.ini`, currently `IMC_VR`). New VR controls need an `IA_` asset in `/Game/_CleanCutAction/Input/VR/`, a mapping in `IMC_VR` (`Scripts/Python/create_vr_input.py`) and a `MapsToCook` entry if loaded by path. Runtime-created actions don't reach OpenXR.
 - `bStartInVR=True` in `Config/DefaultGame.ini`.
 - Testing without a headset: Meta XR Simulator (standalone OpenXR runtime) set as the active runtime, then **Play > VR Preview**.
 
 ## Build and tools
+
+- **Rebuild routine after C++ changes:** close the editor > Generate Visual Studio project files > build `CleanCutActionEditor` (Development Editor, Win64) > reopen the project. Live Coding only patches the running editor; standalone VR runs (`Scripts\RunVR_Standalone.bat`) load the module from disk and need this real build.
 
 - Build the editor (editor closed or Live Coding off):
   `"D:\UE5 Engines\UE_5.9\Engine\Build\BatchFiles\Build.bat" CleanCutActionEditor Win64 Development -Project="D:\UE5 Projects\CCA_VR\CleanCutAction.uproject" -WaitMutex`

@@ -33,6 +33,10 @@ class ACleanCutActionCharacter : public ACharacter
 	UPROPERTY(VisibleAnywhere, BlueprintReadOnly, Category="Components", meta = (AllowPrivateAccess = "true"))
 	UCameraComponent* FirstPersonCameraComponent;
 
+	/** Switches the pawn to VR (head-tracked camera, controllers, world-space UI) while a headset is active. */
+	UPROPERTY(VisibleAnywhere, BlueprintReadOnly, Category="Components", meta = (AllowPrivateAccess = "true"))
+	TObjectPtr<class ULTTVRComponent> VRComponent;
+
 protected:
 
 	/** Jump Input Action */
