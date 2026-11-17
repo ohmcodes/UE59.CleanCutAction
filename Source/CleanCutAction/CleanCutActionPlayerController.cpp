@@ -155,10 +155,11 @@ void ACleanCutActionPlayerController::ApplyInputDevice()
 		}
 		// VR: Touch controller labels (IMC_VR: trigger picks up / places, B throws).
 		const bool bVR = ULTTVRComponent::IsHeadsetActive();
+		const bool bHands = ULTTVRComponent::IsUsingHands(); // hand tracking: pinch picks up, a flick of the hand throws
 		const bool bPadCaps = bPad || bVR;
 		const ESlateVisibility MouseVis = bPadCaps ? ESlateVisibility::Collapsed : ESlateVisibility::HitTestInvisible;
 		LTTSetTextIfChanged(Cast<UTextBlock>(Prompt->GetWidgetFromName(TEXT("KeyText"))),
-			bVR ? FText::FromString(TEXT("Trigger"))
+			bHands ? FText::FromString(TEXT("Pinch")) : bVR ? FText::FromString(TEXT("Trigger"))
 				: bPad ? ULTTInputDeviceSubsystem::GamepadKeyLabel(EKeys::Gamepad_FaceButton_Left) : FText::FromString(TEXT("E")));
 		LTTSetVisibilityIfChanged(Prompt->GetWidgetFromName(TEXT("OrText")), MouseVis);
 		LTTSetVisibilityIfChanged(Prompt->GetWidgetFromName(TEXT("MouseLeftIcon")), MouseVis);
@@ -199,7 +200,7 @@ void ACleanCutActionPlayerController::ApplyInputDevice()
 		}
 		LTTSetVisibilityIfChanged(ThrowCap, bPadCaps ? ESlateVisibility::HitTestInvisible : ESlateVisibility::Collapsed);
 		LTTSetTextIfChanged(Cast<UTextBlock>(Prompt->GetWidgetFromName(TEXT("ThrowPadText"))),
-			bVR ? FText::FromString(TEXT("B")) : ULTTInputDeviceSubsystem::GamepadKeyLabel(EKeys::Gamepad_RightTrigger));
+			bHands ? FText::FromString(TEXT("Flick")) : bVR ? FText::FromString(TEXT("B")) : ULTTInputDeviceSubsystem::GamepadKeyLabel(EKeys::Gamepad_RightTrigger));
 	}
 }
 

@@ -21,6 +21,7 @@
 #include "TimerManager.h"
 #include "UObject/ConstructorHelpers.h"
 #include "UI/LTTInputDevice.h"
+#include "VR/LTTVRComponent.h"
 
 #define LOCTEXT_NAMESPACE "LTTCleanupBarker"
 
@@ -1100,7 +1101,9 @@ void ALTTCleanupBarker::HandleReleased(ALTTInteractableBase* Item, bool bThrown)
 	if (bThrown)
 	{
 		FFormatOrderedArguments ThrowArgs;
-		ThrowArgs.Add(ULTTInputDeviceSubsystem::Pick(LOCTEXT("ThrowKeyKb", "Right-click"), LOCTEXT("ThrowKeyPad", "Right trigger")));
+		ThrowArgs.Add(ULTTVRComponent::IsUsingHands() ? LOCTEXT("ThrowKeyHands", "A flick of the hand")
+			: ULTTVRComponent::IsHeadsetActive() ? LOCTEXT("ThrowKeyVR", "B")
+			: ULTTInputDeviceSubsystem::Pick(LOCTEXT("ThrowKeyKb", "Right-click"), LOCTEXT("ThrowKeyPad", "Right trigger")));
 		if (!Trigger("First.Throw", ThrowArgs))
 		{
 			Trigger("Throw");

@@ -81,3 +81,8 @@ DerivedDataCache/*
 
 # Visual Studio upgrade report
 UpgradeLog*.htm
+
+# Packaged builds and signing keys (never commit a keystore)
+Builds/
+*.keystore
+*.jks

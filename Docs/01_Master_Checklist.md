@@ -34,11 +34,12 @@ Details and rationale: [`10_VR_Meta_Quest.md`](10_VR_Meta_Quest.md).
 - [x] **V1-09 [M]** Capsule follows the head with wall collision; mirror body follows the head.
 
 ### V2 - Hands-first (competition pass/fail)
-- [ ] **V2-01 [M]** Hand tracking input: pinch = interact / UI click, pinch-hold + release = throw.
-- [ ] **V2-02 [M]** Hands locomotion that works seated (point-and-pinch teleport or hand "joystick"), plus snap turn.
-- [ ] **V2-03 [M]** Menu / pause gesture (palm-up or system gesture) and hand rays for the UI panel.
+- [~] **V2-01 [M]** Hand tracking input: right pinch = interact / UI click; throw from the wrist menu. (Built and compiled, untested with hands.)
+- [~] **V2-02 [M]** Hands locomotion that works seated: left pinch held = walk where you look; snap turn on the wrist menu. (Untested.)
+- [~] **V2-03 [M]** Wrist menu on the left palm (Jump, Throw, Hint, Dance, Turn, Recenter, Pause) and a hand ray for the UI panel. (Untested.)
 - [ ] **V2-04 [M]** Complete both phases with hands only, no controller paired.
-- [ ] **V2-05 [S]** Hand visuals (OpenXR hand mesh or simple joints).
+- [~] **V2-05 [S]** Hand visuals: joint spheres (done); real hand mesh optional.
+- [x] **V2-06 [M]** Quest manifest: hand tracking permission, optional feature, high frequency (`DefaultEngine.ini`).
 
 ### V3 - Quest build
 - [ ] **V3-01 [M]** Android OpenXR for Quest: mobile forward renderer, multiview, Vulkan, `arm64`, hand tracking permission / feature in the manifest.

@@ -27,8 +27,8 @@ Side awards worth aiming at: **Best First Five Minutes** (Marlowe's heckling dou
 ## 2. Plan
 
 1. **Done:** PC VR through OpenXR with Touch controllers (Air Link / Link / XR Simulator), head-gaze interaction, world-space UI panel.
-2. **Next:** hands-first controls with OpenXR hand tracking (pinch to interact / click, pinch-and-point teleport or stick-free locomotion, palm-up menu). Required to pass the competition's first stage.
-3. **Next:** Quest standalone build: Android OpenXR, mobile forward renderer, multiview, Vulkan, package name `com.ohmcodes.cleancutaction`, release-signed 64-bit APK, hand tracking permission in the manifest.
+2. **Working on a Quest over Link, layout final (2026-11-17):** hands-first controls with OpenXR hand tracking: each finger pinched to the thumb is a button (left: walk, turn left, jump, hint; right: interact, turn right, throw, dance), a forward flick of the right hand throws for real, scrubbing with the mop mops, left palm up = wrist menu, right palm held up = pause menu. VR Template hand meshes for hands and controllers. Sections 5b and 5c. Required to pass the competition's first stage.
+3. **Configured 2026-11-17, waiting on the Android SDK install:** Quest standalone build: Android OpenXR, mobile forward renderer, multiview, Vulkan only, 4x MSAA, fixed foveation, Meta release manifest, package name `com.ohmcodes.cleancutaction`, `Scripts\Package_Quest.bat`. Section 9.
 4. **Next:** comfort and session length: Phase 1 trimmed to about 10 minutes, pause when the headset comes off, optional vignette.
 5. **Optional:** compile the Meta XR plugin for 5.9 for Meta-only features (Interaction SDK, passthrough / MRUK).
 
@@ -40,9 +40,9 @@ Side awards worth aiming at: **Best First Five Minutes** (Marlowe's heckling dou
 
 | File | What it is |
 |---|---|
-| `Source/CleanCutAction/VR/LTTVRComponent.h/.cpp` | `ULTTVRComponent` (the whole VR mode: camera, controllers, snap turn, UI panel and pointer, body following, VR render settings) and `ULTTVRUIHost` (overlay widget the UI moves into, with the pointer dots). |
+| `Source/CleanCutAction/VR/LTTVRComponent.h/.cpp` | `ULTTVRComponent` (the whole VR mode: camera, controllers, hand tracking, snap turn, UI panel and pointer, body following, VR render settings), `ULTTVRUIHost` (overlay widget the UI moves into, with the pointer dots) and `ULTTVRHandMenu` (the wrist menu for hand tracking, built in C++). |
 | `Scripts/Python/create_vr_input.py` | Creates / updates the VR input assets below. Safe to re-run; rebuilds `IMC_VR`'s mappings each time. |
-| `Scripts/RunVR_Standalone.bat` | Runs the game outside the editor in VR (`-game -vr`); `build` argument builds first. Much faster than VR Preview. |
+| `Scripts/RunVR_Standalone.bat` | Runs the game outside the editor in VR (`-game -vr`); `build` argument builds first, `link` runs on the Quest through Meta Horizon Link / Air Link, `sim` runs in the XR Simulator (both set `XR_RUNTIME_JSON` for that run only). Much faster than VR Preview. |
 | `Content/_CleanCutAction/Input/VR/IA_VR_Turn` | Axis1D. Right stick X, snap turn. |
 | `Content/_CleanCutAction/Input/VR/IA_VR_UIClick` | Bool, *Trigger When Paused*. Right trigger (also left mouse / Enter for testing), clicks the UI panel. |
 | `Content/_CleanCutAction/Input/VR/IA_VR_Pause` | Bool, *Trigger When Paused*. Left menu button, pause menu. |
@@ -50,6 +50,7 @@ Side awards worth aiming at: **Best First Five Minutes** (Marlowe's heckling dou
 | `Content/_CleanCutAction/Input/VR/IMC_VR` | Touch controller mappings (table in section 5). Description "VR Touch Controllers". |
 | `Content/_CleanCutAction/Materials/VR/M_VRWidgetBase_OnTop` | Copy of the engine's `Widget3DPassThrough` with **Disable Depth Test** on. |
 | `Content/_CleanCutAction/Materials/VR/M_VRWidget_OnTop` | Instance of it used by the VR UI panel, so walls never cut through the HUD. |
+| `Scripts/Package_Quest.bat` | Packages the Quest APK (Shipping; `dev` for Development; `install` also installs it on the connected headset) into `Builds\Quest\Android_ASTC\`. |
 | `Docs/10_VR_Meta_Quest.md` | This file. |
 
 ### Changed files
@@ -59,15 +60,18 @@ Side awards worth aiming at: **Best First Five Minutes** (Marlowe's heckling dou
 | `CleanCutAction.uproject` | Enabled `OpenXR`, `OpenXRHandTracking`, and (editor only) `PythonScriptPlugin`, `EditorScriptingUtilities`, `AllToolsets` (tools for the `unreal-mcp` server). Added `Windows` to `TargetPlatforms`. |
 | `Source/CleanCutAction/CleanCutAction.Build.cs` | Added the `HeadMountedDisplay` module (motion controllers, XR tracking system, spectator screen). |
 | `Source/CleanCutAction/CleanCutActionCharacter.h/.cpp` | Creates the `VR` component (`ULTTVRComponent`). `DoMove` moves relative to the head's yaw while VR is active. |
-| `Source/CleanCutAction/CleanCutActionPlayerController.cpp` | Binds `IA_VR_Pause` to the pause toggle. In VR the pause menu keeps *Game and UI* input so the laser can click it. The interact prompt shows **Trigger** / **B** in VR (instead of E / mouse or gamepad labels). |
+| `Source/CleanCutAction/CleanCutActionPlayerController.cpp` | Binds `IA_VR_Pause` to the pause toggle. In VR the pause menu keeps *Game and UI* input so the laser can click it. The interact prompt shows **Trigger** / **B** in VR (instead of E / mouse or gamepad labels), **Pinch** / **Palm menu** with hand tracking. |
 | `Source/CleanCutAction/Interaction/LTTMessDirector.cpp` | VR: fades the set in behind the briefing instead of holding black (the clock still waits for Start); binds `IA_VR_Hint`. |
-| `Source/CleanCutAction/Interaction/LTTCleanupHUD.cpp` | VR controls legend (Touch labels) shown instead of the keyboard / gamepad lists; "[H] Hide controls" footer hidden in VR; hint label "[X] Hint" in VR. |
+| `Source/CleanCutAction/Interaction/LTTCleanupHUD.cpp` | VR controls legend (Touch labels, or `ControlsListHands` with the gestures while hands are tracked) shown instead of the keyboard / gamepad lists; "[H] Hide controls" footer hidden in VR; hint label "[X] Hint" in VR, "[Palm menu] Hint" with hands. |
 | `Source/CleanCutAction/Interaction/LTTFirstPersonAnimInstance.cpp` | VR: free hands' IK follows the controllers' grip poses (carry IK keeps priority). |
 | `Source/CleanCutAction/Shoot/LTTShootEndScreen.cpp` | Overwrites the baked `CopyrightText` with the Ohmcodes line at runtime (the `WBP_ShootEndScreen` asset still has the old text baked in). |
 | `Source/CleanCutAction/Interaction/LTTCleanupBarker.cpp` | Comment wording only (no "jam"). |
+| `Source/CleanCutAction/Interaction/LTTCarryComponent.h/.cpp` | `ThrowWithVelocity(Velocity)`: throws the held prop with a given velocity (the VR hand throw). `Release` takes an optional velocity; `Throw()` is unchanged. |
+| `Source/CleanCutAction/Interaction/LTTInteractionComponent.h/.cpp` | `TryMopStroke()`: one mop stroke if the held mop is aimed at a puddle right now, otherwise nothing (never drops the mop). Used by VR scrubbing. |
+| `Source/CleanCutAction/Interaction/LTTCleanupBarker.cpp` | Marlowe's first-throw line names the VR control: "A flick of the hand" with hands, "B" with controllers. |
 | `Config/DefaultInput.ini` | New `[/Script/EnhancedInput.EnhancedInputDeveloperSettings]`: `bEnableDefaultMappingContexts=True`, `IMC_VR` as a default mapping context. |
 | `Config/DefaultGame.ini` | `bStartInVR=True`; `MapsToCook` entries for `IMC_VR`, the four `IA_VR_*` actions and both `M_VRWidget*` materials; company / copyright set to Ohmcodes (old company URLs and contact removed). |
-| `Config/DefaultEngine.ini` | Android `PackageName=com.ohmcodes.cleancutaction`. |
+| `Config/DefaultEngine.ini` | Android `PackageName=com.ohmcodes.cleancutaction`. Quest hand tracking manifest entries: `com.oculus.permission.HAND_TRACKING`, optional feature `oculus.software.handtracking`, `com.oculus.handtracking.frequency=HIGH`, `com.oculus.handtracking.version=V2.0`. |
 | `COPYRIGHT.md`, `LICENSE`, `README.md`, `Docs/Itch_Page.md`, `itch/ITCH_THEME_SETTINGS.md`, `UI/LTTInputDevice.*`, `Shoot/LTTShootEndScreen.cpp` | Owner changed to **Ohmcodes**; the competition is credited instead of the earlier jam. |
 | `CLAUDE.md`, `Docs/00_README.md`, `Docs/01_Master_Checklist.md`, `Docs/02_Architecture_and_Systems.md`, `Docs/06_UI_and_Tweening.md`, `Docs/07_Audio_List.md`, `Docs/CleanCutAction_Design.md`, `Docs/PackagingGuide/README.md`, `Docs/PackagingGuide/03_Android_Changes.md`, `README.md` | Rewritten or extended for the Quest VR branch and the Meta VR Start Developer Competition 2026; CLAUDE.md documents the rebuild routine. |
 
@@ -85,10 +89,17 @@ Editor-only, not in the repo: **Use Less CPU when in Background** turned off in 
 - Moves the camera from the arms' animated `head` bone onto `VROrigin`; turns off `bUsePawnControlRotation` and the first-person FOV / scale; `bLockToHmd` on. The headset now drives the camera.
 - Hides the first-person mesh (see *Body follows the headset*).
 - Sets the world body (`CharacterMesh0`) to `AlwaysTickPoseAndRefreshBones`. Characters default to `AlwaysTickPose`, which refreshes bones only when the mesh is drawn in a view; the body is owner-no-see, so mirrors (scene captures) showed it frozen and the dance didn't show. Verified: idle and dance animate in a mirror-style capture.
-- Turns Lumen GI off (`r.DynamicGlobalIlluminationMethod 0`) and switches to screen-space reflections (`r.ReflectionMethod 2`) for frame rate; `ExitVR()` / `EndPlay` restore them.
+- Applies a PC VR performance set; `ExitVR()` / `EndPlay` restore every value:
+  - Lumen GI and reflections off (`r.DynamicGlobalIlluminationMethod 0`, `r.ReflectionMethod 0`, plus `r.Lumen.DiffuseIndirect.Allow 0` and `r.Lumen.Reflections.Allow 0` so a post-process volume can't turn it back on).
+  - Virtual shadow maps off, replaced by 2 cascaded shadow maps at 1024 px with a 0.6 distance scale. Distance-field shadows and AO off.
+  - Volumetric fog, SSR, SSAO, motion blur, depth of field, lens flares and chromatic fringe off.
+  - `r.ViewDistanceScale 0.6`.
+  - `ltt.VR.ScreenPercentage` (default 100) sets `r.ScreenPercentage` only when it isn't 100. At 80 the engine recreated the headset swapchain smaller ("Resizing VR buffer"), and the Quest over Link showed nothing while input still worked, so it's left at the headset's own resolution.
+- Logs `VR: runtime hand tracking available / NOT available` when VR starts. Over Link, hands need Developer Runtime Features on in the Meta Horizon Link app (Settings > Beta).
+- `vr.InstancedStereo=True` in `Config/DefaultEngine.ini`: both eyes render in one pass. Takes effect after an editor restart and a full shader recompile.
 - Sets the desktop mirror to the full eye, letterboxed (`ESpectatorScreenMode::SingleEyeLetterboxed`).
 - Levels the control rotation (pitch 0). Only yaw matters in VR; snap turn changes it, and the pawn follows it (`bUseControllerRotationYaw`).
-- Spawns motion controllers: `Left` and `Right` grip poses and `RightAim` (aim pose). No visible markers (they blocked the view in the XR Simulator); hand visuals come with the hands-first work. All tick while paused so the pause menu can still be pointed at.
+- Spawns motion controllers: `Left` and `Right` grip poses and `RightAim` (aim pose). No visible markers (they blocked the view in the XR Simulator); tracked hands are drawn as joint spheres (section 5b). With hand tracking, `Left` / `Right` follow the palms (the `OpenXRHandTracking` legacy motion sources). All tick while paused so the pause menu can still be pointed at.
 - Spawns `VR_Laser` (stretched engine cylinder) and `VR_Pointer` (`UWidgetInteractionComponent`, custom hit source) on `RightAim`.
 - Spawns `VR_UIPanel`, a world-space `UWidgetComponent` (1920 x 1080 draw size, 150 cm wide, transparent, no collision) hosting a `ULTTVRUIHost` overlay. It renders the captured widgets into a render target and gives the laser a plane to hit.
 - Spawns `VR_UILayer`, a world-locked quad stereo layer (`UStereoLayerComponent`, `SLT_WorldLocked` set through reflection, live texture, no depth) showing the same render target. Console variable **`ltt.VR.UILayer`** picks which one is visible: **0 (default)** draws the widget panel in the scene; 1 hides it from the scene and shows the stereo layer, which the XR runtime composites on top of everything (no clipping into walls, not covered by fades). Layer mode isn't verified in the XR Simulator yet, so it's off by default.
@@ -131,6 +142,72 @@ Tunables on the component (`Details > VR`): `SnapTurnDegrees` (45), `PanelDistan
 | Left menu button | Pause | `IA_VR_Pause` |
 
 Crouch has no button in VR; crouching for real lowers the view (the capsule stays tall). The in-game controls legend shows this table in VR.
+
+## 5b. Controls (hand tracking, no controller)
+
+Hands-first is pass/fail, so every controller action has a hand equivalent. Controllers and hands both work; the game switches on its own (hands mode while a hand is tracked and for 1.5 s after it drops out).
+
+Each finger pinched against the thumb is its own button. Layout set by the developer on 2026-11-17:
+
+| Gesture | Action | How |
+|---|---|---|
+| **Left index pinch, held** | Walk where you look, at a walking pace | Injects `IA_Move` (0, `PinchWalkSpeed` = 0.45) every frame; the character moves head-relative |
+| **Left middle pinch** | Snap turn left | `SnapTurn(-1)` |
+| **Left ring pinch** | Jump | Injects `IA_Jump` |
+| **Left pinky pinch** | Hint | Injects `IA_VR_Hint` |
+| **Right index pinch** | Same as the right trigger: pick up / place what you look at, mop once when holding the mop over a puddle, and click the menu button under the hand ray (falls back to the gaze like the trigger) | Injects `IA_Interact` (skipped when the ray is on a button or a menu is open) + virtual left click |
+| **Right middle pinch** | Snap turn right | `SnapTurn(1)` |
+| **Right ring pinch** | Throw (button version, always works) | Injects `IA_Throw` |
+| **Right pinky pinch** | Dance | Injects `IA_Emote` on the pinch. Holding it longer does nothing in the game (left to the headset) |
+| **Flick the right hand forward** while holding a prop | **Real throw**: the prop leaves with the hand's direction and speed | `UpdateHandMotion` (below) calls `ULTTCarryComponent::ThrowWithVelocity` |
+| **Scrub the right hand back and forth** while holding the mop and looking at a puddle | **Real mopping**: one stroke per 14 cm of hand travel | `UpdateHandMotion` calls `ULTTInteractionComponent::TryMopStroke` |
+| **Left palm toward your face** | Opens the **wrist menu** above the left hand: the score (placed / destroyed / points / hint cooldown), the full gesture list, and buttons for Hint, Pause, Jump, Throw, < Turn, Turn >, Dance, Recenter. Point with the right hand and index-pinch a button | `ULTTVRHandMenu` buttons inject `IA_VR_Hint`, `IA_VR_Pause`, `IA_Jump`, `IA_Throw`, `IA_Emote`; turns call the snap turn; Recenter resets the tracking origin |
+| **Right palm toward your face, held 0.6 s** | Opens the **pause menu** (the Escape menu: resume, leaderboard, settings...) on the UI panel. Close it with its Resume button (right index pinch) | `UpdatePausePalm` injects `IA_VR_Pause` |
+| **Duck for real** | Crouch | Head tracking |
+
+While a hand is tracked the cleanup HUD hides its top-left score card and the controls card (both are on the wrist menu); the timer stays at the top centre.
+
+**How it works** (`ULTTVRComponent::UpdateHands`, every tick in VR, paused too):
+- Joint data comes from `IXRTrackingSystem::GetHandTrackingState` (OpenXR `XR_EXT_hand_tracking` through the `OpenXRHandTracking` plugin): 26 joints per hand in world space, with radii. No Meta XR plugin needed.
+- **Pinch:** gap between the thumb tip and a fingertip's surfaces (centre distance minus both radii) below `PinchDistance` (1 cm). Of the four fingers the closest one wins, so a middle pinch isn't read as an index pinch. Released above twice that, so it doesn't flicker. Lost tracking releases it. Left-hand gestures are ignored while the left palm faces the head (wrist menu, and the headset's own menu gesture).
+- **Hand ray:** like the Quest system pointer, from an estimated right shoulder (18 cm right of and 20 cm below the head) through the midpoint of the index and thumb knuckles, smoothed. The knuckles barely move while pinching, so a click doesn't knock the ray off a button. The hand ray takes priority over the controller aim pose; `GetAimRay` gives the controller ray when no hand is tracked. The pointer traces the wrist menu and the UI panel and uses the nearer hit; the laser shows on either.
+- **Wrist menu:** a `UWidgetComponent` (`ULTTVRHandMenu::DrawSize` 1040 x 560, `HandMenuWidth` 36 cm wide, `M_VRWidget_OnTop`, sort priority above the HUD panel) placed 6 cm above the left palm (bottom edge), facing the eyes. Left column: score (read from `ALTTMessDirector`; hidden in Phase 2) and the gesture list. Right column: a 2 x 4 button grid. Opens when the palm normal points at the head (dot > 0.6), closes below 0.3, stays open while the right ray is on it. Hidden while a menu (briefing, pause, end screen) is open or the game is paused. Its buttons aren't focusable, so they never take focus from the main menus. Left-pinch walking is off while it's open.
+- **Visible hands (VR Template meshes, `/Game/XRMannequins`):**
+  - *Tracked hands:* `UPoseableMeshComponent`s with `SKM_MannyXR_left/right`. `LTTBuildHandBones` maps 20 bones (hand, thumb, and the metacarpal + three segments of each finger) to OpenXR joints. For each bone it stores the offset between a frame built from the bone's direction (toward the next joint) and the back of the hand, and the bone's own reference rotation, so no bone-axis convention is assumed. Every frame the mesh is placed on the wrist joint, scaled to the player's hand (wrist to middle knuckle), and each bone's world rotation is set from the live joints (finger twist from each joint, thumb twist from the palm).
+  - *Controllers:* the template's own hand component (`BP_MannequinsXR` with `ABP_MannequinsXR`, which mirrors the right-hand animations for the left via `bMirror`) on each grip pose with the template's offsets. Its pose alphas come from new `IMC_VR` actions: grip axis = grasp, trigger axis = index curl, finger off the trigger = point, thumb off A / B / X / Y / stick = thumbs up (`IA_VR_HandGrip_*`, `IA_VR_HandTrigger_*`, `IA_VR_HandIndexTouch_*`, `IA_VR_HandThumbTouch_*`).
+  - Controller hands hide while hand tracking is active, tracked hands hide when their hand isn't tracked. The joint spheres only show if the meshes failed to load.
+  - *Glow:* `M_VRGlow` (unlit translucent, fresnel rim, params `Color`, `Intensity`, `Base`, `Opacity`) is the overlay material on all four hand meshes, the laser and the joint spheres, so hands and pointer stay visible when the breaker kills the lights.
+- **Labels:** `ULTTVRComponent::IsUsingHands()` switches the HUD legend to `ControlsListHands`, the interact prompt to **Pinch** / **Palm menu**, and the hint label to "[Palm menu] Hint".
+- Gestures go through `UEnhancedInputLocalPlayerSubsystem::InjectInputForAction`, so they reach the same bindings as the keys and buttons; nothing in the gameplay code changed.
+- The palm direction assumes OpenXR's joint axes (+Y out of the back of the hand = Unreal +Z, so the palm normal is the palm joint's -Z). If the menu opens with the back of the hand instead, flip the sign in `LTTPalmNormal`.
+
+- **Right palm pause** (`UpdatePausePalm`): the right palm normal (same `LTTPalmNormal` as the left) pointing at the head (dot > 0.7) for `PausePalmHoldTime` (0.6 s) fires Pause once; it re-arms after the palm turns away (dot < 0.3). Only during play (not when already paused, a menu is open, the wrist menu is open or a right finger is pinched). While the right palm faces the head (dot > 0.5), right pinch presses are ignored: palm toward you + index pinch is the Quest's own Meta / home gesture, and the system takes it.
+- **Real throw** (`UpdateHandMotion`, every tick while a prop is held and play is running):
+  1. The right palm joint is stored with a timestamp **in VR origin space** (`VROrigin->InverseTransformPositionNoScale`), the last 0.2 s. In origin space a snap turn or pinch-walking doesn't look like the hand moving.
+  2. Hand velocity = position change over the last ~70 ms, rotated back to world space.
+  3. It's a throw when the speed is above `HandThrowMinSpeed` (220 cm/s), the motion points forward (dot with the head's flat forward > 0.35, not steeply down), no right finger is pinched, the right palm isn't facing you, and `HandThrowGrace` (0.45 s) has passed since the prop was picked up or since a right pinch. The grace stops the pickup pinch itself from throwing.
+  4. Prop speed = hand speed x `HandThrowBoost` (2.6) x the prop's own throw multiplier, clamped to 300 - `HandThrowMaxSpeed` (1900) cm/s, along the hand's direction, plus the pawn's velocity. `ULTTCarryComponent::ThrowWithVelocity` does the release (same wall sweep, break-on-impact flag and `OnReleased` broadcast, so Marlowe's throw barks and breaking work as before). Log: `VR: hand throw, hand N cm/s, prop N cm/s`.
+  5. The mop is never flick-thrown (scrubbing would throw it); the ring pinch still throws it.
+- **Real mopping** (same function, when the held prop has `bIsMop`): an anchor point is kept in origin space; once the hand has moved `MopStrokeDistance` (14 cm) horizontally from it, `TryMopStroke()` runs. That re-checks the aim (`UpdatePlaceHint`) and only calls `ALTTWaterPuddle::MopUp` if the mop points at a puddle; it never drops the mop. The puddle refuses a stroke while the last one is still playing (`StrokeTime`), so the anchor only moves to the new spot when a stroke lands. Pinching the right index still mops as before.
+- Turning either feature off: untick `bHandThrow` / `bHandMop` on the VR component (`BP_FirstPersonCharacter > VR`). The ring pinch and index pinch keep working.
+
+Tunables (`Details > VR|Hands`): `PinchDistance` (1 cm), `PinchWalkSpeed` (0.45), `HandMenuWidth` (36 cm), `PausePalmHoldTime` (0.6 s); `VR|Hands|Throw`: `bHandThrow`, `HandThrowMinSpeed` (220), `HandThrowBoost` (2.6), `HandThrowMaxSpeed` (1900), `HandThrowGrace` (0.45); `VR|Hands|Mop`: `bHandMop`, `MopStrokeDistance` (14).
+
+**Other gestures that could be added later** (not built): both palms facing you = recenter; a fist (all four fingers curled, no pinch) = grab; index pointed out = show the laser only while pointing. None are needed for the competition: every action already has a gesture or a wrist menu button.
+
+## 5c. How to change a hand gesture yourself
+
+All hand input lives in `Source/CleanCutAction/VR/LTTVRComponent.cpp`. Fingers are numbered **0 index, 1 middle, 2 ring, 3 pinky**.
+
+1. **Remap a pinch:** open `ULTTVRComponent::HandlePinch`. The `if (bRightHand)` block has one `case` per right finger; the left-hand `switch` at the bottom has one per left finger. Move the `DoHandAction(...)` line to the finger you want. Left index (0) is walking and is handled every frame at the end of `UpdateHands` (`LeftPinchFinger == 0`); to move walking, change that `0`. Right index (0) is also the menu click; keep it on a finger that's easy to hit.
+2. **Add a new action:** add a value to `ELTTVRHandAction` (`LTTVRComponent.h`), handle it in `ULTTVRComponent::DoHandAction` (inject an existing input action with `InjectAction(Path, FInputActionValue(true))`, or call code directly), then call it from a finger. A new `IA_` asset is only needed if a controller button must also trigger it (OpenXR only sees `IMC_VR`, see below).
+3. **Add a wrist menu button:** in `ULTTVRHandMenu::NativeOnInitialized`, add an `AddButton(...)` line (row, column) and an `On...()` `UFUNCTION` in the header that calls `Fire(ELTTVRHandAction::...)`.
+4. **Update the text the player sees** in three places: the wrist menu legend (`HandLegend...` lines in `ULTTVRHandMenu::NativeOnInitialized`), the HUD controls card (`ControlsListHands` in `Interaction/LTTCleanupHUD.cpp`), and the interact prompt labels (`bHands ? ...` in `CleanCutActionPlayerController::ApplyInputDevice`). Then this doc's table.
+5. **Tune feel without code:** select `BP_FirstPersonCharacter`, the `VR` component, `Details > VR|Hands` (values above). Pinches too twitchy: raise `PinchDistance`. Throws fire by accident: raise `HandThrowMinSpeed` or `HandThrowGrace`. Throws too weak: raise `HandThrowBoost`.
+6. **Rebuild** after header changes: close the editor, build `CleanCutActionEditor`, reopen (CLAUDE.md, *Rebuild routine*). Live Coding can't add new `UPROPERTY`s.
+7. **Test:** watch the log for `VR: wrist menu action N` (N = position in `ELTTVRHandAction`), `VR: hand throw ...` and `VR: right palm held, pause menu`.
+
+**Mirror in VR (`ALTTMirror`).** A single scene capture from the head looks flat and wrong with both eyes open (each eye needs its own reflection). In VR the mirror renders one capture per eye (`Capture` left, `CaptureRight` right, square targets of `MaxResolution`): each from that eye's position (`CalculateStereoViewOffset`) reflected in the glass, with that eye's off-centre projection (`GetStereoProjectionMatrix`, horizontal offset flipped because the capture image is mirrored, near plane at the glass). `M_Mirror` picks the texture per eye with a Custom node (`ResolvedView.StereoPassIndex`: 0 = `MirrorTexture`, 1 = `MirrorTextureRight`). Flat play still uses one capture. Costs a second reflection render in VR while the mirror is on screen.
 
 **Why the bindings are assets.** The OpenXR input plugin builds the runtime's action bindings only from the Enhanced Input **default mapping contexts** (`Config/DefaultInput.ini`), and it injects input straight into those actions. Runtime-created actions and contexts (the project makes some for crouch, pause and emote) are invisible to OpenXR. Any new VR control needs an `IA_` asset mapped in `IMC_VR` (re-run or extend `create_vr_input.py`) and a `MapsToCook` entry if it's loaded by path.
 
@@ -175,7 +252,7 @@ Meta XR Simulator is a standalone OpenXR runtime for Windows that simulates a Qu
    - Pointer dots are drawn on the UI panel itself: **yellow** = where the pointer is (bigger over a button), **cyan** = where the head looks while the controller has the pointer. Aim the cyan dot at a button with the arrow keys and press T; the click falls back to the gaze when the controller ray misses.
    - To press a menu button without a controller: use the menu's keyboard shortcuts in the VR Preview window (briefing: **N** = just clean, **Enter** = time trial), or aim your head so the cursor dot grows on the button, then left-click / Enter in the VR Preview window.
    - WASD / mouse in the **VR Preview** window drive the game pawn (move head-relative, mouse turns), after Start; movement is blocked while the briefing is up, as in flat play.
-5. For the hands-first work: pick a profile with hand tracking and switch the inputs to hands; the simulator reports pinch and grab.
+5. **Hand tracking:** pick a profile with hand tracking and switch the inputs to hands; the simulator reports pinch and grab. The log shows `VR: hand tracking active` when the game sees a hand, and `VR: wrist menu action N` for each wrist menu button.
 6. The simulator can record a session (VRS) for repeatable bug repros, and its footage is allowed for the competition video.
 
 Logs: the editor log shows `VR: headset active, switching ... to VR mode` when the pawn enters VR.
@@ -184,11 +261,85 @@ Logs: the editor log shows `VR: headset active, switching ... to VR mode` when t
 
 ---
 
+## 9. Quest standalone build (Quest 2 and newer)
+
+Checked against Meta's docs on 2026-11-17: *Application Manifests for Release Builds* (`developers.meta.com/vr/resources/publish-mobile-manifest`), *Meta XR performance settings in Unreal Engine* and *Building and Packaging Apps* (Unreal).
+
+### 9.1 One-time setup (this PC has no Android SDK yet)
+
+1. Install **Android Studio** from `developer.android.com/studio` (default location). Open it once and finish the setup wizard. It downloads the SDK to `%LOCALAPPDATA%\Android\Sdk`.
+2. Close the editor. Run `D:\UE5 Engines\UE_5.9\Engine\Extras\Android\SetupAndroid.bat`. It installs what this engine needs (`Engine\Config\Android\Android_SDK.json`: platform android-36, build-tools 36, NDK 27.2.12479018, CMake 3.22.1), asks you to **accept the SDK licenses**, and sets `ANDROID_HOME`, `NDKROOT` and `JAVA_HOME` for your user.
+3. Sign out and back in (or reboot) so every program sees the new environment variables. `Saved\Logs\AutoSDKInfo.txt` should then show `Android - buildable: True`.
+4. Headset: Developer Mode on (Meta Horizon app on the phone, *Devices > Headset settings > Developer mode*), USB cable, allow USB debugging in the headset.
+
+### 9.2 Build and install
+
+- `Scripts\Package_Quest.bat` builds a **Shipping** APK into `Builds\Quest\Android_ASTC\` (the first run compiles every mobile shader and takes a long time; later runs are much faster). `Scripts\Package_Quest.bat dev` builds a **Development** APK that writes logs (`adb logcat -s UE`) and accepts `stat fps` / `stat unit`. `Scripts\Package_Quest.bat install` installs it on the headset afterwards.
+- Same thing from the editor: *Platforms > Android > Package Project*, flavour **Android (ASTC)**.
+- To install: drag the `.apk` onto the device in **Meta Quest Developer Hub**, or run the `Install_CleanCutAction-arm64.bat` next to it. On the headset it's in the library under **Unknown Sources**.
+- This APK is **debug-signed** (`ForDistribution=False` in `Config/DefaultGame.ini`), which is fine for sideloading and testing. The Developer Dashboard release channel ("Competition") needs a **release-signed** one, see 9.5.
+
+### 9.3 What was set for Quest, and why
+
+`Config/DefaultEngine.ini`, `[/Script/Engine.RendererSettings]` (mobile only; PC VR keeps the desktop renderer):
+
+| Setting | Value | Why |
+|---|---|---|
+| `r.Mobile.ShadingPath` | 0 (forward) | Already set. Meta's recommended path for Quest |
+| `vr.MobileMultiView` | True (was False) | Both eyes in one pass: about half the draw calls. Meta recommendation |
+| `r.MobileHDR` | False (was True) | Meta's "disable post processing": skips the HDR scene colour and tonemapper pass, and makes MSAA cheap. Bloom, auto exposure and other post effects don't show on Quest. **Check** the black fades (briefing, ending) and colours on the headset |
+| `r.Mobile.AntiAliasing` / `r.MSAACount` | 3 (MSAA) / 4 | Already set. Meta's recommended 4x MSAA |
+| `r.Mobile.FloatPrecisionMode` | 0 (half) | Already set. Meta recommendation |
+| `r.AllowOcclusionQueries` | True | Already set |
+
+`[/Script/AndroidRuntimeSettings.AndroidRuntimeSettings]`:
+
+| Setting | Value | Why |
+|---|---|---|
+| `bPackageForMetaQuest` | True | The engine's Quest packaging: arm64 + Vulkan only, adds `com.oculus.permission.HAND_TRACKING`, `oculus.software.handtracking`, the overlay keyboard feature, drops phone permissions the Store rejects, no launch image |
+| `MinSDKVersion` / `TargetSDKVersion` | 32 / 34 (were 26 / 36) | Meta's release rules: Quest 2 min 32, apps created since 2026-03-01 must target 34 |
+| `InstallLocation` | Auto | Required by the Store |
+| `bBuildForES31` | False | Vulkan only (Meta recommendation; Quest uses Vulkan) |
+| `bRemoveOSIG` | False | Must stay unchecked (Meta) |
+| `Orientation`, `bShowLaunchImage` | Landscape, False | Phone settings, unused in VR |
+| `ExtraManifestNodeTags` | `android.hardware.vr.headtracking` required, version 1 | Required for immersive apps |
+| `ExtraActivitySettings` | intent filter with `MAIN` + `com.oculus.intent.category.VR` | Required for OpenXR apps: launches the game as VR, not as a 2D panel |
+| `ExtraActivityNodeTags` | `android:excludeFromRecents="true"` | Required by the Store |
+| `ExtraApplicationNodeTags` | `com.oculus.supportedDevices` = `quest2\|questpro\|quest3\|quest3s`; hand tracking `HIGH` frequency, `V2.0` | Device list for the Store; better hand tracking |
+
+`Config/Android/AndroidDeviceProfiles.ini`, new `[Android_OpenXR DeviceProfile]` section (every Quest profile, such as `Oculus_Quest2`, inherits it; it in turn inherits the phone tiers above it):
+
+| CVar | Value | Why |
+|---|---|---|
+| `t.MaxFPS` | 0 | The phone profile capped at 60; on a 72 Hz Quest 2 that judders. The OpenXR runtime paces frames |
+| `r.MSAACount` | 4 | `Android_Mid` (phones) drops to 2 |
+| `xr.OpenXRFBFoveationLevel` / `xr.OpenXRFBFoveationDynamic` | 2 / 1 | Fixed foveated rendering (`XR_FB_foveation`): fewer pixels at the lens edges, raised only when the GPU needs it |
+| `r.Shadow.CSM.MaxMobileCascades` | 1 | One sun shadow cascade |
+
+Unchanged from the Android phone work and still in effect on Quest: textures capped at 1024 px (cooked build only), the sky light captured once, sun shadow distance 0.1. The engine's own `Oculus_Quest2` profile adds `sg.ShadowQuality=1` and Adreno occlusion settings. The mirror (`ALTTMirror::BeginPlay`) already drops to 512 px, no shadows, 12 m update range on Android.
+
+### 9.4 Checking performance on the headset
+
+- Target: a steady **72 fps on Quest 2** (the competition minimum is 60).
+- Development APK: `stat fps`, `stat unit` (console from the keyboard over `adb shell "am broadcast -a android.intent.action.RUN -e cmd 'stat unit'"`), or **OVR Metrics Tool** from Meta Quest Developer Hub (fps, GPU / CPU level, overlay in the headset).
+- If it's GPU bound: raise foveation to 3 (`xr.OpenXRFBFoveationLevel=3`), lower `r.MSAACount` to 2, or render a little smaller with `vr.PixelDensity=0.9` (all in `[Android_OpenXR DeviceProfile]`). If it's CPU (game thread) bound: fewer dynamic lights / shadow casters, `r.StaticMeshLODDistanceScale=2`.
+
+### 9.5 Release signing for the Developer Dashboard
+
+1. Create a keystore once and keep it safe; every later update must use the same one: `keytool -genkey -v -keystore cleancutaction.keystore -alias cleancutaction -keyalg RSA -keysize 2048 -validity 10000` (keytool is in Android Studio's `jbr\bin`). Put it in `Build\Android\`. `.gitignore` ignores `*.keystore` / `*.jks` and `Builds/`; never commit the keystore or its password.
+2. *Project Settings > Platforms > Android > Distribution Signing*: Key Store `cleancutaction.keystore`, Key Alias `cleancutaction`, passwords. The editor writes these into `Config/DefaultEngine.ini` (`KeyStore`, `KeyAlias`, `KeyStorePassword`, `KeyPassword`): don't commit the password lines. `IniKeyDenylist` in `DefaultGame.ini` keeps them out of the packaged game.
+3. *Project Settings > Packaging*: tick **For Distribution** (`ForDistribution=True`). That makes the manifest `android:debuggable="false"`, which the Store requires.
+4. Package (`Scripts\Package_Quest.bat`), then upload the APK to the **Competition** release channel in the Developer Dashboard (or `ovr-platform-util upload-quest-build`).
+5. Each new upload needs a higher `StoreVersion` (`[AndroidRuntimeSettings]`).
+
 ## 8. Known limits and follow-ups
 
-- **Tested in the Meta XR Simulator only** (VR Preview and standalone), not on a Quest headset yet.
-- **No hands-first input yet.** This blocks the competition's pass/fail stage. Visible hands should come with it (OpenXR hand-tracking meshes); the first-person body stays hidden until then.
-- **Frame rate:** VR Preview in the editor runs at roughly 18 - 24 fps on this PC, below what the simulator accepts; use `Scripts\RunVR_Standalone.bat` for real testing. The Quest build still needs the mobile renderer and its own performance pass (60 fps minimum).
+- **Quest standalone APK not built yet:** the PC has no Android SDK (section 9.1). All Quest settings are in place, but the cook, the shaders and the 72 fps target are unverified until the first package runs on the headset.
+- **Tested in the Meta XR Simulator and on a Quest over Link**, not as a standalone APK yet.
+- **New on 2026-11-17, not yet tried in the headset:** the remapped finger layout, the right palm pause, the real throw and real mopping. Tune `HandThrowMinSpeed` / `HandThrowBoost` / `MopStrokeDistance` after the first try.
+- **Hand tracking works on a Quest over Link** (pinches, walking, wrist menu tested by the developer; walking was too fast before `PinchWalkSpeed`). The per-finger pinch layout, the template hand meshes (tracked and controller), the glow and the per-eye mirror are built and compile but are not yet tested in the headset. If a tracked hand mesh looks twisted, the thumb twist (`bHandUp`) or the reference "back of the hand" sign in `LTTBuildHandBones` are the first things to check. The whole game still needs a full run with hands only before submission (pass/fail).
+- The VR Template feature pack import showed "Failed to create asset /Game/TP_VirtualRealityBP" and "Failed to find BP_XRPawn": its content (`XRFramework`, `XRMannequins`, `VRSpectator`) was copied, only the pack's last step failed. It also added legacy action / axis mappings to `DefaultInput.ini` (GrabLeft, TriggerAxisRight, Spectator...); OpenXR ignores legacy mappings and nothing in the game uses them.
+- **Frame rate:** On a Quest over Link (RTX 3070, 2880 x 1584), VR Preview measured 15 - 20 fps before the performance set and instanced stereo. At that rate, Link drops controller input and aiming at the UI is near impossible. VR Preview in the editor runs at roughly 18 - 24 fps on this PC, below what the simulator accepts; use `Scripts\RunVR_Standalone.bat` for real testing. The Quest build still needs the mobile renderer and its own performance pass (60 fps minimum).
 - Full-black camera fades (ending, tour cuts) still cover the UI panel for their duration; `ltt.VR.UILayer 1` (stereo layer) would avoid that but isn't verified in the simulator.
 - The world body has no hand IK, so in a mirror its arms play the normal animation. Walking with the headset (room-scale) moves the capsule without velocity, so the legs only animate for stick movement.
 - Running the editor, VR Preview and the XR Simulator together exceeds video memory on this PC ("Video memory has been exhausted"); another reason to test with `RunVR_Standalone.bat`.

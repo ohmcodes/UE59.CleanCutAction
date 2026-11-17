@@ -9,6 +9,8 @@
 #   IA_VR_UIClick (Bool)     right trigger -> clicks the world-space UI panel (works while paused)
 #   IA_VR_Pause (Bool)       left menu button -> pause menu (works while paused)
 #   IA_VR_Hint (Bool)        X (left controller) -> hint (ALTTMessDirector)
+#   IA_VR_HandGrip_L/_R, IA_VR_HandTrigger_L/_R (Axis1D), IA_VR_HandIndexTouch_L/_R, IA_VR_HandThumbTouch_L/_R (Bool)
+#                            finger poses for the controller hand meshes (ULTTVRComponent reads their values)
 #   IMC_VR                   maps those plus the existing gameplay actions to the Touch controllers.
 # IMC_VR is listed in Config/DefaultInput.ini as an Enhanced Input default mapping context; OpenXR only
 # exposes bindings from those to the runtime.
@@ -35,6 +37,11 @@ def make_action(name, value_type, when_paused=False):
     action = load_or_create(name, unreal.InputAction, unreal.InputAction_Factory())
     action.set_editor_property("value_type", value_type)
     action.set_editor_property("trigger_when_paused", when_paused)
+    # OpenXR rejects two actions with the same localized description (an empty one counts).
+    try:
+        action.set_editor_property("action_description", unreal.Text(name))
+    except Exception:
+        pass
     return action
 
 
@@ -48,6 +55,16 @@ turn = make_action("IA_VR_Turn", unreal.InputActionValueType.AXIS1D)
 ui_click = make_action("IA_VR_UIClick", unreal.InputActionValueType.BOOLEAN, when_paused=True)
 pause = make_action("IA_VR_Pause", unreal.InputActionValueType.BOOLEAN, when_paused=True)
 hint = make_action("IA_VR_Hint", unreal.InputActionValueType.BOOLEAN)
+# Finger poses for the controller hands (read every frame, work while paused so the hands keep moving in menus).
+grip_l = make_action("IA_VR_HandGrip_L", unreal.InputActionValueType.AXIS1D, when_paused=True)
+grip_r = make_action("IA_VR_HandGrip_R", unreal.InputActionValueType.AXIS1D, when_paused=True)
+trig_l = make_action("IA_VR_HandTrigger_L", unreal.InputActionValueType.AXIS1D, when_paused=True)
+trig_r = make_action("IA_VR_HandTrigger_R", unreal.InputActionValueType.AXIS1D, when_paused=True)
+index_l = make_action("IA_VR_HandIndexTouch_L", unreal.InputActionValueType.BOOLEAN, when_paused=True)
+index_r = make_action("IA_VR_HandIndexTouch_R", unreal.InputActionValueType.BOOLEAN, when_paused=True)
+thumb_l = make_action("IA_VR_HandThumbTouch_L", unreal.InputActionValueType.BOOLEAN, when_paused=True)
+thumb_r = make_action("IA_VR_HandThumbTouch_R", unreal.InputActionValueType.BOOLEAN, when_paused=True)
+hand_actions = [grip_l, grip_r, trig_l, trig_r, index_l, index_r, thumb_l, thumb_r]
 
 move = unreal.load_asset("/Game/Input/Actions/IA_Move")
 jump = unreal.load_asset("/Game/Input/Actions/IA_Jump")
@@ -77,6 +94,18 @@ bindings = [
     (emote, "OculusTouch_Left_Y_Click", False),
     (pause, "OculusTouch_Left_Menu_Click", False),
     (hint, "OculusTouch_Left_X_Click", False),
+    (grip_l, "OculusTouch_Left_Grip_Axis", False),
+    (grip_r, "OculusTouch_Right_Grip_Axis", False),
+    (trig_l, "OculusTouch_Left_Trigger_Axis", False),
+    (trig_r, "OculusTouch_Right_Trigger_Axis", False),
+    (index_l, "OculusTouch_Left_Trigger_Touch", False),
+    (index_r, "OculusTouch_Right_Trigger_Touch", False),
+    (thumb_l, "OculusTouch_Left_X_Touch", False),
+    (thumb_l, "OculusTouch_Left_Y_Touch", False),
+    (thumb_l, "OculusTouch_Left_Thumbstick_Touch", False),
+    (thumb_r, "OculusTouch_Right_A_Touch", False),
+    (thumb_r, "OculusTouch_Right_B_Touch", False),
+    (thumb_r, "OculusTouch_Right_Thumbstick_Touch", False),
 ]
 dead_zone_keys = set()
 for action, key_name, dead_zone in bindings:
@@ -102,7 +131,7 @@ try:
 except Exception as e:
     unreal.log_warning(f"VR input: dead zone not added ({e}); the stick still works")
 
-for asset in (turn, ui_click, pause, hint, imc):
+for asset in [turn, ui_click, pause, hint, imc] + hand_actions:
     if hasattr(unreal, "EditorAssetLibrary"):
         unreal.EditorAssetLibrary.save_loaded_asset(asset, only_if_is_dirty=False)
     else:

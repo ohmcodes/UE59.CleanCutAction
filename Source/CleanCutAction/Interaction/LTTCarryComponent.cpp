@@ -174,7 +174,12 @@ bool ULTTCarryComponent::PlaceHeld()
 	return true;
 }
 
-void ULTTCarryComponent::Release(bool bThrow)
+void ULTTCarryComponent::ThrowWithVelocity(const FVector& Velocity)
+{
+	Release(true, &Velocity);
+}
+
+void ULTTCarryComponent::Release(bool bThrow, const FVector* ThrowVelocity)
 {
 	ALTTInteractableBase* Item = HeldItem;
 	if (!IsValid(Item) || !HoldParent)
@@ -206,7 +211,12 @@ void ULTTCarryComponent::Release(bool bThrow)
 	const FVector OwnerVelocity = GetOwner() ? GetOwner()->GetVelocity() : FVector::ZeroVector;
 	FVector LinearVelocity;
 	FVector AngularVelocity = FVector::ZeroVector;
-	if (bThrow)
+	if (bThrow && ThrowVelocity)
+	{
+		LinearVelocity = OwnerVelocity + *ThrowVelocity;
+		AngularVelocity = FMath::VRand() * 180.f;
+	}
+	else if (bThrow)
 	{
 		const FVector Dir = (Fwd + Up * FMath::Tan(FMath::DegreesToRadians(ThrowUpAngle))).GetSafeNormal();
 		LinearVelocity = OwnerVelocity + Dir * ThrowSpeed * Item->GetEffectiveThrowMultiplier();

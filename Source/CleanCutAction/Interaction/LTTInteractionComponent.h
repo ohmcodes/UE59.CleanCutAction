@@ -91,6 +91,11 @@ public:
 	UFUNCTION(BlueprintCallable, Category = "Interaction")
 	void ThrowHeld();
 
+	/** One mop stroke if the held mop is aimed at a puddle right now; never drops the mop (VR hand scrubbing).
+	 *  Returns true if the puddle took the stroke. */
+	UFUNCTION(BlueprintCallable, Category = "Interaction")
+	bool TryMopStroke();
+
 protected:
 	virtual void BeginPlay() override;
 	virtual void TickComponent(float DeltaTime, ELevelTick TickType, FActorComponentTickFunction* ThisTickFunction) override;

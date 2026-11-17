@@ -365,6 +365,26 @@ void ULTTInteractionComponent::Interact()
 	ILTTInteractable::Execute_OnInteract(Target, GetOwner());
 }
 
+bool ULTTInteractionComponent::TryMopStroke()
+{
+	ULTTCarryComponent* Carry = GetCarry();
+	if (!Carry || !Carry->IsHolding())
+	{
+		return false;
+	}
+	UpdatePlaceHint();
+	if (PlaceHint != ELTTPlaceHint::Mop || !TargetPuddle.IsValid())
+	{
+		return false;
+	}
+	if (TargetPuddle->MopUp(Carry->GetHeldItem(), TargetPuddlePoint))
+	{
+		Carry->PlayUseSwing(TargetPuddle->StrokeTime);
+		return true;
+	}
+	return false;
+}
+
 void ULTTInteractionComponent::ThrowHeld()
 {
 	if (ULTTCarryComponent* Carry = GetCarry())

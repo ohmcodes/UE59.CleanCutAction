@@ -81,6 +81,11 @@ protected:
 	UPROPERTY(VisibleAnywhere, BlueprintReadOnly, Category = "Mirror")
 	TObjectPtr<USceneCaptureComponent2D> Capture;
 
+	/** VR only: the right eye's reflection (Capture does the left eye). Each eye needs its own, or the reflection
+	 *  looks flat and wrong with both eyes open. */
+	UPROPERTY(VisibleAnywhere, BlueprintReadOnly, Category = "Mirror")
+	TObjectPtr<USceneCaptureComponent2D> CaptureRight;
+
 	virtual void OnConstruction(const FTransform& Transform) override;
 	virtual void BeginPlay() override;
 	virtual void Tick(float DeltaSeconds) override;
@@ -90,12 +95,21 @@ private:
 	TObjectPtr<UTextureRenderTarget2D> RenderTarget;
 
 	UPROPERTY(Transient)
+	TObjectPtr<UTextureRenderTarget2D> RenderTargetRight;
+
+	UPROPERTY(Transient)
 	TObjectPtr<UMaterialInstanceDynamic> GlassMID;
 
 	static const FName TextureParameterName;
+	static const FName TextureRightParameterName;
 	static const FName TintParameterName;
 
 	void LayoutPieces();
-	void EnsureRenderTarget();
+	/** Flat: one target sized like the viewport. VR: a square target per eye. */
+	void EnsureRenderTarget(bool bStereo);
 	bool GetViewerCamera(FVector& OutLocation, FRotator& OutRotation, float& OutFOV) const;
+	/** Renders the reflection seen from one headset eye with that eye's own projection (VR). */
+	void CaptureEye(USceneCaptureComponent2D* EyeCapture, int32 EyeIndex, const FVector& HeadLocation, const FRotator& HeadRotation);
+	/** Near plane for a reflected camera: the closest corner of the glass, so the wall behind isn't drawn. */
+	float NearPlaneFor(const FVector& MirroredLocation, const FVector& Forward) const;
 };
