@@ -18,6 +18,40 @@ IDs are referenced from the other docs. Tick items off as you go.
 
 ---
 
+## V - Meta Quest VR Port (`vr` branch, deadline 2026-11-18 12:00 PM PT)
+
+Details and rationale: [`10_VR_Meta_Quest.md`](10_VR_Meta_Quest.md).
+
+### V1 - PC VR with controllers
+- [x] **V1-01 [M]** Enable `OpenXR` + `OpenXRHandTracking`; `HeadMountedDisplay` module dependency.
+- [x] **V1-02 [M]** `ULTTVRComponent`: VR origin at eye height, HMD camera, arms hidden, `Local` tracking origin + recentre.
+- [x] **V1-03 [M]** Motion controllers (grip + right aim), snap turn, head-relative stick movement.
+- [x] **V1-04 [M]** World-space UI panel: viewport widgets moved onto it, lazy head follow, laser + widget interaction.
+- [x] **V1-05 [M]** `IMC_VR` + `IA_VR_Turn` / `IA_VR_UIClick` / `IA_VR_Pause` (script `create_vr_input.py`), registered as a default mapping context, in `MapsToCook`.
+- [x] **V1-06 [M]** VR pause on the left menu button; pause menu keeps game input in VR.
+- [ ] **V1-07 [M]** Play-test Phase 1 and Phase 2 end to end in the Meta XR Simulator (or Link): pick up, place, trash, menus, end screens, leaderboard keyboard.
+
+### V2 - Hands-first (competition pass/fail)
+- [ ] **V2-01 [M]** Hand tracking input: pinch = interact / UI click, pinch-hold + release = throw.
+- [ ] **V2-02 [M]** Hands locomotion that works seated (point-and-pinch teleport or hand "joystick"), plus snap turn.
+- [ ] **V2-03 [M]** Menu / pause gesture (palm-up or system gesture) and hand rays for the UI panel.
+- [ ] **V2-04 [M]** Complete both phases with hands only, no controller paired.
+- [ ] **V2-05 [S]** Hand visuals (OpenXR hand mesh or simple joints).
+
+### V3 - Quest build
+- [ ] **V3-01 [M]** Android OpenXR for Quest: mobile forward renderer, multiview, Vulkan, `arm64`, hand tracking permission / feature in the manifest.
+- [ ] **V3-02 [M]** 60+ fps on Quest 3: texture caps, cull the ParisStreet level instance, no Lumen / Nanite / dynamic shadows where possible.
+- [ ] **V3-03 [M]** Release-signed APK, package `com.ohmcodes.cleancutaction`, uploaded to the "Competition" release channel with an invite URL.
+- [ ] **V3-04 [M]** Pause when the headset is removed or the app loses focus.
+- [ ] **V3-05 [S]** Phase 1 session of 10 minutes or less.
+
+### V4 - Submission
+- [ ] **V4-01 [M]** Under-3-minute gameplay video (headset or XR Simulator capture), public on YouTube / Vimeo.
+- [ ] **V4-02 [M]** Devpost form: tagline, Gaming / New Experience, description, hand interaction write-up, team.
+- [ ] **V4-03 [M]** Check for real brands or logos in the set art; no identifiable people.
+
+---
+
 ## P0 - Pre-production & Project Setup (D1)
 
 ### Project
@@ -44,7 +78,7 @@ IDs are referenced from the other docs. Tick items off as you go.
 ### Art & Legal Direction
 - [ ] **P0-18 [M]** UI style sheet: film-production theme (clapperboard black/white stripes, call-sheet paper, yellow tape-mark, red REC). Palette with hex codes in `06 §1`.
 - [ ] **P0-19 [M]** Fonts with game-use licenses (e.g. OFL fonts such as Bebas Neue for headings, Courier Prime for body). Import as Font Faces.
-- [ ] **P0-20 [M]** Read the jam rules: AI-generated asset rules, required credits, submission format, deadline timezone.
+- [ ] **P0-20 [M]** Read the competition rules: AI-generated asset rules, required credits, submission format, deadline timezone.
 - [ ] **P0-21 [M]** Start `CREDITS.md` and log every third-party asset + license as it's added.
 
 ---
@@ -303,6 +337,6 @@ IDs are referenced from the other docs. Tick items off as you go.
 - [ ] **P13-02 [M]** Project name, version, company, icon, splash.
 - [ ] **P13-03 [M]** Package, run on a **different** PC without the engine installed.
 - [ ] **P13-04 [M]** Zip build; check size and upload limits.
-- [ ] **P13-05 [M]** Jam page: description, controls list, screenshots (5), GIF of rain cue, credits + AI-use disclosure per jam rules.
+- [ ] **P13-05 [M]** Submission page: description, controls list, screenshots (5), GIF of rain cue, credits + AI-use disclosure per competition rules.
 - [ ] **P13-06 [S]** 30–60 s trailer clip (clean-up time-lapse → ACTION → rain kiss → DIRECTOR'S CUT).
 - [ ] **P13-07 [M]** Submit before the deadline with a buffer of at least 1 hour.

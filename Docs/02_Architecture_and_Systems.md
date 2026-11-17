@@ -128,6 +128,10 @@ Hand stack sway: `HandStack` relative rotation follows look delta with a spring 
 
 Head bob: sine on camera Z (1.2 cm × speed ratio), frequency 1.8 Hz walk / 2.4 Hz sprint; off if `bHeadBob=false`.
 
+### VR mode (`vr` branch)
+
+`ACleanCutActionCharacter` carries a `ULTTVRComponent` ("VR"). While a headset renders, it moves the camera onto a `VROrigin` at `BaseEyeHeight`, lets the HMD drive it (no pawn control rotation, no first-person FOV/scale), hides the arms, adds motion controllers, snap turn and a world-space UI panel. `DoMove` uses the head's yaw in VR. Interaction and carry are unchanged: `GetPlayerViewPoint` is the HMD view. Full description: [`10_VR_Meta_Quest.md`](10_VR_Meta_Quest.md).
+
 ---
 
 ## 5. Interaction Framework

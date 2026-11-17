@@ -1,7 +1,7 @@
 # Clean! Cut! Action! - Game Design Document
 
-**Jam:** 3-day AI game jam
-**Theme:** Director's Cut
+**Competition:** Meta VR Start Developer Competition 2026 (Gaming track, New Experience division; Meta Quest VR)
+**Concept:** Director's Cut
 **Genre:** 3D casual tidying + rhythm/timing action
 **Reference game:** *Librarian: Tidy Up the Arcane Library!* (ArtRising, 2026)
 
@@ -26,7 +26,7 @@ A messy movie set has to be cleaned before the director can start filming. Once 
 | Places, Everyone! | Fits "put everything in its place" |
 | Rain on Cue | Points at the signature mechanic |
 
-If the jam requires the theme in the title: **Clean! Cut! Action!: A Director's Cut**
+Alternate title: **Clean! Cut! Action!: A Director's Cut**
 
 ---
 
@@ -170,7 +170,7 @@ Earn **Stars** from completing zones and from take ratings. Spend them in the Ro
 
 ---
 
-## 9. 3-Day Jam Plan
+## 9. Original 3-Day Build Plan
 
 | Day | Focus | Deliverables |
 |---|---|---|

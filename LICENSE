@@ -1,18 +1,17 @@
 Clean! Cut! Action!
-Copyright (c) 2026 QLE OPC (Quality Level Entertainment). All Rights Reserved.
+Copyright (c) 2026 Ohmcodes. All Rights Reserved.
 
 This repository and everything in it, including the source code, Blueprints,
 content, art, audio, text, and documentation (together, the "Software"), are
-the proprietary property of QLE OPC, except for the third-party materials
+the proprietary property of Ohmcodes, except for the third-party materials
 described below.
 
-No license is granted. Unless QLE OPC gives you prior written permission, you
+No license is granted. Unless Ohmcodes gives you prior written permission, you
 may not copy, modify, merge, publish, distribute, sublicense, sell, or create
 derivative works of the Software, in whole or in part, or use it for any
 commercial purpose.
 
-You may view this repository and play released builds of the game as allowed
-by the QLE OPC terms and conditions at https://qlestudio.com/terms-and-conditions.
+You may view this repository and play released builds of the game.
 
 Third-party materials: some assets in the Content/ folder come from third-party
 sources (for example, Fab/Marketplace asset packs). They remain the property of
@@ -21,9 +20,7 @@ does not grant any rights to them.
 
 THE SOFTWARE IS PROVIDED "AS IS", WITHOUT WARRANTY OF ANY KIND, EXPRESS OR
 IMPLIED, INCLUDING BUT NOT LIMITED TO THE WARRANTIES OF MERCHANTABILITY,
-FITNESS FOR A PARTICULAR PURPOSE AND NONINFRINGEMENT. IN NO EVENT SHALL QLE OPC
+FITNESS FOR A PARTICULAR PURPOSE AND NONINFRINGEMENT. IN NO EVENT SHALL OHMCODES
 BE LIABLE FOR ANY CLAIM, DAMAGES OR OTHER LIABILITY, WHETHER IN AN ACTION OF
 CONTRACT, TORT OR OTHERWISE, ARISING FROM, OUT OF OR IN CONNECTION WITH THE
 SOFTWARE OR THE USE OR OTHER DEALINGS IN THE SOFTWARE.
-
-To ask about permissions, contact support@qlestudio.com.

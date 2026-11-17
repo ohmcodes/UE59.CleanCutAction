@@ -86,6 +86,10 @@ Input mode UI-only, mouse visible, first button focused (for keyboard/gamepad).
 
 ---
 
+## VR UI panel (`vr` branch)
+
+Screen-space UMG isn't drawn in a headset. In VR, `ULTTVRComponent` moves every widget added to the viewport (HUD, prompts, briefing, barks, pause, end screens, leaderboard, virtual keyboard) into a `ULTTVRUIHost` overlay shown on a world-space `UWidgetComponent` (1920 x 1080, 150 cm wide, 140 cm in front of the eyes, lazy head follow). Stacking follows the viewport Z order. The right controller's laser clicks buttons (`IA_VR_UIClick`). Widgets keep working as written; design new UI for 1920 x 1080 and keep essential elements near the centre (the corners sit at the edge of view). Details: [`10_VR_Meta_Quest.md`](10_VR_Meta_Quest.md).
+
 ## 4. Pause (`WBP_PauseMenu`)
 
 - **Open:** game paused, background blur widget (strength 0 → 6, 0.2 s), dark tint 0 → 45%, clipboard slides up from the bottom (Y +500 → 0, 0.35 s OutBack), "PAUSED - TAKING FIVE" header stamp (Star stamp tween, no shake). Audio: tape-stop "wow" SFX + pause low-pass on.

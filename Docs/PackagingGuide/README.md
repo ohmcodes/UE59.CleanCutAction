@@ -8,6 +8,7 @@ This folder tells an agent (Claude Code / Cowork) or a teammate exactly how to s
 | `02_Web_WASM.md` | Browser (desktop + mobile), WebAssembly/WebGPU | Mobile renderer | 2 — riskiest, current target |
 | `03_Android.md` | Android APK (sideload) | Mobile renderer, Vulkan + ES3.1 | 3 |
 | `04_Linux_SteamDeck.md` | Linux / Steam Deck | Desktop, Vulkan SM5 | 4 |
+| `../10_VR_Meta_Quest.md` | **Meta Quest VR** (`vr` branch, competition build) | Mobile forward, Vulkan, multiview, OpenXR | VR branch only |
 
 Scripts live in `Scripts/`. Record every build result in `BUILD_LOG.md` (create it if missing).
 
@@ -17,7 +18,7 @@ Scripts live in `Scripts/`. Record every build result in `BUILD_LOG.md` (create 
 
 - Engine: **Unreal Engine 5.9 MegaJam Preview, source build** (required for the Web target).
 - Project: C++ project (required for the Web target and for compiling the DLSS plugin).
-- Project root: `F:\UE5 Projects\CleanCutAction\` (verify the `.uproject` name before scripting).
+- Project root: `F:\UE5 Projects\CleanCutAction\` (verify the `.uproject` name before scripting). On the `vr` branch: engine `D:\UE5 Engines\UE_5.9`, project `D:\UE5 Projects\CCA_VR\`.
 - The preview is experimental. Expect rough edges in the Web platform especially.
 
 ---

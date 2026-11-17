@@ -72,11 +72,11 @@ On touch devices, use the on-screen sticks to move and look, and tap the hand bu
 
 ### Credits
 
-Made in 3 days for the **Epic Mega AI Jam 2026** with Unreal Engine 5.9.
+Made for the **Meta VR Start Developer Competition 2026** with Unreal Engine 5.9.
 
 Environment art: Stylized New York City pack. Third-party assets remain under their own licenses.
 
-Copyright © 2026 QLE OPC. All Rights Reserved.
+Copyright © 2026 Ohmcodes. All Rights Reserved.
 
 ---
 
