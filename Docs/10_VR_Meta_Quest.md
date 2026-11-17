@@ -84,6 +84,7 @@ Editor-only, not in the repo: **Use Less CPU when in Background** turned off in 
 - Spawns `VROrigin` on the capsule at `BaseEyeHeight` (64 cm above the capsule centre, about 160 cm above the floor). A seated player sees the set from standing height.
 - Moves the camera from the arms' animated `head` bone onto `VROrigin`; turns off `bUsePawnControlRotation` and the first-person FOV / scale; `bLockToHmd` on. The headset now drives the camera.
 - Hides the first-person mesh (see *Body follows the headset*).
+- Sets the world body (`CharacterMesh0`) to `AlwaysTickPoseAndRefreshBones`. Characters default to `AlwaysTickPose`, which refreshes bones only when the mesh is drawn in a view; the body is owner-no-see, so mirrors (scene captures) showed it frozen and the dance didn't show. Verified: idle and dance animate in a mirror-style capture.
 - Turns Lumen GI off (`r.DynamicGlobalIlluminationMethod 0`) and switches to screen-space reflections (`r.ReflectionMethod 2`) for frame rate; `ExitVR()` / `EndPlay` restore them.
 - Sets the desktop mirror to the full eye, letterboxed (`ESpectatorScreenMode::SingleEyeLetterboxed`).
 - Levels the control rotation (pitch 0). Only yaw matters in VR; snap turn changes it, and the pawn follows it (`bUseControllerRotationYaw`).
@@ -126,7 +127,7 @@ Tunables on the component (`Details > VR`): `SnapTurnDegrees` (45), `PanelDistan
 | A | Jump | `IA_Jump` |
 | B | Throw | `IA_Throw` |
 | X | Hint | `IA_VR_Hint` |
-| Y | Dance (emote) | `IA_Emote` |
+| Y | Dance (emote; in the XR Simulator Y is the **N** key, which also presses B = throw while *Use same input for both sides* is on) | `IA_Emote` |
 | Left menu button | Pause | `IA_VR_Pause` |
 
 Crouch has no button in VR; crouching for real lowers the view (the capsule stays tall). The in-game controls legend shows this table in VR.
@@ -155,6 +156,22 @@ Meta XR Simulator is a standalone OpenXR runtime for Windows that simulates a Qu
    - **Frame rate matters.** Below roughly 30 fps the simulator logs *"Client `Alpha` is not responsive"*, shows *"No frames received"* and **drops controller input (T does nothing)**. Measured on 2026-11-17: VR Preview in the editor ran at 18 fps (game thread 42 ms: editor Slate UI plus PIE; GPU 15 ms), 24 fps with Lumen off. `ULTTVRComponent` now switches Lumen GI off (`r.DynamicGlobalIlluminationMethod 0`) and uses screen-space reflections (`r.ReflectionMethod 2`) while in VR, restoring them on exit. For a usable rate, run the game outside the editor: `Scripts\RunVR_Standalone.bat` (`build` argument builds first; close the editor for that, since a standalone run doesn't include Live Coding patches). Restart the simulator if it reports *"Invalid session"* after sessions were started and stopped.
    - Turn off **Editor Preferences > General > Performance > Use Less CPU when in Background** (done on this machine). Otherwise the editor throttles itself while the simulator window has focus, and the simulator reports *"Client `Alpha` is not responsive"* / *"No frames received"*. Keep the VR Preview window open, not minimized.
    - Simulator keyboard bindings (Input bindings panel, keyboard and mouse): **W A S D R F** move the headset in the room (physical walking, not game locomotion), **arrow keys** rotate the head, **Q / E** tilt, **T** = index trigger, **U** = grip, **B** = A/X, **N** = B/Y, **M** = menu, **I** = thumbstick press, **Y** = thumbstick up (more stick keys further down the list). Game walking is the left thumbstick and snap turn the right thumbstick. *Use same input for both sides* sends every key to both controllers.
+   - **Game actions on simulator keys:**
+
+     | Game action | Controller | Simulator key |
+     |---|---|---|
+     | Move | Left thumbstick | Y / H / G / J (up / down / left / right) |
+     | Snap turn | Right thumbstick left / right | G / J |
+     | Pick up / place, click menus | Trigger | T |
+     | Jump | A | B |
+     | Hint | X | B |
+     | Throw | B | N |
+     | Dance | Y | N |
+     | Pause | Menu | M |
+     | Look | Head | Arrow keys (Q / E tilt) |
+     | Step in the room | Body | W A S D (R / F up / down) |
+
+     With *Use same input for both sides* on, every key drives both hands: B = jump + hint, N = throw + dance, G / J = strafe + snap turn. Turn it off to test buttons separately.
    - Pointer dots are drawn on the UI panel itself: **yellow** = where the pointer is (bigger over a button), **cyan** = where the head looks while the controller has the pointer. Aim the cyan dot at a button with the arrow keys and press T; the click falls back to the gaze when the controller ray misses.
    - To press a menu button without a controller: use the menu's keyboard shortcuts in the VR Preview window (briefing: **N** = just clean, **Enter** = time trial), or aim your head so the cursor dot grows on the button, then left-click / Enter in the VR Preview window.
    - WASD / mouse in the **VR Preview** window drive the game pawn (move head-relative, mouse turns), after Start; movement is blocked while the briefing is up, as in flat play.
@@ -173,7 +190,8 @@ Logs: the editor log shows `VR: headset active, switching ... to VR mode` when t
 - **No hands-first input yet.** This blocks the competition's pass/fail stage. Visible hands should come with it (OpenXR hand-tracking meshes); the first-person body stays hidden until then.
 - **Frame rate:** VR Preview in the editor runs at roughly 18 - 24 fps on this PC, below what the simulator accepts; use `Scripts\RunVR_Standalone.bat` for real testing. The Quest build still needs the mobile renderer and its own performance pass (60 fps minimum).
 - Full-black camera fades (ending, tour cuts) still cover the UI panel for their duration; `ltt.VR.UILayer 1` (stereo layer) would avoid that but isn't verified in the simulator.
-- The world body has no hand IK, so in a mirror its arms play the normal animation.
+- The world body has no hand IK, so in a mirror its arms play the normal animation. Walking with the headset (room-scale) moves the capsule without velocity, so the legs only animate for stick movement.
+- Running the editor, VR Preview and the XR Simulator together exceeds video memory on this PC ("Video memory has been exhausted"); another reason to test with `RunVR_Standalone.bat`.
 - The Phase 2 (shoot) HUD hasn't been reviewed in VR yet; its key labels may still show keyboard keys.
 - Widgets that call `AddToViewport` again while already on the panel log a "has a parent" warning and stay where they are.
 - Jump in VR can be uncomfortable; consider removing it.

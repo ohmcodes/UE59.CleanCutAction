@@ -442,6 +442,13 @@ void ULTTVRComponent::EnterVR()
 			// controllers) fills the view. Its hand IK on the controllers still runs, ready for a hands-only look.
 			Mesh->SetHiddenInGame(true, false);
 		}
+		else if (Mesh)
+		{
+			// The world body is "owner no see", so it never counts as rendered for the player, and characters
+			// default to refreshing bones only when rendered: mirrors (scene captures) showed it frozen, dance
+			// included. Refresh the pose every frame instead.
+			Mesh->VisibilityBasedAnimTickOption = EVisibilityBasedAnimTickOption::AlwaysTickPoseAndRefreshBones;
+		}
 	}
 
 	// Level the view: pitch would only tilt movement and the flat aim, the head does the looking now.
