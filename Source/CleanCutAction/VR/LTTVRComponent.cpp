@@ -62,6 +62,16 @@
 #include "GameFramework/Character.h"
 #include "GameFramework/PlayerController.h"
 #include "UObject/ConstructorHelpers.h"
+#include "CleanCutActionPlayerController.h"
+#include "Audio/LTTMusicPlayer.h"
+#include "UI/LTTLeaderboardPanel.h"
+#include "Kismet/GameplayStatics.h"
+#include "Kismet/KismetSystemLibrary.h"
+#include "Components/ExponentialHeightFogComponent.h"
+#include "Components/SkyLightComponent.h"
+#include "Interaction/LTTPowerSubsystem.h"
+#include "Engine/SkyLight.h"
+#include "Engine/TextureCube.h"
 
 /** VR-only input actions, loaded by path (in MapsToCook). IMC_VR maps them, and it's an Enhanced Input default
  *  mapping context so the OpenXR runtime sees its bindings. */
@@ -94,6 +104,7 @@ static const TCHAR* LTTVRHandComponentClassPath = TEXT("/Game/XRMannequins/BP_Ma
 static const TCHAR* LTTVRGlowMaterialPath = TEXT("/Game/_CleanCutAction/Materials/VR/M_VRGlow.M_VRGlow");
 
 const FVector2D ULTTVRHandMenu::DrawSize(1040.f, 560.f);
+const FVector2D ULTTVRPalmMenu::DrawSize(900.f, 440.f);
 
 int32 ULTTVRComponent::ActiveCount = 0;
 int32 ULTTVRComponent::HandsCount = 0;
@@ -183,6 +194,11 @@ namespace
 		if (UWidget* Crosshair = Widget->GetWidgetFromName(TEXT("Crosshair")))
 		{
 			Crosshair->SetVisibility(ESlateVisibility::Collapsed);
+		}
+		// Menus dim the whole flat screen behind them; in VR that is a dark slab floating in the room. Drop it.
+		if (UWidget* Dim = Widget->GetWidgetFromName(TEXT("Dim")))
+		{
+			Dim->SetVisibility(ESlateVisibility::Collapsed);
 		}
 		if (ULTTCleanupHUD* CleanupHUD = Cast<ULTTCleanupHUD>(Widget))
 		{
@@ -291,16 +307,72 @@ namespace
 	TAutoConsoleVariable<int32> CVarLTTQuestBudget(TEXT("ltt.Quest.Budget"),
 		1, TEXT("Quest render budget: 0 = off, 1 = on Android only (default), 2 = everywhere (to preview it on PC)."));
 	TAutoConsoleVariable<float> CVarLTTQuestLightRadius(TEXT("ltt.Quest.MaxLightRadius"),
-		450.f, TEXT("Quest: largest attenuation radius of a point / spot / rect light, cm (0 = leave them)."));
+		200.f, TEXT("Quest: largest attenuation radius of a point / spot / rect light, cm (0 = leave them). Measured on a Quest 2 "
+			"with the cafe lit (2026-11-18): 450 cm 16 fps, 250 cm 25 fps, 150 cm ~30 fps but the room goes dark. Can only shrink live."));
 	TAutoConsoleVariable<int32> CVarLTTQuestSunShadows(TEXT("ltt.Quest.SunShadows"),
 		0, TEXT("Quest: 1 = keep the sun's dynamic shadow, 0 = no sun shadow (saves its shadow depth pass)."));
 	TAutoConsoleVariable<int32> CVarLTTQuestRectLights(TEXT("ltt.Quest.RectLights"),
-		1, TEXT("Quest: 1 = keep rect lights, 0 = take them out of the renderer (the costliest local light type on mobile)."));
+		0, TEXT("Quest: 1 = keep rect lights, 0 = take them out of the renderer (the costliest local light type on mobile; "
+			"the 11 rect lights cost ~3 fps on a Quest 2)."));
+	TAutoConsoleVariable<float> CVarLTTQuestPixelDensity(TEXT("ltt.Quest.PixelDensity"),
+		0.7f, TEXT("Quest: eye render resolution as a share of the headset's recommended size (1440 x 1584 per eye on Quest 2). "
+			"UE 5.9 has no vr.PixelDensity cvar and nothing calls IHeadMountedDisplay::SetPixelDensity, so this does. 0 = leave it."));
+	TAutoConsoleVariable<int32> CVarLTTQuestSkyCubemap(TEXT("ltt.Quest.SkyCubemap"),
+		1, TEXT("Quest: 1 = light the sky light from a fixed ambient cubemap (the level's real-time sky capture is black on "
+			"mobile), 0 = leave the level's sky light as it is."));
+	TAutoConsoleVariable<int32> CVarLTTQuestFoveation(TEXT("ltt.Quest.Foveation"),
+		3, TEXT("Quest: fixed foveated rendering level set on xr.OpenXRFBFoveationLevel (0 off .. 3 high, -1 = leave it)."));
+	TAutoConsoleVariable<float> CVarLTTQuestLightSpacing(TEXT("ltt.Quest.LightSpacing"),
+		0.f, TEXT("Quest: thin out clustered lamps: a light is switched off when a stronger one is kept within this many cm "
+			"(0 = keep all). Switched-off lights stay off (bAffectsWorld), whatever their switch does."));
+	TAutoConsoleVariable<float> CVarLTTQuestSkyLightScale(TEXT("ltt.Quest.SkyLightScale"),
+		3.f, TEXT("Quest: sky light intensity multiplier (of the level's own value), to fill in for the shorter lamp reach and "
+			"the missing sun. Cheap: one ambient term per pixel. Re-apply live with ltt.Quest.ApplyBudget."));
+	TAutoConsoleVariable<float> CVarLTTQuestLightIntensityScale(TEXT("ltt.Quest.LightIntensityScale"),
+		2.5f, TEXT("Quest: brightness multiplier for every lamp (point / spot / rect). Free on Quest (the cost is a light's reach, "
+			"not its brightness). Stands in for the PC post process's exposure boost (auto exposure bias 1.3 - 2.0 in the cafe "
+			"volumes), which Quest doesn't run (r.MobileHDR=False), and for the shorter reach. Re-apply live with ltt.Quest.ApplyBudget."));
+	/** The level's own lamp intensities, so re-applying the budget doesn't multiply twice. */
+	TMap<TWeakObjectPtr<ULocalLightComponent>, float> GLTTLampBase;
+	/** The level's own sky light intensities, so re-applying the budget doesn't multiply twice. */
+	TMap<TWeakObjectPtr<USkyLightComponent>, float> GLTTSkyLightBase;
+	TAutoConsoleVariable<int32> CVarLTTQuestSun(TEXT("ltt.Quest.Sun"),
+		0, TEXT("Quest: 1 = keep the sun lighting the level, 0 = sun off while it casts no shadow (an unshadowed 3200 K sunset sun "
+			"shines through the walls and turns the whole cafe orange)."));
+	TAutoConsoleVariable<int32> CVarLTTQuestFog(TEXT("ltt.Quest.Fog"),
+		0, TEXT("Quest: 1 = keep the height fog, 0 = hide it (its reddish in-scatter tints the interior without the PC post process)."));
 
 	bool LTTQuestBudgetActive()
 	{
 		const int32 Mode = CVarLTTQuestBudget.GetValueOnGameThread();
 		return Mode >= 2 || (Mode == 1 && PLATFORM_ANDROID);
+	}
+
+	/** On Quest the level's sky light captures a black sky (no Lumen, and the SkyAtmosphere needs an IsSky mesh the mobile
+	 *  renderer doesn't get), so everything outside the lamp radius was pitch black. Feed it a fixed ambient cubemap instead. */
+	void LTTUseQuestSkyCubemap(USkyLightComponent* Sky)
+	{
+		if (CVarLTTQuestSkyCubemap.GetValueOnGameThread() == 0)
+		{
+			return;
+		}
+		static TWeakObjectPtr<UTextureCube> Cubemap;
+		if (!Cubemap.IsValid())
+		{
+			Cubemap = LoadObject<UTextureCube>(nullptr, TEXT("/Engine/MapTemplates/Sky/DaylightAmbientCubemap.DaylightAmbientCubemap"));
+		}
+		if (!Cubemap.IsValid())
+		{
+			UE_LOG(LogCleanCutAction, Warning, TEXT("VR: Quest sky cubemap not found (is it in MapsToCook?)"));
+			return;
+		}
+		Sky->SetRealTimeCapture(false);
+		Sky->SourceType = ESkyLightSourceType::SLS_SpecifiedCubemap;
+		Sky->bLowerHemisphereIsBlack = false;
+		Sky->SetLowerHemisphereColor(FLinearColor(0.35f, 0.3f, 0.25f));
+		Sky->SetCubemap(Cubemap.Get());
+		// Visibility stays as it is: the breaker's blackout hides the sky light until the power comes back.
+		Sky->RecaptureSky();
 	}
 
 	void LTTApplyQuestRenderBudget(UWorld* World)
@@ -324,6 +396,13 @@ namespace
 			if (UDirectionalLightComponent* Sun = Cast<UDirectionalLightComponent>(Light))
 			{
 				Sun->SetCastShadows(bSunShadows);
+				// Without its shadow the sun reaches every surface facing it, indoors too: off unless asked for.
+				const bool bKeepSun = bSunShadows || CVarLTTQuestSun.GetValueOnGameThread() != 0;
+				if (Sun->bAffectsWorld != bKeepSun)
+				{
+					Sun->bAffectsWorld = bKeepSun;
+					Sun->MarkRenderStateDirty();
+				}
 				continue;
 			}
 			ULocalLightComponent* LocalLight = Cast<ULocalLightComponent>(Light);
@@ -333,6 +412,12 @@ namespace
 			}
 			// Light switches and the power box toggle visibility, so these per-light settings stay in force.
 			LocalLight->SetCastShadows(false);
+			{
+				const float* Base = GLTTLampBase.Find(LocalLight);
+				const float BaseIntensity = Base ? *Base : LocalLight->Intensity;
+				GLTTLampBase.Add(LocalLight, BaseIntensity);
+				LocalLight->SetIntensity(BaseIntensity * FMath::Max(0.f, CVarLTTQuestLightIntensityScale.GetValueOnGameThread()));
+			}
 			LocalLight->SetAffectTranslucentLighting(false);
 			LocalLight->SetVolumetricScatteringIntensity(0.f);
 			if (MaxRadius > 0.f && LocalLight->AttenuationRadius > MaxRadius)
@@ -351,13 +436,146 @@ namespace
 			}
 			++Local;
 		}
-		UE_LOG(LogCleanCutAction, Log, TEXT("VR: Quest render budget: %d local lights (%d rect%s), radius <= %.0f, sun shadow %s"),
-			Local, Rect, bRectLights ? TEXT("") : TEXT(", off"), MaxRadius, bSunShadows ? TEXT("on") : TEXT("off"));
+		// Thin out clustered lamps: strongest first, a light goes when a kept one sits within LightSpacing.
+		const float Spacing = CVarLTTQuestLightSpacing.GetValueOnGameThread();
+		if (Spacing > 0.f)
+		{
+			TArray<ULocalLightComponent*> Lamps;
+			for (TObjectIterator<ULocalLightComponent> It; It; ++It)
+			{
+				if (*It && !It->IsTemplate() && It->GetWorld() == World && It->bAffectsWorld)
+				{
+					Lamps.Add(*It);
+				}
+			}
+			Lamps.Sort([](const ULocalLightComponent& A, const ULocalLightComponent& B)
+			{
+				return A.Intensity * A.AttenuationRadius > B.Intensity * B.AttenuationRadius;
+			});
+			TArray<FVector> Kept;
+			int32 Thinned = 0;
+			for (ULocalLightComponent* Lamp : Lamps)
+			{
+				const FVector Where = Lamp->GetComponentLocation();
+				if (Kept.ContainsByPredicate([&](const FVector& K) { return FVector::DistSquared(K, Where) < FMath::Square(Spacing); }))
+				{
+					Lamp->bAffectsWorld = false;
+					Lamp->MarkRenderStateDirty();
+					++Thinned;
+				}
+				else
+				{
+					Kept.Add(Where);
+				}
+			}
+			UE_LOG(LogCleanCutAction, Log, TEXT("VR: Quest light thinning (%.0f cm): %d kept, %d off"), Spacing, Kept.Num(), Thinned);
+		}
+		const float Density = CVarLTTQuestPixelDensity.GetValueOnGameThread();
+		if (Density > 0.f && GEngine && GEngine->XRSystem.IsValid())
+		{
+			if (IHeadMountedDisplay* HMD = GEngine->XRSystem->GetHMDDevice())
+			{
+				HMD->SetPixelDensity(FMath::Clamp(Density, 0.5f, 1.5f));
+				UE_LOG(LogCleanCutAction, Log, TEXT("VR: Quest pixel density %.2f"), Density);
+			}
+		}
+		// Fixed foveated rendering. The device profile sets xr.OpenXRFBFoveationLevel, but the Quest 2 showed Fov=0 (off) in
+		// VrApi logs until it was set again after the session started; at level 3 the lit cafe gained ~20 fps.
+		const int32 Foveation = CVarLTTQuestFoveation.GetValueOnGameThread();
+		if (Foveation >= 0)
+		{
+			if (IConsoleVariable* FovVar = IConsoleManager::Get().FindConsoleVariable(TEXT("xr.OpenXRFBFoveationLevel")))
+			{
+				FovVar->Set(Foveation, ECVF_SetByCode);
+				UE_LOG(LogCleanCutAction, Log, TEXT("VR: Quest foveation level %d"), Foveation);
+			}
+		}
+		const float SkyScale = FMath::Max(0.f, CVarLTTQuestSkyLightScale.GetValueOnGameThread());
+		int32 SkyLights = 0;
+		for (TObjectIterator<USkyLightComponent> It; It; ++It)
+		{
+			USkyLightComponent* Sky = *It;
+			if (!Sky || Sky->IsTemplate() || Sky->GetWorld() != World)
+			{
+				continue;
+			}
+			const float* Base = GLTTSkyLightBase.Find(Sky);
+			const float BaseIntensity = Base ? *Base : Sky->Intensity;
+			GLTTSkyLightBase.Add(Sky, BaseIntensity);
+			LTTUseQuestSkyCubemap(Sky);
+			Sky->SetIntensity(BaseIntensity * SkyScale);
+			++SkyLights;
+		}
+		if (SkyLights == 0 && CVarLTTQuestSkyCubemap.GetValueOnGameThread() != 0)
+		{
+			// No sky light in the level: add one so the cafe gets fill light outside the lamp pools.
+			FActorSpawnParameters Params;
+			Params.ObjectFlags |= RF_Transient;
+			if (ASkyLight* NewSky = World->SpawnActor<ASkyLight>(Params))
+			{
+				USkyLightComponent* Sky = NewSky->GetLightComponent();
+				Sky->SetMobility(EComponentMobility::Movable);
+				GLTTSkyLightBase.Add(Sky, 1.f);
+				LTTUseQuestSkyCubemap(Sky);
+				Sky->SetIntensity(SkyScale);
+				SkyLights = 1;
+			}
+		}
+		UE_LOG(LogCleanCutAction, Log, TEXT("VR: Quest sky light: %d, x%.1f, cubemap %s"), SkyLights, SkyScale,
+			CVarLTTQuestSkyCubemap.GetValueOnGameThread() != 0 ? TEXT("on") : TEXT("off"));
+		const bool bFog = CVarLTTQuestFog.GetValueOnGameThread() != 0;
+		for (TObjectIterator<UExponentialHeightFogComponent> It; It; ++It)
+		{
+			if (*It && !It->IsTemplate() && It->GetWorld() == World)
+			{
+				It->SetVisibility(bFog);
+			}
+		}
+		UE_LOG(LogCleanCutAction, Log, TEXT("VR: Quest render budget: %d local lights (%d rect%s), radius <= %.0f, sun shadow %s, sun %s, fog %s"),
+			Local, Rect, bRectLights ? TEXT("") : TEXT(", off"), MaxRadius, bSunShadows ? TEXT("on") : TEXT("off"),
+			(bSunShadows || CVarLTTQuestSun.GetValueOnGameThread() != 0) ? TEXT("on") : TEXT("off"), bFog ? TEXT("on") : TEXT("off"));
+	}
+
+	/** Seated / small-space VR: the player walks through chairs and stools (36 chairs and 12 bar stools crowd the aisles,
+	 *  and bumping the capsule into them while turning in place is the most common snag). Props and physics still hit
+	 *  them. Re-run every second: picking a chair up and placing it back resets its collision. */
+	TAutoConsoleVariable<int32> CVarLTTWalkThroughChairs(TEXT("ltt.VR.WalkThroughChairs"),
+		1, TEXT("VR: 1 = the player passes through chairs and stools, 0 = they block like the flat game."));
+
+	void LTTMakeChairsWalkThrough(UWorld* World)
+	{
+		if (!World || CVarLTTWalkThroughChairs.GetValueOnGameThread() == 0)
+		{
+			return;
+		}
+		for (TObjectIterator<UStaticMeshComponent> It; It; ++It)
+		{
+			UStaticMeshComponent* Mesh = *It;
+			if (!Mesh || Mesh->IsTemplate() || Mesh->GetWorld() != World || !Mesh->GetStaticMesh()
+				|| Mesh->GetCollisionResponseToChannel(ECC_Pawn) == ECR_Ignore)
+			{
+				continue;
+			}
+			const FString Name = Mesh->GetStaticMesh()->GetName();
+			if (Name.Contains(TEXT("Chair")) || Name.Contains(TEXT("Bar_Chai")) || Name.Contains(TEXT("Stool")))
+			{
+				Mesh->SetCollisionResponseToChannel(ECC_Pawn, ECR_Ignore);
+			}
+		}
 	}
 
 	FAutoConsoleCommandWithWorld GLTTQuestApplyBudgetCmd(TEXT("ltt.Quest.ApplyBudget"),
 		TEXT("Re-applies the Quest render budget (ltt.Quest.*) to the current level."),
 		FConsoleCommandWithWorldDelegate::CreateStatic(&LTTApplyQuestRenderBudget));
+
+	/** Live pinch tuning on the headset (adb broadcast console commands). */
+	TAutoConsoleVariable<float> CVarLTTPinchDistance(TEXT("ltt.VR.PinchDistance"),
+		0.f, TEXT("Hand tracking: thumb-to-fingertip surface gap that counts as a pinch, cm (0 = the component's PinchDistance)."));
+	TAutoConsoleVariable<int32> CVarLTTPoke(TEXT("ltt.VR.Poke"),
+		0, TEXT("Hand menus: 1 = also press buttons by poking them with a fingertip. 0 (default) = every menu works the same way, "
+			"point with a hand ray and pinch the index finger, like the Quest's own menus."));
+	TAutoConsoleVariable<int32> CVarLTTPinchDebug(TEXT("ltt.VR.PinchDebug"),
+		0, TEXT("Hand tracking: 1 = log every hand's thumb-to-finger gaps 5 times a second (logcat, LogCleanCutAction)."));
 
 	/** UI panel pitch (single local player), kept here so the header doesn't change. */
 	float GLTTPanelPitch = 0.f;
@@ -422,6 +640,37 @@ void ULTTVRUIHost::NativeOnInitialized()
 	}
 }
 
+namespace
+{
+	/** Fills the score texts (HandStatPlaced, ...) of a hand or palm menu; texts a menu doesn't have are skipped. Returns
+	 *  false when there's no mess director (Phase 2): the caller folds the block away. */
+	bool LTTUpdateMenuStats(UUserWidget* Menu)
+	{
+		const ALTTMessDirector* D = ALTTMessDirector::Get(Menu);
+		if (!D)
+		{
+			return false;
+		}
+		auto Set = [Menu](const TCHAR* Name, const FText& Value)
+		{
+			if (UTextBlock* Text = Cast<UTextBlock>(Menu->GetWidgetFromName(Name)))
+			{
+				Text->SetText(Value);
+			}
+		};
+		Set(TEXT("HandStatPlaced"), FText::Format(NSLOCTEXT("LTTVR", "HandPlaced", "{0}/{1} placed"), FText::AsNumber(D->GetPlacedCount()), FText::AsNumber(D->GetTotalCount())));
+		Set(TEXT("HandStatDestroyed"), FText::Format(NSLOCTEXT("LTTVR", "HandDestroyed", "{0} destroyed"), FText::AsNumber(D->GetBrokenCount())));
+		Set(TEXT("HandStatPoints"), FText::Format(NSLOCTEXT("LTTVR", "HandPoints", "{0} points"), FText::AsNumber(D->GetScore())));
+		const float Cooldown = D->GetHintCooldownRemaining();
+		Set(TEXT("HandStatHint"), Cooldown > 0.f
+			? FText::Format(NSLOCTEXT("LTTVR", "HandHintCooldown", "Hint ready in {0}s"), FText::AsNumber(FMath::CeilToInt(Cooldown)))
+			: NSLOCTEXT("LTTVR", "HandHintReady", "Hint ready"));
+		const int32 Seconds = FMath::Max(0, FMath::CeilToInt(D->GetTimeRemaining()));
+		Set(TEXT("HandStatTime"), FText::FromString(FString::Printf(TEXT("Time left %d:%02d"), Seconds / 60, Seconds % 60)));
+		return true;
+	}
+}
+
 void ULTTVRHandMenu::NativeOnInitialized()
 {
 	Super::NativeOnInitialized();
@@ -478,14 +727,14 @@ void ULTTVRHandMenu::NativeOnInitialized()
 	AddText(Info, NAME_None, NSLOCTEXT("LTTVR", "HandLegendLeft", "LEFT HAND"), 20, Head, 12.f);
 	AddText(Info, NAME_None, NSLOCTEXT("LTTVR", "HandLegendL0", "Index pinch (hold): walk where you look"), 18, Body);
 	AddText(Info, NAME_None, NSLOCTEXT("LTTVR", "HandLegendL1", "Middle pinch: turn left"), 18, Body);
-	AddText(Info, NAME_None, NSLOCTEXT("LTTVR", "HandLegendL2", "Ring pinch: jump"), 18, Body);
+	AddText(Info, NAME_None, NSLOCTEXT("LTTVR", "HandLegendL2", "Ring pinch (hold): walk backward"), 18, Body);
 	AddText(Info, NAME_None, NSLOCTEXT("LTTVR", "HandLegendL3", "Pinky pinch: hint"), 18, Body);
 	AddText(Info, NAME_None, NSLOCTEXT("LTTVR", "HandLegendRight", "RIGHT HAND"), 20, Head, 10.f);
 	AddText(Info, NAME_None, NSLOCTEXT("LTTVR", "HandLegendR0", "Index pinch: pick up / place, press buttons"), 18, Body);
 	AddText(Info, NAME_None, NSLOCTEXT("LTTVR", "HandLegendR1", "Middle pinch: turn right"), 18, Body);
-	AddText(Info, NAME_None, NSLOCTEXT("LTTVR", "HandLegendR2", "Flick forward: throw (or ring pinch)"), 18, Body);
+	AddText(Info, NAME_None, NSLOCTEXT("LTTVR", "HandLegendR2", "Ring pinch: jump   Flick forward: throw"), 18, Body);
 	AddText(Info, NAME_None, NSLOCTEXT("LTTVR", "HandLegendR3", "Pinky pinch: dance   Scrub: mop"), 18, Body);
-	AddText(Info, NAME_None, NSLOCTEXT("LTTVR", "HandLegendMore", "Left palm: this menu   Right palm (hold): pause"), 16, LTTTheme::InkMuted(), 10.f);
+	AddText(Info, NAME_None, NSLOCTEXT("LTTVR", "HandLegendMore", "Left palm: this menu   Right palm: game menu   Menus: point and index-pinch"), 16, LTTTheme::InkMuted(), 10.f);
 
 	USizeBox* GridBox = WidgetTree->ConstructWidget<USizeBox>(USizeBox::StaticClass());
 	GridBox->SetWidthOverride(380.f);
@@ -545,31 +794,146 @@ void ULTTVRHandMenu::NativeTick(const FGeometry& MyGeometry, float InDeltaTime)
 	{
 		PadLegend->SetVisibility(bHands ? ESlateVisibility::Collapsed : ESlateVisibility::HitTestInvisible);
 	}
-	// The same numbers as the cleanup HUD's top-left panel (hidden while playing with hands). Phase 2 has no mess
-	// director, so the block folds away there.
-	const ALTTMessDirector* D = ALTTMessDirector::Get(this);
+	// The same numbers as the cleanup HUD's top-left panel (hidden in VR). Phase 2 has no mess director, so the block
+	// folds away there.
+	const bool bStats = LTTUpdateMenuStats(this);
 	if (UWidget* Stats = GetWidgetFromName(TEXT("HandMenuStats")))
 	{
-		Stats->SetVisibility(D ? ESlateVisibility::HitTestInvisible : ESlateVisibility::Collapsed);
+		Stats->SetVisibility(bStats ? ESlateVisibility::HitTestInvisible : ESlateVisibility::Collapsed);
 	}
-	if (!D)
+}
+
+void ULTTVRPalmMenu::NativeOnInitialized()
+{
+	Super::NativeOnInitialized();
+	if (!WidgetTree || WidgetTree->RootWidget)
 	{
 		return;
 	}
-	auto Set = [this](const TCHAR* Name, const FText& Value)
+	UBorder* Panel = WidgetTree->ConstructWidget<UBorder>(UBorder::StaticClass(), TEXT("PalmMenuPanel"));
+	LTTTheme::StylePanel(Panel, 22.f);
+	Panel->SetPadding(FMargin(18.f, 14.f));
+	WidgetTree->RootWidget = Panel;
+
+	UHorizontalBox* Columns = WidgetTree->ConstructWidget<UHorizontalBox>(UHorizontalBox::StaticClass(), TEXT("PalmMenuColumns"));
+	Panel->SetContent(Columns);
+	UVerticalBox* Stats = WidgetTree->ConstructWidget<UVerticalBox>(UVerticalBox::StaticClass(), TEXT("HandMenuStats"));
+	if (UHorizontalBoxSlot* S = Columns->AddChildToHorizontalBox(Stats))
+	{
+		S->SetSize(FSlateChildSize(ESlateSizeRule::Fill));
+		S->SetPadding(FMargin(0.f, 0.f, 18.f, 0.f));
+		S->SetVerticalAlignment(VAlign_Center);
+	}
+	auto AddText = [this, Stats](FName Name, int32 Size, const FLinearColor& Color, float Gap)
+	{
+		UTextBlock* Text = WidgetTree->ConstructWidget<UTextBlock>(UTextBlock::StaticClass(), Name);
+		LTTTheme::StyleText(Text, Size, Color);
+		if (UVerticalBoxSlot* S = Stats->AddChildToVerticalBox(Text))
+		{
+			S->SetPadding(FMargin(0.f, Gap, 0.f, 0.f));
+		}
+		return Text;
+	};
+	// The score counter: the same numbers as the wrist menu and the flat HUD's corner.
+	AddText(TEXT("HandStatPlaced"), 38, LTTTheme::Ink(), 0.f);
+	AddText(TEXT("HandStatDestroyed"), 26, LTTTheme::Bad(), 4.f);
+	AddText(TEXT("HandStatPoints"), 26, LTTTheme::Coin(), 4.f);
+	AddText(TEXT("HandStatTime"), 24, LTTTheme::HeaderBrown(), 4.f);
+	AddText(TEXT("HandStatHint"), 20, LTTTheme::InkMuted(), 4.f);
+	AddText(NAME_None, 16, LTTTheme::InkMuted(), 12.f)->SetText(NSLOCTEXT("LTTVR", "PalmPokeHint", "Point with your left hand, pinch your left index"));
+
+	USizeBox* GridBox = WidgetTree->ConstructWidget<USizeBox>(USizeBox::StaticClass());
+	GridBox->SetWidthOverride(400.f);
+	if (UHorizontalBoxSlot* S = Columns->AddChildToHorizontalBox(GridBox))
+	{
+		S->SetSize(FSlateChildSize(ESlateSizeRule::Automatic));
+		S->SetVerticalAlignment(VAlign_Fill);
+	}
+	UUniformGridPanel* Grid = WidgetTree->ConstructWidget<UUniformGridPanel>(UUniformGridPanel::StaticClass(), TEXT("PalmMenuGrid"));
+	Grid->SetSlotPadding(FMargin(6.f));
+	GridBox->SetContent(Grid);
+	auto AddButton = [this, Grid](const TCHAR* Name, const FText& Label, int32 Row, int32 Col, const FLinearColor& Fill) -> UButton*
+	{
+		UButton* Button = WidgetTree->ConstructWidget<UButton>(UButton::StaticClass(), Name);
+		LTTTheme::StyleButton(Button, Fill);
+		struct FLTTButtonAccess : public UButton
+		{
+			using UButton::InitIsFocusable;
+		};
+		(Button->*(&FLTTButtonAccess::InitIsFocusable))(false);
+		UTextBlock* Text = WidgetTree->ConstructWidget<UTextBlock>(UTextBlock::StaticClass(), *(FString(Name) + TEXT("_Label")));
+		LTTTheme::StyleText(Text, 28, LTTTheme::Ink());
+		Text->SetText(Label);
+		Text->SetJustification(ETextJustify::Center);
+		Button->SetContent(Text);
+		if (UUniformGridSlot* GridSlot = Grid->AddChildToUniformGrid(Button, Row, Col))
+		{
+			GridSlot->SetHorizontalAlignment(HAlign_Fill);
+			GridSlot->SetVerticalAlignment(VAlign_Fill);
+		}
+		return Button;
+	};
+	const FLinearColor Cream = LTTTheme::ButtonCream();
+	AddButton(TEXT("Palm_Pause"), NSLOCTEXT("LTTVR", "PalmPause", "Pause"), 0, 0, LTTTheme::ButtonGold())->OnClicked.AddDynamic(this, &ULTTVRPalmMenu::OnPauseMenu);
+	AddButton(TEXT("Palm_Leaderboard"), NSLOCTEXT("LTTVR", "PalmLeaderboard", "Scores"), 0, 1, Cream)->OnClicked.AddDynamic(this, &ULTTVRPalmMenu::OnLeaderboard);
+	AddButton(TEXT("Palm_Music"), NSLOCTEXT("LTTVR", "PalmMusic", "Music"), 1, 0, Cream)->OnClicked.AddDynamic(this, &ULTTVRPalmMenu::OnMusic);
+	AddButton(TEXT("Palm_Unstuck"), NSLOCTEXT("LTTVR", "PalmUnstuck", "Unstuck"), 1, 1, Cream)->OnClicked.AddDynamic(this, &ULTTVRPalmMenu::OnUnstuck);
+	AddButton(TEXT("Palm_Restart"), NSLOCTEXT("LTTVR", "PalmRestart", "Restart"), 2, 0, LTTTheme::ButtonRed())->OnClicked.AddDynamic(this, &ULTTVRPalmMenu::OnRestart);
+	AddButton(TEXT("Palm_Quit"), NSLOCTEXT("LTTVR", "PalmQuit", "Quit"), 2, 1, LTTTheme::ButtonRed())->OnClicked.AddDynamic(this, &ULTTVRPalmMenu::OnQuit);
+}
+
+void ULTTVRPalmMenu::NativeTick(const FGeometry& MyGeometry, float InDeltaTime)
+{
+	Super::NativeTick(MyGeometry, InDeltaTime);
+	const bool bStats = LTTUpdateMenuStats(this);
+	if (UWidget* Stats = GetWidgetFromName(TEXT("HandMenuStats")))
+	{
+		Stats->SetVisibility(bStats ? ESlateVisibility::HitTestInvisible : ESlateVisibility::Collapsed);
+	}
+	const double Now = FPlatformTime::Seconds();
+	auto SetLabel = [this](const TCHAR* Name, const FText& Value)
 	{
 		if (UTextBlock* Text = Cast<UTextBlock>(GetWidgetFromName(Name)))
 		{
 			Text->SetText(Value);
 		}
 	};
-	Set(TEXT("HandStatPlaced"), FText::Format(NSLOCTEXT("LTTVR", "HandPlaced", "{0}/{1} placed"), FText::AsNumber(D->GetPlacedCount()), FText::AsNumber(D->GetTotalCount())));
-	Set(TEXT("HandStatDestroyed"), FText::Format(NSLOCTEXT("LTTVR", "HandDestroyed", "{0} destroyed"), FText::AsNumber(D->GetBrokenCount())));
-	Set(TEXT("HandStatPoints"), FText::Format(NSLOCTEXT("LTTVR", "HandPoints", "{0} points"), FText::AsNumber(D->GetScore())));
-	const float Cooldown = D->GetHintCooldownRemaining();
-	Set(TEXT("HandStatHint"), Cooldown > 0.f
-		? FText::Format(NSLOCTEXT("LTTVR", "HandHintCooldown", "Hint ready in {0}s"), FText::AsNumber(FMath::CeilToInt(Cooldown)))
-		: NSLOCTEXT("LTTVR", "HandHintReady", "Hint ready"));
+	SetLabel(TEXT("Palm_Music_Label"), ALTTMusicPlayer::IsMusicMuted() ? NSLOCTEXT("LTTVR", "PalmMusicOff", "Music: off") : NSLOCTEXT("LTTVR", "PalmMusicOn", "Music: on"));
+	SetLabel(TEXT("Palm_Restart_Label"), Now < ConfirmRestartUntil ? NSLOCTEXT("LTTVR", "PalmRestartSure", "Sure?") : NSLOCTEXT("LTTVR", "PalmRestart", "Restart"));
+	SetLabel(TEXT("Palm_Quit_Label"), Now < ConfirmQuitUntil ? NSLOCTEXT("LTTVR", "PalmQuitSure", "Sure?") : NSLOCTEXT("LTTVR", "PalmQuit", "Quit"));
+}
+
+void ULTTVRPalmMenu::Fire(ELTTVRHandAction Action)
+{
+	if (ULTTVRComponent* VR = OwnerVR.Get())
+	{
+		VR->DoHandAction(Action);
+	}
+}
+
+void ULTTVRPalmMenu::OnPauseMenu() { Fire(ELTTVRHandAction::Pause); }
+void ULTTVRPalmMenu::OnLeaderboard() { ULTTLeaderboardPanel::ShowPanel(this); }
+void ULTTVRPalmMenu::OnMusic() { Fire(ELTTVRHandAction::Music); }
+void ULTTVRPalmMenu::OnUnstuck() { Fire(ELTTVRHandAction::Unstuck); }
+
+void ULTTVRPalmMenu::OnRestart()
+{
+	const double Now = FPlatformTime::Seconds();
+	if (Now < ConfirmRestartUntil)
+	{
+		Fire(ELTTVRHandAction::Restart);
+	}
+	ConfirmRestartUntil = Now + 3.0;
+}
+
+void ULTTVRPalmMenu::OnQuit()
+{
+	const double Now = FPlatformTime::Seconds();
+	if (Now < ConfirmQuitUntil)
+	{
+		Fire(ELTTVRHandAction::Quit);
+	}
+	ConfirmQuitUntil = Now + 3.0;
 }
 
 void ULTTVRHandMenu::Fire(ELTTVRHandAction Action)
@@ -602,6 +966,11 @@ ULTTVRComponent::ULTTVRComponent()
 	static ConstructorHelpers::FObjectFinder<UStaticMesh> Cylinder(TEXT("/Engine/BasicShapes/Cylinder.Cylinder"));
 	SphereMesh = Sphere.Object;
 	CylinderMesh = Cylinder.Object;
+	// Quest 2 Touch controllers (OpenXR plugin content); a hard reference so the cook packages them.
+	static ConstructorHelpers::FObjectFinder<UStaticMesh> TouchLeft(TEXT("/OpenXR/Devices/OculusTouch_v2/Left/left_OculusTouch_v2Controller.left_OculusTouch_v2Controller"));
+	static ConstructorHelpers::FObjectFinder<UStaticMesh> TouchRight(TEXT("/OpenXR/Devices/OculusTouch_v2/Right/right_OculusTouch_v2Controller.right_OculusTouch_v2Controller"));
+	ControllerMeshLeft = TouchLeft.Object;
+	ControllerMeshRight = TouchRight.Object;
 }
 
 bool ULTTVRComponent::IsHeadsetActive()
@@ -630,6 +999,90 @@ bool ULTTVRComponent::ToggleControllerMenu()
 		}
 	}
 	return false;
+}
+
+namespace
+{
+	TAutoConsoleVariable<int32> CVarLTTHandAim(TEXT("ltt.VR.HandAim"),
+		1, TEXT("VR: 1 = pick up / place / pull / mop where the right hand or controller points (with a laser), 0 = where the head looks."));
+}
+
+bool ULTTVRComponent::GetInteractionAim(const AActor* Pawn, FVector& OutStart, FVector& OutDir)
+{
+	if (ActiveCount <= 0 || !Pawn || CVarLTTHandAim.GetValueOnGameThread() == 0)
+	{
+		return false;
+	}
+	const ULTTVRComponent* VR = Pawn->FindComponentByClass<ULTTVRComponent>();
+	return VR && VR->bVRActive && VR->GetAimRay(OutStart, OutDir);
+}
+
+void ULTTVRComponent::SetOutline(UMeshComponent* Mesh, bool bOn)
+{
+	if (!Mesh)
+	{
+		return;
+	}
+	Mesh->SetRenderCustomDepth(bOn);
+	static TWeakObjectPtr<UMaterialInstanceDynamic> Overlay;
+	if (bOn && ActiveCount > 0 && !Overlay.IsValid())
+	{
+		if (UMaterialInterface* Glow = LoadObject<UMaterialInterface>(nullptr, LTTVRGlowMaterialPath))
+		{
+			UMaterialInstanceDynamic* MID = UMaterialInstanceDynamic::Create(Glow, GetTransientPackage());
+			MID->SetVectorParameterValue(TEXT("Color"), FLinearColor(1.f, 0.95f, 0.6f));
+			MID->SetScalarParameterValue(TEXT("Base"), 0.25f);
+			MID->SetScalarParameterValue(TEXT("Opacity"), 0.6f);
+			MID->AddToRoot(); // shared by every prop for the whole run
+			Overlay = MID;
+		}
+	}
+	if (bOn && ActiveCount > 0 && Overlay.IsValid())
+	{
+		Mesh->SetOverlayMaterial(Overlay.Get());
+	}
+	else if (!bOn && Overlay.IsValid() && Mesh->GetOverlayMaterial() == Overlay.Get())
+	{
+		Mesh->SetOverlayMaterial(nullptr);
+	}
+}
+
+bool ULTTVRComponent::GetHoldHand(const AActor* Pawn, FVector& OutLocation, FVector& OutDir)
+{
+	const ULTTVRComponent* VR = (ActiveCount > 0 && Pawn) ? Pawn->FindComponentByClass<ULTTVRComponent>() : nullptr;
+	if (!VR || !VR->bVRActive)
+	{
+		return false;
+	}
+	if (VR->bHandAimValid)
+	{
+		OutLocation = VR->HandAimStart;
+		OutDir = VR->HandAimDir;
+		return true;
+	}
+	if (VR->RightController && VR->RightController->IsTracked())
+	{
+		OutLocation = VR->RightController->GetComponentLocation();
+		OutDir = VR->RightAim && VR->RightAim->IsTracked() ? VR->RightAim->GetForwardVector() : VR->RightController->GetForwardVector();
+		return true;
+	}
+	return false;
+}
+
+void ULTTVRComponent::GetAimViewPoint(const AController* Controller, FVector& OutLocation, FRotator& OutRotation)
+{
+	if (!Controller)
+	{
+		return;
+	}
+	Controller->GetPlayerViewPoint(OutLocation, OutRotation);
+	FVector Start;
+	FVector Dir;
+	if (GetInteractionAim(Controller->GetPawn(), Start, Dir))
+	{
+		OutLocation = Start;
+		OutRotation = Dir.Rotation();
+	}
 }
 
 bool ULTTVRComponent::IsPointerOnUI()
@@ -686,8 +1139,22 @@ void ULTTVRComponent::TickComponent(float DeltaTime, ELevelTick TickType, FActor
 	{
 		return;
 	}
+	// The breaker's blackout hides the sky light while the Quest budget swaps in its cubemap, so the capture never
+	// lands; when the power comes back, apply the budget again (re-captures the sky, re-applies the lamp scaling).
+	const bool bPowerOn = ULTTPowerSubsystem::IsPowerOnIn(this);
+	if (bPowerOn && !bLastPowerOn)
+	{
+		LTTApplyQuestRenderBudget(GetWorld());
+	}
+	bLastPowerOn = bPowerOn;
 
 	TryBindInput();
+	ChairTimer -= DeltaTime;
+	if (ChairTimer <= 0.f)
+	{
+		ChairTimer = 1.f;
+		LTTMakeChairsWalkThrough(GetWorld());
+	}
 	LTTUpdateVRBody(Cast<ACharacter>(GetOwner()), GetOwner()->FindComponentByClass<UCameraComponent>(), VROrigin);
 
 	CaptureTimer -= DeltaTime;
@@ -860,6 +1327,8 @@ void ULTTVRComponent::EnterVR()
 		Laser->SetCollisionEnabled(ECollisionEnabled::NoCollision);
 		Laser->SetCastShadow(false);
 		Laser->SetHiddenInGame(true);
+		// Drawn after the always-on-top UI panels (10000 / 10001), so the ray ends on the button, not behind the menu.
+		Laser->SetTranslucentSortPriority(10010);
 		Laser->RegisterComponent();
 
 		Pointer = NewObject<UWidgetInteractionComponent>(Character, TEXT("VR_Pointer"));
@@ -988,6 +1457,33 @@ void ULTTVRComponent::EnterVR()
 		HandMenuPanel->SetHiddenInGame(true);
 		HandMenuPanel->RegisterComponent();
 	}
+	if (!PalmMenuPanel)
+	{
+		PalmMenu = CreateWidget<ULTTVRPalmMenu>(PC, ULTTVRPalmMenu::StaticClass());
+		PalmMenu->OwnerVR = this;
+		PalmMenuPanel = NewObject<UWidgetComponent>(Character, TEXT("VR_PalmMenu"));
+		PalmMenuPanel->SetupAttachment(Character->GetRootComponent());
+		PalmMenuPanel->SetAbsolute(true, true, true);
+		PalmMenuPanel->SetWidgetSpace(EWidgetSpace::World);
+		PalmMenuPanel->SetDrawSize(ULTTVRPalmMenu::DrawSize);
+		PalmMenuPanel->SetPivot(FVector2D(0.5f, 0.5f));
+		PalmMenuPanel->SetBlendMode(EWidgetBlendMode::Transparent);
+		PalmMenuPanel->SetTwoSided(false);
+		PalmMenuPanel->SetTickWhenOffscreen(true);
+		PalmMenuPanel->SetTickableWhenPaused(true);
+		PalmMenuPanel->SetCollisionEnabled(ECollisionEnabled::NoCollision);
+		PalmMenuPanel->SetCastShadow(false);
+		PalmMenuPanel->SetOwnerPlayer(PC->GetLocalPlayer());
+		PalmMenuPanel->SetWidget(PalmMenu);
+		PalmMenuPanel->SetWorldScale3D(FVector(PalmMenuWidth / ULTTVRPalmMenu::DrawSize.X));
+		if (HandMenuPanel && HandMenuPanel->GetMaterial(0))
+		{
+			PalmMenuPanel->SetMaterial(0, HandMenuPanel->GetMaterial(0));
+		}
+		PalmMenuPanel->SetTranslucentSortPriority(10001);
+		PalmMenuPanel->SetHiddenInGame(true);
+		PalmMenuPanel->RegisterComponent();
+	}
 
 	// Glow for the laser and the joint dots: unlit, so they show when the breaker kills the lights.
 	if (!GlowMID)
@@ -1020,6 +1516,39 @@ void ULTTVRComponent::EnterVR()
 	}
 	CreateHandMeshes(Character);
 
+	// Controllers: the Quest Touch model in each controller hand (the engine's OpenXR device mesh, authored in grip space).
+	auto MakeControllerModel = [Character](const TCHAR* Name, UStaticMesh* Mesh, UMotionControllerComponent* Grip) -> UStaticMeshComponent*
+	{
+		if (!Mesh || !Grip)
+		{
+			return nullptr;
+		}
+		UStaticMeshComponent* Model = NewObject<UStaticMeshComponent>(Character, Name);
+		Model->SetupAttachment(Grip);
+		Model->SetStaticMesh(Mesh);
+		Model->SetCollisionEnabled(ECollisionEnabled::NoCollision);
+		Model->SetCastShadow(false);
+		Model->SetHiddenInGame(true);
+		Model->RegisterComponent();
+		return Model;
+	};
+	if (!LeftControllerModel)
+	{
+		LeftControllerModel = MakeControllerModel(TEXT("VR_LeftTouch"), ControllerMeshLeft, LeftController);
+		RightControllerModel = MakeControllerModel(TEXT("VR_RightTouch"), ControllerMeshRight, RightController);
+	}
+
+	// The player's VR hands, controllers, laser and hand menus stay out of the mirror (it reflects the scene, and the
+	// hands there read as someone else's).
+	for (UPrimitiveComponent* Part : TArray<UPrimitiveComponent*>{ LeftHandDots, RightHandDots, HandMenuPanel, PalmMenuPanel, Laser,
+		LeftTrackedHand, RightTrackedHand, LeftControllerHand, RightControllerHand, LeftControllerModel, RightControllerModel })
+	{
+		if (Part)
+		{
+			Part->SetHiddenInSceneCapture(true);
+		}
+	}
+
 	bPanelPlaced = false;
 	CaptureTimer = 0.f;
 }
@@ -1048,18 +1577,22 @@ void ULTTVRComponent::ExitVR()
 	{
 		Laser->SetHiddenInGame(true);
 	}
-	for (UPrimitiveComponent* HandPart : TArray<UPrimitiveComponent*>{ LeftHandDots, RightHandDots, HandMenuPanel,
-		LeftTrackedHand, RightTrackedHand, LeftControllerHand, RightControllerHand })
+	for (UPrimitiveComponent* HandPart : TArray<UPrimitiveComponent*>{ LeftHandDots, RightHandDots, HandMenuPanel, PalmMenuPanel,
+		LeftTrackedHand, RightTrackedHand, LeftControllerHand, RightControllerHand, LeftControllerModel, RightControllerModel })
 	{
 		if (HandPart)
 		{
 			HandPart->SetHiddenInGame(true);
 		}
 	}
-	bHandMenuShown = bRightPinchInteract = false;
+	bHandMenuShown = bPalmMenuShown = bRightPinchInteract = false;
+	if (bPokePressed && Pointer)
+	{
+		Pointer->ReleasePointerKey(EKeys::LeftMouseButton);
+	}
+	bPokePressed = false;
 	LeftPinchFinger = RightPinchFinger = -1;
-	PausePalmTime = 0.f;
-	bPausePalmFired = bMopAnchorValid = false;
+	bMopAnchorValid = false;
 	RightHandSamples.Reset();
 	if (bHandsActive)
 	{
@@ -1322,7 +1855,16 @@ void ULTTVRComponent::UpdatePanel(float DeltaTime)
 		GLTTPanelPitch = HeadPitch;
 		bPanelPlaced = true;
 	}
-	const bool bHeadLocked = CVarLTTVRUIHeadLocked.GetValueOnGameThread() != 0;
+	// The HUD (timer, prompts) stays with the view; a menu (briefing, pause, end screen) is placed in front of the head
+	// when it opens and then stays in the room, like the Quest's own menus, only gliding back when the head turns far.
+	const bool bMenu = IsMenuOpen();
+	if (bMenu && !bPanelMenuPlaced)
+	{
+		PanelYaw = HeadYaw;
+		GLTTPanelPitch = HeadPitch;
+	}
+	bPanelMenuPlaced = bMenu;
+	const bool bHeadLocked = CVarLTTVRUIHeadLocked.GetValueOnGameThread() != 0 && !bMenu;
 	if (bHeadLocked)
 	{
 		// Screen-style UI: glued to the view (level, no roll), so it never drifts behind when looking around.
@@ -1334,7 +1876,14 @@ void ULTTVRComponent::UpdatePanel(float DeltaTime)
 		// Lazy follow: stays put for small head turns, glides back in front once the head looks well away.
 		const float Delta = FRotator::NormalizeAxis(HeadYaw - PanelYaw);
 		const float PitchDelta = HeadPitch - GLTTPanelPitch;
-		if (FMath::Abs(Delta) > PanelFollowAngle || FMath::Abs(PitchDelta) > PanelFollowAngle * 0.75f)
+		const float Follow = bMenu ? FMath::Max(PanelFollowAngle, 70.f) : PanelFollowAngle;
+		if (bMenu && (FMath::Abs(Delta) > Follow || FMath::Abs(PitchDelta) > Follow * 0.75f))
+		{
+			// Turned well away from an open menu: bring it back in front at once.
+			PanelYaw = HeadYaw;
+			GLTTPanelPitch = HeadPitch;
+		}
+		else if (FMath::Abs(Delta) > Follow || FMath::Abs(PitchDelta) > Follow * 0.75f)
 		{
 			const float Alpha = FMath::Clamp(DeltaTime * 4.f, 0.f, 1.f);
 			PanelYaw = FRotator::NormalizeAxis(PanelYaw + Delta * Alpha);
@@ -1384,6 +1933,10 @@ void ULTTVRComponent::UpdatePointer()
 	{
 		return;
 	}
+	if (CVarLTTPoke.GetValueOnGameThread() != 0 && UpdatePoke())
+	{
+		return;
+	}
 
 	FHitResult Hit;
 	bool bOnPanel = false;
@@ -1399,6 +1952,11 @@ void ULTTVRComponent::UpdatePointer()
 	{
 		FHitResult MenuHit;
 		if (HandMenuPanel && !HandMenuPanel->bHiddenInGame && LTTTracePanel(HandMenuPanel, AimStart, AimDir, MenuHit))
+		{
+			Hit = MenuHit;
+			bOnHandMenu = bFromController = true;
+		}
+		else if (PalmMenuPanel && !PalmMenuPanel->bHiddenInGame && LTTTracePanel(PalmMenuPanel, AimStart, AimDir, MenuHit))
 		{
 			Hit = MenuHit;
 			bOnHandMenu = bFromController = true;
@@ -1458,15 +2016,36 @@ void ULTTVRComponent::UpdatePointer()
 	PlaceDot(TEXT("VR_DotPointer"), bOnPanel && !bOnHandMenu && (bMenuOpen || bOverButton), Hit.ImpactPoint, bOverButton ? 40.f : 26.f);
 	PlaceDot(TEXT("VR_DotGaze"), bGazeOnPanel && bMenuOpen, GazeHit.ImpactPoint, 18.f);
 
-	// Laser whenever the hand / controller points at a menu.
+	// Laser whenever the hand / controller points at a menu, and during play while it aims the interaction (pick up,
+	// place, pull from afar): out to whatever it points at.
 	const bool bShowLaser = bFromController && (bOnHandMenu || (bOnPanel && (bMenuOpen || bOverButton)));
+	float PlayLaserLength = 0.f;
+	if (!bShowLaser && !bMenuOpen && GetAimRay(AimStart, AimDir) && CVarLTTHandAim.GetValueOnGameThread() != 0)
+	{
+		const APawn* Pawn = Cast<APawn>(GetOwner());
+		const APlayerController* PC = Pawn ? Cast<APlayerController>(Pawn->GetController()) : nullptr;
+		if (PC && !PC->IsPaused())
+		{
+			FCollisionQueryParams Params(SCENE_QUERY_STAT(LTTVRAimLaser), false, GetOwner());
+			if (const ULTTCarryComponent* Carry = GetOwner()->FindComponentByClass<ULTTCarryComponent>())
+			{
+				if (AActor* HeldItem = Carry->IsHolding() ? Carry->GetHeldItem() : nullptr)
+				{
+					Params.AddIgnoredActor(HeldItem);
+				}
+			}
+			FHitResult AimHit;
+			PlayLaserLength = GetWorld()->LineTraceSingleByChannel(AimHit, AimStart, AimStart + AimDir * 1200.f, ECC_Visibility, Params)
+				? AimHit.Distance : 1200.f;
+		}
+	}
 	if (Laser)
 	{
-		Laser->SetHiddenInGame(!bShowLaser);
-		if (bShowLaser)
+		Laser->SetHiddenInGame(!bShowLaser && PlayLaserLength <= 0.f);
+		if (bShowLaser || PlayLaserLength > 0.f)
 		{
 			// The basic cylinder is 100 cm tall along Z, centred: lay it along the ray and stretch it to the hit.
-			const float Length = Hit.Distance;
+			const float Length = bShowLaser ? Hit.Distance : PlayLaserLength;
 			Laser->SetWorldLocationAndRotation(AimStart + AimDir * (Length * 0.5f), FRotationMatrix::MakeFromZ(AimDir).Rotator());
 			Laser->SetWorldScale3D(FVector(0.005f, 0.005f, Length / 100.f));
 		}
@@ -1477,7 +2056,9 @@ namespace
 {
 	bool LTTHandTracked(const FXRHandTrackingState& Hand)
 	{
-		return Hand.bValid && Hand.TrackingStatus == ETrackingStatus::Tracked && Hand.HandKeyLocations.Num() == EHandKeypointCount
+		// Not only "Tracked": while the thumb covers a fingertip (every pinch) Quest reports lower confidence for a frame
+		// or two, and requiring full tracking dropped the hand, and so the pinch, right when it happened.
+		return Hand.bValid && Hand.TrackingStatus != ETrackingStatus::NotTracked && Hand.HandKeyLocations.Num() == EHandKeypointCount
 			&& Hand.HandKeyRotations.Num() == EHandKeypointCount;
 	}
 
@@ -1524,8 +2105,35 @@ bool ULTTVRComponent::IsMenuOpen() const
 	return false;
 }
 
+namespace
+{
+	bool LTTIsPaused(const AActor* Owner)
+	{
+		const APawn* Pawn = Cast<APawn>(Owner);
+		const APlayerController* PC = Pawn ? Cast<APlayerController>(Pawn->GetController()) : nullptr;
+		return PC && PC->IsPaused();
+	}
+}
+
+void ULTTVRComponent::RefreshPointerNow()
+{
+	UpdatePointer();
+	if (Pointer)
+	{
+		(Pointer.Get()->*(&FLTTPointerAccess::SimulatePointerMovement))();
+	}
+}
+
 bool ULTTVRComponent::GetAimRay(FVector& OutStart, FVector& OutDir) const
 {
+	// The right palm menu floats over the right hand, so the left hand points at it; in other menus the left hand points
+	// when it was the last to pinch.
+	if (bLeftHandAimValid && (bPalmMenuShown || (bUILeftHand && (IsMenuOpen() || LTTIsPaused(GetOwner())))))
+	{
+		OutStart = LeftHandAimStart;
+		OutDir = LeftHandAimDir;
+		return true;
+	}
 	if (bHandAimValid)
 	{
 		OutStart = HandAimStart;
@@ -1584,6 +2192,30 @@ void ULTTVRComponent::DoHandAction(ELTTVRHandAction Action)
 		}
 		bPanelPlaced = false;
 		break;
+	case ELTTVRHandAction::Leaderboard:
+		break; // opened by the palm menu itself (the leaderboard panel needs a widget to come from)
+	case ELTTVRHandAction::Music:
+		ALTTMusicPlayer::SetMusicMuted(!ALTTMusicPlayer::IsMusicMuted());
+		break;
+	case ELTTVRHandAction::Unstuck:
+		if (const APawn* Pawn = Cast<APawn>(GetOwner()))
+		{
+			if (ACleanCutActionPlayerController* PC = Cast<ACleanCutActionPlayerController>(Pawn->GetController()))
+			{
+				PC->TeleportToSpawn();
+			}
+		}
+		break;
+	case ELTTVRHandAction::Restart:
+		UGameplayStatics::SetGamePaused(this, false);
+		UGameplayStatics::OpenLevel(this, FName(*UGameplayStatics::GetCurrentLevelName(this)));
+		break;
+	case ELTTVRHandAction::Quit:
+		if (const APawn* Pawn = Cast<APawn>(GetOwner()))
+		{
+			UKismetSystemLibrary::QuitGame(this, Cast<APlayerController>(Pawn->GetController()), EQuitPreference::Quit, false);
+		}
+		break;
 	}
 }
 
@@ -1612,42 +2244,114 @@ void ULTTVRComponent::UpdateHands(float DeltaTime)
 	// Pinch: the thumb tip touches one fingertip (the closest one, so a middle pinch isn't read as an index pinch).
 	// Released again a little further apart, so it doesn't flicker. Out: the finger released and the finger pressed
 	// this frame (-1 for none).
-	auto UpdatePinch = [this](bool bTracked, const FXRHandTrackingState& Hand, int32& Finger, int32& OutReleased, int32& OutPressed)
+	const float PinchOn = CVarLTTPinchDistance.GetValueOnGameThread() > 0.f ? CVarLTTPinchDistance.GetValueOnGameThread() : PinchDistance;
+	const float PinchOff = PinchOn + PinchReleaseExtra;
+	if (CVarLTTPinchDebug.GetValueOnGameThread() != 0 && FPlatformTime::Seconds() >= NextPinchLog)
+	{
+		NextPinchLog = FPlatformTime::Seconds() + 0.2;
+		auto Gaps = [](bool bOK, const FXRHandTrackingState& Hand)
+		{
+			return bOK ? FString::Printf(TEXT("%d i%.1f m%.1f r%.1f p%.1f"), static_cast<int32>(Hand.TrackingStatus),
+				LTTPinchGap(Hand, 0), LTTPinchGap(Hand, 1), LTTPinchGap(Hand, 2), LTTPinchGap(Hand, 3)) : FString(TEXT("-"));
+		};
+		UE_LOG(LogCleanCutAction, Log, TEXT("VR pinch: L[%s] pinch %d  R[%s] pinch %d  (on < %.1f, off > %.1f)"),
+			*Gaps(bLeftOK, Left), LeftPinchFinger, *Gaps(bRightOK, Right), RightPinchFinger, PinchOn, PinchOff);
+	}
+	// Measured on a Quest 2 (ltt.VR.PinchDebug, 2026-11-18): a real pinch brings that finger's gap to 0.7 cm or less
+	// (often below 0); a relaxed or half-curled hand rests at 1.5 - 2.5 cm on several fingers at once. So: pressed below
+	// PinchOn (1.2) when that finger is clearly the closest (0.5 cm ahead of the next), two frames in a row; released
+	// above PinchOff (2.0); pinching a different finger while one is held switches straight to it.
+	// A firm pinch (gap under half the threshold) presses on the first frame, for less delay. The left index walks, so a
+	// half-relaxed hand must not start it: it needs a closer pinch (70 % of the threshold).
+	auto UpdatePinch = [PinchOn, PinchOff](bool bTracked, const FXRHandTrackingState& Hand, int32& Finger, int32& Candidate,
+		int32& OutReleased, int32& OutPressed, bool bStrictIndex, float& MinGap)
 	{
 		OutReleased = OutPressed = -1;
 		if (!bTracked)
 		{
 			OutReleased = Finger;
-			Finger = -1;
+			Finger = Candidate = -1;
 			return;
 		}
-		if (Finger >= 0 && LTTPinchGap(Hand, Finger) >= PinchDistance * 2.f)
+		float Gaps[4];
+		// Lost or half-lost tracking collapses the joints: every finger reads the same gap (seen as -1.6 cm on all four
+		// on a Quest 2), which held the left index "pinched" and walked by itself. Treat it as not tracked.
 		{
-			OutReleased = Finger;
-			Finger = -1;
+			float Lo = TNumericLimits<float>::Max(), Hi = -TNumericLimits<float>::Max();
+			for (int32 i = 0; i < 4; ++i)
+			{
+				const float G = LTTPinchGap(Hand, i);
+				Lo = FMath::Min(Lo, G);
+				Hi = FMath::Max(Hi, G);
+			}
+			if (Hi - Lo < 0.05f)
+			{
+				OutReleased = Finger;
+				Finger = Candidate = -1;
+				return;
+			}
+		}
+		int32 Best = -1;
+		float BestGap = TNumericLimits<float>::Max();
+		float SecondGap = TNumericLimits<float>::Max();
+		for (int32 i = 0; i < 4; ++i)
+		{
+			Gaps[i] = LTTPinchGap(Hand, i);
+			if (Gaps[i] < BestGap)
+			{
+				SecondGap = BestGap;
+				BestGap = Gaps[i];
+				Best = i;
+			}
+			else if (Gaps[i] < SecondGap)
+			{
+				SecondGap = Gaps[i];
+			}
+		}
+		const float On = (bStrictIndex && Best == 0) ? PinchOn * 0.7f : PinchOn;
+		const bool bClearPinch = Best >= 0 && BestGap < On && SecondGap - BestGap >= 0.5f;
+		const bool bFirm = bClearPinch && BestGap < PinchOn * 0.75f;
+		if (Finger >= 0)
+		{
+			const bool bSwitch = bClearPinch && Best != Finger && Gaps[Finger] > PinchOn;
+			MinGap = FMath::Min(MinGap, Gaps[Finger]);
+			// Release once the fingers open a little from their closest point (a relaxed hand often stays under
+			// PinchOff, which kept the pinch "held" so the next one was ignored), but never below PinchOn + 0.2.
+			const float ReleaseAt = FMath::Min(PinchOff, FMath::Max(PinchOn + 0.2f, MinGap + 0.7f));
+			if (Gaps[Finger] >= ReleaseAt || bSwitch)
+			{
+				OutReleased = Finger;
+				Finger = -1;
+			}
 		}
 		if (Finger < 0)
 		{
-			int32 Best = -1;
-			float BestGap = PinchDistance;
-			for (int32 i = 0; i < 4; ++i)
+			if (bClearPinch && Best != OutReleased)
 			{
-				const float Gap = LTTPinchGap(Hand, i);
-				if (Gap < BestGap)
+				if (Candidate == Best || bFirm)
 				{
-					BestGap = Gap;
-					Best = i;
+					Finger = OutPressed = Best;
+					MinGap = BestGap;
+					Candidate = -1;
+				}
+				else
+				{
+					Candidate = Best;
 				}
 			}
-			if (Best >= 0 && Best != OutReleased)
+			else
 			{
-				Finger = OutPressed = Best;
+				Candidate = -1;
 			}
 		}
 	};
 	int32 LeftReleased, LeftPressed, RightReleased, RightPressed;
-	UpdatePinch(bLeftOK, Left, LeftPinchFinger, LeftReleased, LeftPressed);
-	UpdatePinch(bRightOK, Right, RightPinchFinger, RightReleased, RightPressed);
+	// The stricter left index (walk) only during play; in menus the left index clicks and must stay easy.
+	const APawn* PinchPawn = Cast<APawn>(GetOwner());
+	const APlayerController* PinchPC = PinchPawn ? Cast<APlayerController>(PinchPawn->GetController()) : nullptr;
+	const bool bWalkPinch = !bPalmMenuShown && !IsMenuOpen() && !(PinchPC && PinchPC->IsPaused());
+	UpdatePinch(bLeftOK, Left, LeftPinchFinger, LeftPinchCandidate, LeftReleased, LeftPressed, bWalkPinch, LeftPinchMin);
+	UpdatePinch(bRightOK, Right, RightPinchFinger, RightPinchCandidate, RightReleased, RightPressed, false, RightPinchMin);
 
 	// Template hand meshes follow the joints; the joint spheres are the fallback when the meshes didn't load.
 	UpdateHandMeshes(Left, Right, bLeftOK, bRightOK);
@@ -1692,13 +2396,14 @@ void ULTTVRComponent::UpdateHands(float DeltaTime)
 	// knuckles barely move during a pinch, so clicking doesn't knock the ray off the button.
 	if (bRightOK)
 	{
-		const FVector Knuckles = (LTTJoint(Right, EHandKeypoint::IndexProximal) + LTTJoint(Right, EHandKeypoint::ThumbProximal)) * 0.5f;
+		const FVector Knuckles = (LTTJoint(Right, EHandKeypoint::IndexProximal) + LTTJoint(Right, EHandKeypoint::MiddleProximal)) * 0.5f;
 		const FRotator HeadYaw(0.f, Camera->GetComponentRotation().Yaw, 0.f);
 		const FVector Shoulder = Head + FRotationMatrix(HeadYaw).GetUnitAxis(EAxis::Y) * 18.f - FVector(0.f, 0.f, 20.f);
 		const FVector Dir = (Knuckles - Shoulder).GetSafeNormal();
 		if (!Dir.IsNearlyZero())
 		{
-			const float Alpha = bHandAimValid ? 1.f - FMath::Exp(-DeltaTime * 18.f) : 1.f;
+			const bool bSteady = RightPinchFinger == 0 || LTTPinchGap(Right, 0) < PinchOn + PinchReleaseExtra;
+			const float Alpha = bHandAimValid ? 1.f - FMath::Exp(-DeltaTime * (bSteady ? 2.f : 18.f)) : 1.f;
 			HandAimDir = (HandAimDir + (Dir - HandAimDir) * Alpha).GetSafeNormal();
 			HandAimStart = Knuckles;
 			bHandAimValid = !HandAimDir.IsNearlyZero();
@@ -1708,9 +2413,39 @@ void ULTTVRComponent::UpdateHands(float DeltaTime)
 	{
 		bHandAimValid = false;
 	}
+	// Left hand ray, mirrored (left shoulder through the left knuckles).
+	if (bLeftOK)
+	{
+		const FVector Knuckles = (LTTJoint(Left, EHandKeypoint::IndexProximal) + LTTJoint(Left, EHandKeypoint::MiddleProximal)) * 0.5f;
+		const FRotator HeadYaw(0.f, Camera->GetComponentRotation().Yaw, 0.f);
+		const FVector Shoulder = Head - FRotationMatrix(HeadYaw).GetUnitAxis(EAxis::Y) * 18.f - FVector(0.f, 0.f, 20.f);
+		const FVector Dir = (Knuckles - Shoulder).GetSafeNormal();
+		if (!Dir.IsNearlyZero())
+		{
+			const bool bSteady = LeftPinchFinger == 0 || LTTPinchGap(Left, 0) < PinchOn + PinchReleaseExtra;
+			const float Alpha = bLeftHandAimValid ? 1.f - FMath::Exp(-DeltaTime * (bSteady ? 2.f : 18.f)) : 1.f;
+			LeftHandAimDir = (LeftHandAimDir + (Dir - LeftHandAimDir) * Alpha).GetSafeNormal();
+			LeftHandAimStart = Knuckles;
+			bLeftHandAimValid = !LeftHandAimDir.IsNearlyZero();
+		}
+	}
+	else
+	{
+		bLeftHandAimValid = false;
+	}
 
+	bLeftTipValid = bLeftOK;
+	bRightTipValid = bRightOK;
+	if (bLeftOK)
+	{
+		LeftIndexTip = LTTJoint(Left, EHandKeypoint::IndexTip);
+	}
+	if (bRightOK)
+	{
+		RightIndexTip = LTTJoint(Right, EHandKeypoint::IndexTip);
+	}
 	UpdateHandMenu(Left, Head);
-	const bool bRightPalmFacing = UpdatePausePalm(Right, bRightOK, Head, DeltaTime);
+	const bool bRightPalmFacing = UpdatePalmMenu(Right, bRightOK, Head);
 	UpdateHandMotion(Right, bRightOK, bRightPalmFacing, DeltaTime);
 
 	if (RightReleased >= 0)
@@ -1736,9 +2471,11 @@ void ULTTVRComponent::UpdateHands(float DeltaTime)
 	const APawn* Pawn = Cast<APawn>(GetOwner());
 	const APlayerController* PC = Pawn ? Cast<APlayerController>(Pawn->GetController()) : nullptr;
 	const bool bPaused = PC && PC->IsPaused();
-	if (LeftPinchFinger == 0 && !bHandMenuShown && !IsMenuOpen() && !bPaused)
+	// Left ring pinch held = walk backward, the same pace.
+	if ((LeftPinchFinger == 0 || LeftPinchFinger == 2) && !bHandMenuShown && !bPalmMenuShown && !IsMenuOpen() && !bPaused)
 	{
-		InjectAction(LTTVRMoveActionPath, FInputActionValue(FVector2D(0.f, FMath::Clamp(PinchWalkSpeed, 0.1f, 1.f))));
+		const float Speed = FMath::Clamp(PinchWalkSpeed, 0.1f, 1.f) * (LeftPinchFinger == 2 ? -1.f : 1.f);
+		InjectAction(LTTVRMoveActionPath, FInputActionValue(FVector2D(0.f, Speed)));
 	}
 }
 
@@ -1758,6 +2495,11 @@ void ULTTVRComponent::HandlePinch(bool bRightHand, int32 Finger, bool bPressed)
 			// up / places what the player looks at.
 			if (bPressed)
 			{
+				if (bUILeftHand)
+				{
+					bUILeftHand = false;
+					RefreshPointerNow();
+				}
 				bRightPinchInteract = !(Pointer && Pointer->IsOverInteractableWidget()) && bPlaying;
 				HandleUIClickPressed();
 				if (bRightPinchInteract)
@@ -1778,10 +2520,10 @@ void ULTTVRComponent::HandlePinch(bool bRightHand, int32 Finger, bool bPressed)
 			}
 			break;
 		case 2:
-			// Button throw, for when the real throw (a flick of the hand, UpdateHandMotion) isn't wanted.
+			// Jump on the right hand, so the left index can keep walking: walk + jump.
 			if (bPressed && bPlaying)
 			{
-				DoHandAction(ELTTVRHandAction::Throw);
+				DoHandAction(ELTTVRHandAction::Jump);
 			}
 			break;
 		case 3:
@@ -1801,56 +2543,141 @@ void ULTTVRComponent::HandlePinch(bool bRightHand, int32 Finger, bool bPressed)
 		return;
 	}
 
-	// Left hand. Nothing while its palm faces the player: that's the wrist menu and the headset's menu gesture.
-	if (!bPressed || bHandMenuShown || !bPlaying)
+	// Left index while the right palm menu is open: the menu click (point with the left hand, pinch), the same as the
+	// right index on every other menu.
+	if (Finger == 0 && (bPalmMenuShown || bLeftPinchClick || !bPlaying))
+	{
+		if (bPressed && !bLeftPinchClick)
+		{
+			bLeftPinchClick = true;
+			if (!bUILeftHand)
+			{
+				bUILeftHand = true;
+				RefreshPointerNow(); // the ray jumps to the left hand before this click lands
+			}
+			HandleUIClickPressed();
+		}
+		else if (!bPressed && bLeftPinchClick)
+		{
+			bLeftPinchClick = false;
+			HandleUIClickReleased();
+		}
+		return;
+	}
+	// Left hand otherwise. Nothing while its palm faces the player (the wrist menu and the headset's menu gesture) or
+	// while it works the right palm menu.
+	if (!bPressed || bHandMenuShown || bPalmMenuShown || !bPlaying)
 	{
 		return;
 	}
 	switch (Finger)
 	{
 	case 1: DoHandAction(ELTTVRHandAction::TurnLeft); break;
-	case 2: DoHandAction(ELTTVRHandAction::Jump); break;
+	// ring: walking backward, handled every frame in UpdateHands (throw is the right hand flick, or the wrist menu)
 	case 3: DoHandAction(ELTTVRHandAction::Hint); break;
-	default: break; // index: walking, handled every frame in UpdateHands
+	default: break; // index / ring: walking forward / backward, handled every frame in UpdateHands
 	}
 }
 
-bool ULTTVRComponent::UpdatePausePalm(const FXRHandTrackingState& Right, bool bRightOK, const FVector& Head, float DeltaTime)
+bool ULTTVRComponent::UpdatePalmMenu(const FXRHandTrackingState& Right, bool bRightOK, const FVector& Head)
 {
 	const APawn* Pawn = Cast<APawn>(GetOwner());
 	const APlayerController* PC = Pawn ? Cast<APlayerController>(Pawn->GetController()) : nullptr;
 	const bool bPaused = PC && PC->IsPaused();
 
 	float Facing = -1.f;
+	FVector Palm = FVector::ZeroVector;
 	if (bRightOK)
 	{
-		const FVector Palm = LTTJoint(Right, EHandKeypoint::Palm);
+		Palm = LTTJoint(Right, EHandKeypoint::Palm);
 		Facing = FVector::DotProduct(LTTPalmNormal(Right), (Head - Palm).GetSafeNormal());
 	}
-	const bool bFacing = Facing > 0.7f;
-	// Re-arms once the palm turns well away, so holding it there doesn't toggle the menu again.
-	if (Facing < 0.3f)
+	// Like the wrist menu: opens when the palm turns to the face, closes when it turns away (a little hysteresis, and it
+	// stays while the left finger is pressing a button on it). Not over a pause / end menu or with the wrist menu up.
+	const bool bBlocked = bPaused || IsMenuOpen() || bHandMenuShown || !PalmMenuPanel;
+	bool bShow = !bBlocked && bRightOK && Facing > (bPalmMenuShown ? 0.3f : 0.6f);
+	if (!bShow && !bBlocked && bPalmMenuShown && Facing > 0.f
+		&& (bPokePressed || bLeftPinchClick || (Pointer && Pointer->GetHoveredWidgetComponent() == PalmMenuPanel)))
 	{
-		bPausePalmFired = false;
+		bShow = true;
 	}
-	// Only from play: once paused, the menu's own Resume button closes it. Not while the right hand works the
-	// wrist menu or pinches (palm toward you + index pinch is the headset's own Meta button).
-	if (bFacing && !bPausePalmFired && !bPaused && !IsMenuOpen() && !bHandMenuShown && RightPinchFinger < 0)
+	if (bShow != bPalmMenuShown)
 	{
-		PausePalmTime += DeltaTime;
-		if (PausePalmTime >= PausePalmHoldTime)
+		bPalmMenuShown = bShow;
+		if (PalmMenuPanel)
 		{
-			bPausePalmFired = true;
-			PausePalmTime = 0.f;
-			UE_LOG(LogCleanCutAction, Log, TEXT("VR: right palm held, pause menu"));
-			DoHandAction(ELTTVRHandAction::Pause);
+			PalmMenuPanel->SetHiddenInGame(!bShow);
 		}
+		UE_LOG(LogCleanCutAction, Log, TEXT("VR: right palm menu %s"), bShow ? TEXT("shown") : TEXT("hidden"));
 	}
-	else
+	if (bShow)
 	{
-		PausePalmTime = 0.f;
+		const FVector Normal = LTTPalmNormal(Right);
+		const float MenuHeight = PalmMenuWidth * ULTTVRPalmMenu::DrawSize.Y / ULTTVRPalmMenu::DrawSize.X;
+		const FVector Location = Palm + Normal * 4.f + FVector(0.f, 0.f, MenuHeight * 0.5f + 6.f);
+		const FVector ToEyes = (Head - Location).GetSafeNormal();
+		PalmMenuPanel->SetWorldScale3D(FVector(PalmMenuWidth / PalmMenuPanel->GetDrawSize().X));
+		PalmMenuPanel->SetWorldLocationAndRotation(Location, FRotationMatrix::MakeFromXZ(ToEyes, FVector::UpVector).Rotator());
 	}
 	return Facing > 0.5f;
+}
+
+bool ULTTVRComponent::UpdatePoke()
+{
+	// The right palm menu takes the left index fingertip, the left wrist menu the right one.
+	UWidgetComponent* Panel = nullptr;
+	FVector Tip = FVector::ZeroVector;
+	if (PalmMenuPanel && !PalmMenuPanel->bHiddenInGame && bLeftTipValid)
+	{
+		Panel = PalmMenuPanel;
+		Tip = LeftIndexTip;
+	}
+	else if (HandMenuPanel && !HandMenuPanel->bHiddenInGame && bRightTipValid && bHandsActive)
+	{
+		Panel = HandMenuPanel;
+		Tip = RightIndexTip;
+	}
+	FHitResult Hit;
+	float Depth = 100.f;
+	if (Panel)
+	{
+		const FVector Normal = Panel->GetForwardVector(); // the menu's face, toward the eyes
+		Depth = FVector::DotProduct(Tip - Panel->GetComponentLocation(), Normal);
+		if (Depth > 7.f || Depth < -5.f || !LTTTracePanel(Panel, Tip + Normal * 10.f, -Normal, Hit))
+		{
+			Panel = nullptr;
+		}
+	}
+	if (!Panel)
+	{
+		if (bPokePressed)
+		{
+			bPokePressed = false;
+			Pointer->ReleasePointerKey(EKeys::LeftMouseButton);
+		}
+		return false;
+	}
+	// Hovering within a few cm (the button lights up), pressed once the fingertip reaches the glass, released when it
+	// pulls back.
+	Pointer->SetCustomHitResult(Hit);
+	const bool bWantPress = bPokePressed ? Depth < 2.f : Depth < 0.8f;
+	if (bWantPress != bPokePressed)
+	{
+		bPokePressed = bWantPress;
+		if (bWantPress)
+		{
+			Pointer->PressPointerKey(EKeys::LeftMouseButton);
+		}
+		else
+		{
+			Pointer->ReleasePointerKey(EKeys::LeftMouseButton);
+		}
+	}
+	if (Laser)
+	{
+		Laser->SetHiddenInGame(true);
+	}
+	return true;
 }
 
 void ULTTVRComponent::UpdateHandMotion(const FXRHandTrackingState& Right, bool bRightOK, bool bPalmFacing, float DeltaTime)
@@ -1974,7 +2801,7 @@ void ULTTVRComponent::UpdateHandMenu(const FXRHandTrackingState& Left, const FVe
 		Normal = (Head - Palm).GetSafeNormal2D();
 		bShow = true;
 	}
-	else if (LTTHandTracked(Left) && !bBlocked)
+	else if (LTTHandTracked(Left) && !bBlocked && !bPalmMenuShown)
 	{
 		Palm = LTTJoint(Left, EHandKeypoint::Palm);
 		Normal = LTTPalmNormal(Left);
@@ -2218,6 +3045,14 @@ void ULTTVRComponent::UpdateHandMeshes(const FXRHandTrackingState& Left, const F
 		{
 			UpdateControllerHandMesh(LeftControllerHand, false);
 		}
+	}
+	if (LeftControllerModel)
+	{
+		LeftControllerModel->SetHiddenInGame(!bLeftCtrl);
+	}
+	if (RightControllerModel)
+	{
+		RightControllerModel->SetHiddenInGame(!bRightCtrl);
 	}
 	if (RightControllerHand)
 	{

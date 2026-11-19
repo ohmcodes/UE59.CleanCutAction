@@ -325,7 +325,7 @@ bool ALTTMessDirector::ShowHint()
 	++HintsUsed;
 
 	// Same outline as focus (stencil 1, M_PP_Outline).
-	Best->Mesh->SetRenderCustomDepth(true);
+	ULTTVRComponent::SetOutline(Best->Mesh, true);
 	Best->Mesh->SetCustomDepthStencilValue(1);
 	GetWorldTimerManager().SetTimer(HintTimer, this, &ALTTMessDirector::UpdateHint, 0.1f, true);
 
@@ -346,7 +346,7 @@ void ALTTMessDirector::UpdateHint()
 	// Losing focus turns the outline off; keep it on while the hint lasts.
 	if (!Target->Mesh->bRenderCustomDepth)
 	{
-		Target->Mesh->SetRenderCustomDepth(true);
+		ULTTVRComponent::SetOutline(Target->Mesh, true);
 		Target->Mesh->SetCustomDepthStencilValue(1);
 	}
 }
@@ -369,7 +369,7 @@ void ALTTMessDirector::ClearHint()
 	const ULTTInteractionComponent* Interaction = Pawn ? Pawn->FindComponentByClass<ULTTInteractionComponent>() : nullptr;
 	if (!Interaction || Interaction->GetFocusedActor() != Target)
 	{
-		Target->Mesh->SetRenderCustomDepth(false);
+		ULTTVRComponent::SetOutline(Target->Mesh, false);
 	}
 }
 

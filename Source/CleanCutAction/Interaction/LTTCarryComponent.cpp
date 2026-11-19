@@ -4,6 +4,7 @@
 #include "Interaction/LTTInteractableBase.h"
 #include "Interaction/LTTInteractable.h"
 #include "Camera/CameraComponent.h"
+#include "VR/LTTVRComponent.h"
 #include "Components/StaticMeshComponent.h"
 #include "Engine/StaticMesh.h"
 #include "Engine/World.h"
@@ -133,11 +134,22 @@ bool ULTTCarryComponent::PickUp(ALTTInteractableBase* Item)
 	BlendStartLocation = Item->GetRootComponent()->GetRelativeLocation();
 	BlendStartRotation = Item->GetRootComponent()->GetRelativeRotation().Quaternion();
 	BlendElapsed = 0.f;
+	ActiveBlendTime = PickupBlendTime;
 	SwingElapsed = -1.f;
 	GToolDir = FVector::ZeroVector;
 
 	HeldItem = Item;
 	OnPickedUp.Broadcast(Item);
+	return true;
+}
+
+bool ULTTCarryComponent::PullFromAfar(ALTTInteractableBase* Item, float FlyTime)
+{
+	if (!PickUp(Item))
+	{
+		return false;
+	}
+	ActiveBlendTime = FMath::Max(FlyTime, PickupBlendTime);
 	return true;
 }
 
@@ -254,6 +266,15 @@ void ULTTCarryComponent::ComputeHoldTarget(FVector& OutRelLocation, FRotator& Ou
 
 	OutRelLocation = CenterRel - RelQuat.RotateVector(LocalCenter);
 	OutRelRotation = RelQuat.Rotator();
+
+	// VR: the prop sits just past the right hand, along where the hand points, instead of in front of the eyes.
+	FVector HandLoc, HandDir;
+	if (HoldParent && ULTTVRComponent::GetHoldHand(GetOwner(), HandLoc, HandDir))
+	{
+		const FVector WorldCenter = HandLoc + HandDir.GetSafeNormal() * (Radius * 0.3f + 1.f);
+		const FVector CenterInParent = HoldParent->GetComponentTransform().InverseTransformPosition(WorldCenter);
+		OutRelLocation = CenterInParent - RelQuat.RotateVector(LocalCenter);
+	}
 }
 
 void ULTTCarryComponent::TickComponent(float DeltaTime, ELevelTick TickType, FActorComponentTickFunction* ThisTickFunction)
@@ -298,7 +319,7 @@ void ULTTCarryComponent::TickComponent(float DeltaTime, ELevelTick TickType, FAc
 		}
 
 		BlendElapsed += DeltaTime;
-		const float A = PickupBlendTime > 0.f ? FMath::Clamp(BlendElapsed / PickupBlendTime, 0.f, 1.f) : 1.f;
+		const float A = ActiveBlendTime > 0.f ? FMath::Clamp(BlendElapsed / ActiveBlendTime, 0.f, 1.f) : 1.f;
 		const float Ease = 1.f - FMath::Pow(1.f - A, 3.f); // OutCubic
 
 		USceneComponent* Root = HeldItem->GetRootComponent();
@@ -313,7 +334,7 @@ void ULTTCarryComponent::TickComponent(float DeltaTime, ELevelTick TickType, FAc
 void ULTTCarryComponent::UpdateHandIK(float DeltaTime)
 {
 	const float Speed = 1.f / FMath::Max(HandIKBlendTime, 0.01f);
-	const bool bReady = HeldItem && BlendElapsed >= PickupBlendTime * 0.5f;
+	const bool bReady = HeldItem && BlendElapsed >= ActiveBlendTime * 0.5f;
 	const float TargetR = bReady ? 1.f : 0.f;
 	const float TargetL = (bReady && HeldItem->UsesTwoHands()) ? 1.f : 0.f;
 	RightHand.Alpha = FMath::FInterpConstantTo(RightHand.Alpha, TargetR, DeltaTime, Speed);

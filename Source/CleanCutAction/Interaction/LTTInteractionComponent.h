@@ -64,6 +64,23 @@ public:
 	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Interaction")
 	float PlaceDistance = 400.f;
 
+	/** Gravity pull: a prop that can be picked up is focused (outline) even when it's out of reach, up to PullDistance
+	 *  away, and the trigger / pinch pulls it into the hand. Anything else still needs TraceDistance. */
+	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Interaction|Pull")
+	bool bGravityPull = true;
+
+	/** Farthest a prop can be pulled from, cm. */
+	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Interaction|Pull", meta = (ClampMin = "0", EditCondition = "bGravityPull"))
+	float PullDistance = 1200.f;
+
+	/** Sweep radius beyond TraceDistance, cm (wider, so a small prop across the room is easy to aim at). */
+	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Interaction|Pull", meta = (ClampMin = "0", EditCondition = "bGravityPull"))
+	float PullTraceRadius = 14.f;
+
+	/** How fast a pulled prop flies to the hand, cm/s (the flight takes 0.25 - 0.9 s). */
+	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Interaction|Pull", meta = (ClampMin = "100", EditCondition = "bGravityPull"))
+	float PullSpeed = 1100.f;
+
 	/** How far from the eye the held mop reaches a water puddle (cm). */
 	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Interaction")
 	float MopReach = 260.f;
@@ -102,6 +119,8 @@ protected:
 
 	void TryBindInput();
 	void UpdateFocus();
+	/** The interactable the sweep from Start along Dir finds first (placed props and set dressing are see-through). */
+	AActor* TraceForInteractable(const FVector& Start, const FVector& Dir, float Distance, float Radius) const;
 	void UpdatePlaceHint();
 
 	ELTTPlaceHint PlaceHint = ELTTPlaceHint::None;

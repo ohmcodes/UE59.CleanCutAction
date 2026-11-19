@@ -1,6 +1,7 @@
 // Clean! Cut! Action!
 
 #include "Interaction/LTTWaterPuddle.h"
+#include "VR/LTTVRComponent.h"
 #include "Interaction/LTTMessDirector.h"
 #include "Components/AudioComponent.h"
 #include "Components/StaticMeshComponent.h"
@@ -423,7 +424,7 @@ void ALTTWaterPuddle::OnInteract_Implementation(AActor* InstigatorActor)
 		{
 			FVector ViewLoc;
 			FRotator ViewRot;
-			Controller->GetPlayerViewPoint(ViewLoc, ViewRot);
+			ULTTVRComponent::GetAimViewPoint(Controller, ViewLoc, ViewRot); // VR: the hand's ray
 			FVector Point;
 			if (FindAimed(this, ViewLoc, ViewRot.Vector(), 1000.f, Point, InstigatorActor) == this)
 			{
