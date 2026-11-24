@@ -14,7 +14,7 @@ Covers checklist **P9**. **Pri:** [M]/[S]/[C]. **Var:** number of variations to 
 | **Kenney.nl audio packs** | UI clicks, interface sounds, impacts | CC0 |
 | **Pixabay (music & SFX)** | Background music, stingers | Pixabay Content License; check per item |
 | **Incompetech (Kevin MacLeod)** | Jazz/cafe music | CC-BY: attribution required |
-| **AI generation** (music/SFX/TTS) | Marlowe VO, music stems | Allowed only if the jam rules permit; check the tool's terms; disclose in credits |
+| **AI generation** (music/SFX/TTS) | Marlowe VO, music stems | Allowed only if the competition rules permit; check the tool's terms; disclose in credits |
 
 Log **every** file in `CREDITS.md` as you add it: file name, source URL, author, license.
 

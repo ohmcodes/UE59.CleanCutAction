@@ -28,6 +28,11 @@ void ULTTShootEndScreen::NativeOnInitialized()
 	{
 		BuildDefaultLayout();
 	}
+	// The baked WBP_ShootEndScreen still carries an older copyright line; the code's text wins.
+	if (UTextBlock* Copyright = Cast<UTextBlock>(GetWidgetFromName(TEXT("CopyrightText"))))
+	{
+		Copyright->SetText(FText::FromString(TEXT("Copyright © 2026 Ohmcodes. All Rights Reserved.")));
+	}
 	if (ShootAgainButton)
 	{
 		ShootAgainButton->OnClicked.AddDynamic(this, &ULTTShootEndScreen::HandleShootAgainClicked);
@@ -163,7 +168,7 @@ void ULTTShootEndScreen::BuildDefaultLayout()
 	}
 
 	UTextBlock* Copyright = MakeText(TEXT("CopyrightText"), 13, LTTTheme::InkMuted());
-	Copyright->SetText(FText::FromString(TEXT("Copyright © 2026 QLE OPC. All Rights Reserved.")));
+	Copyright->SetText(FText::FromString(TEXT("Copyright © 2026 Ohmcodes. All Rights Reserved.")));
 	Copyright->SetJustification(ETextJustify::Center);
 	if (UVerticalBoxSlot* S = Column->AddChildToVerticalBox(Copyright))
 	{

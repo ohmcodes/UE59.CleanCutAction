@@ -34,7 +34,7 @@ All made from `game cover art.png` (720×370) and written to `Build/Android/res/
 
 | Setting | Value | Why |
 |---|---|---|
-| `PackageName` | `com.qle.cleancutaction` | The old value `2ms_cleancutaction` fails UBT's check: a package name needs at least two dot-separated parts, each starting with a letter. **This becomes permanent once published on Google Play.** |
+| `PackageName` | `com.ohmcodes.cleancutaction` | The old value `2ms_cleancutaction` fails UBT's check: a package name needs at least two dot-separated parts, each starting with a letter. **This becomes permanent once published on Google Play.** |
 | `ApplicationDisplayName` | `Clean! Cut! Action!` | Name under the home-screen icon (was `clean_cut_action`) |
 | `StoreVersion` / `VersionDisplayName` | `1` / `1.0` | |
 | `MinSDKVersion` / `TargetSDKVersion` | `26` / `36` | Engine defaults (Android 8 minimum) |

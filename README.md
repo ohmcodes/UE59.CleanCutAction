@@ -2,7 +2,9 @@
 
 ![Clean! Cut! Action!](game%20logo.png)
 
-Our entry for the **Epic Mega AI Jam 2026** (theme: *Director's Cut*). It's a first-person 3D casual game built in Unreal Engine 5.9 and shipped as a WebGPU build on itch.io.
+Our entry for the **Meta VR Start Developer Competition 2026** (Gaming track): a first-person VR casual game for Meta Quest, built in Unreal Engine 5.9.
+
+> **This is the `vr` branch: the Meta Quest VR version.** It runs on PC VR through OpenXR (Link, Air Link, Meta XR Simulator) and targets a Quest APK. Everything VR-specific is documented in [Docs/10_VR_Meta_Quest.md](Docs/10_VR_Meta_Quest.md). The web (itch.io), desktop and Android phone builds live on the other branches.
 
 You play the Rookie, a production assistant on the last day of shooting a rom-com. The game has two phases:
 
@@ -16,6 +18,8 @@ You play the Rookie, a production assistant on the last day of shooting a rom-co
 | Engine | Unreal Engine **5.9.0 Preview**, built from source or installed locally |
 | IDE | Visual Studio 2022 (or Rider) with the *Game development with C++* workload |
 | Platform | Windows 10/11 for development |
+| VR runtime | An OpenXR runtime: **Meta Horizon Link** (headset over Link / Air Link) or **Meta XR Simulator** (no headset) |
+| Headset target | Meta Quest 3 / 3S (Quest 2 compatible) |
 | Web target | The UE Wasm platform (WebGPU) for the itch.io build |
 | Python | 3.x, only needed to test the web build locally |
 
@@ -30,6 +34,7 @@ A project saved in a preview engine can't be opened in an older engine version.
 2. Right-click `CleanCutAction.uproject` and choose **Switch Unreal Engine version...**, then pick your UE 5.9 install. Don't commit the `EngineAssociation` change it makes.
 3. Open `CleanCutAction.sln` and build the `CleanCutActionEditor` target in `Development Editor | Win64`. You can also open the `.uproject` and let the editor build the module for you.
 4. The editor opens on the cafe level in `/Game/StylizedNewYorkCity/Level/`.
+5. **VR:** make Meta Horizon Link or the Meta XR Simulator the active OpenXR runtime, then use **Play > VR Preview**. Controls and simulator setup: [Docs/10_VR_Meta_Quest.md](Docs/10_VR_Meta_Quest.md).
 
 ## Project layout
 
@@ -38,11 +43,14 @@ Source/CleanCutAction/     C++ game module
   Interaction/             interaction, carry, mess director, cleanup HUD, end screen
   UI/                      briefing screen, pause menu, UI theme, widget baker
   Audio/                   music player
+  Shoot/                   Phase 2 scene director, effect stations
+  VR/                      VR mode: HMD camera, controllers, snap turn, world-space UI panel
 Content/_CleanCutAction/   game content: Blueprints, input, materials, UI, break FX, music
 Content/StylizedNewYorkCity/  set art and the cafe level (L_NYC_Cafe)
 Config/                    engine, game, input, and editor settings
 Platforms/Wasm/            Wasm-only config, such as the texture size cap
 Scripts/serve_wasm.py      local web server for testing the Wasm build
+Scripts/Python/create_vr_input.py  creates the VR input assets (IMC_VR, IA_VR_*)
 Docs/                      design and implementation docs
 ```
 
@@ -88,10 +96,10 @@ The docs were written as a plan before development started, so some of them no l
 ## Credits
 
 - Set art: *Stylized New York City* asset pack
-- Built with Unreal Engine 5.9 and AI coding tools for the Epic Mega AI Jam 2026
+- Built with Unreal Engine 5.9 and AI coding tools for the Meta VR Start Developer Competition 2026
 
 ## Copyright and license
 
-Copyright © 2026 QLE OPC (Quality Level Entertainment). All Rights Reserved. See [COPYRIGHT.md](COPYRIGHT.md) for the full notice.
+Copyright © 2026 Ohmcodes. All Rights Reserved. See [COPYRIGHT.md](COPYRIGHT.md) for the full notice.
 
 This is proprietary software. No license to copy, modify or redistribute it is granted (see [LICENSE](LICENSE)). Third-party Marketplace/Fab assets in `Content/` are covered by their own licenses and can't be redistributed separately.

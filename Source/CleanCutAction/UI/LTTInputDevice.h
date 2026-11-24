@@ -1,4 +1,4 @@
-// Copyright © 2026 QLE OPC. All Rights Reserved.
+// Copyright © 2026 Ohmcodes. All Rights Reserved.
 
 #pragma once
 

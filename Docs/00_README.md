@@ -1,6 +1,8 @@
 # Clean! Cut! Action! - Implementation Docs
 
-First-person 3D casual game for a 3-day AI game jam. Engine: **Unreal Engine 5.9.0 Preview**, C++ core with Blueprint subclasses for content.
+First-person 3D casual VR game for Meta Quest, made for the Meta VR Start Developer Competition 2026. Engine: **Unreal Engine 5.9.0 Preview**, C++ core with Blueprint subclasses for content.
+
+> **`vr` branch:** this branch is the **Meta Quest VR** version. VR changes, controls, testing and competition rules are in [`10_VR_Meta_Quest.md`](10_VR_Meta_Quest.md). The docs below describe the original flat game; where they disagree with the VR doc, the VR doc wins.
 
 ## The Game in One Paragraph
 
@@ -19,6 +21,7 @@ The player is the Rookie, a production assistant on the last day of shooting *Cl
 | `06_UI_and_Tweening.md` | Main menu, pause, HUDs, both end screens, settings, all animation/tween specs |
 | `07_Audio_List.md` | Every SFX and music track to source or make, with implementation notes |
 | `08_VFX_and_Shaders.md` | Niagara systems, materials, post-process effects |
+| `10_VR_Meta_Quest.md` | **VR branch:** Quest port, competition rules, every VR change, controls, XR Simulator testing, known limits |
 
 ## Key Technical Decisions
 
@@ -31,9 +34,10 @@ The player is the Rookie, a production assistant on the last day of shooting *Cl
 | Phase 1 mid-progress | Not saved | Keeps the save simple; Phase 1 is short (target 15–25 min) |
 | Scene logic (Phase 2) | Beat-based state machine driven by a Data Asset, **not** one long Level Sequence | Actors wait for cue results, so failures and branches don't desync |
 | Tweens | Small custom C++ tween subsystem + easing library | No plugin dependency, works on actors and widgets, runs while paused |
-| UI | Plain UMG (no CommonUI) | Less setup for a 3-day jam |
-| Perspective | First person, no visible body (hands/carry stack only) | Fewer animation assets |
-| Input | Enhanced Input with separate mapping contexts for gameplay, station, UI | Clean mode switching |
+| UI | Plain UMG (no CommonUI) | Less setup on a short competition schedule |
+| Perspective | First person, no visible body (hands/carry stack only). **VR:** head-tracked camera, controller markers, head-gaze interaction | Fewer animation assets; the cleaning code works unchanged in VR |
+| XR (VR branch) | Engine **OpenXR** plugin + `OpenXRHandTracking`, not the Meta XR plugin | Ships with 5.9; runs on Link, Air Link, Meta XR Simulator and Quest |
+| Input | Enhanced Input with separate mapping contexts for gameplay, station, UI. **VR:** `IMC_VR` as an Enhanced Input default mapping context | Clean mode switching; OpenXR only binds actions from default mapping contexts |
 
 ## ⚠️ Preview Engine Warning
 

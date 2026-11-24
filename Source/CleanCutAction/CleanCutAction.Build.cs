@@ -26,20 +26,10 @@ public class CleanCutAction : ModuleRules
 			"LevelSequence",
 			"MovieScene",
 			"Niagara",
-			"HeadMountedDisplay"
+			"HeadMountedDisplay" // VR: motion controllers, XR tracking system
 		});
 
 		PrivateDependencyModuleNames.AddRange(new string[] { "HTTP", "Json" });
-
-		// VR (OpenXR): the controller models come from XRBase, which is only enabled where OpenXR is (not Wasm).
-		bool bWithXRBase = Target.Platform == UnrealTargetPlatform.Win64
-			|| Target.Platform == UnrealTargetPlatform.Android
-			|| Target.Platform == UnrealTargetPlatform.Linux;
-		if (bWithXRBase)
-		{
-			PrivateDependencyModuleNames.Add("XRBase");
-		}
-		PrivateDefinitions.Add("LTT_WITH_XRBASE=" + (bWithXRBase ? "1" : "0"));
 
 		// Editor-only: ULTTWidgetBaker copies the C++ widget layouts into WBP_ children.
 		if (Target.bBuildEditor)

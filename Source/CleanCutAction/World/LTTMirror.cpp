@@ -14,6 +14,8 @@
 #include "GameFramework/PlayerController.h"
 #include "Materials/MaterialInstanceDynamic.h"
 #include "Materials/MaterialInterface.h"
+#include "StereoRendering.h"
+#include "GameFramework/WorldSettings.h"
 #include "UObject/ConstructorHelpers.h"
 
 namespace
@@ -58,7 +60,17 @@ namespace
 }
 
 const FName ALTTMirror::TextureParameterName(TEXT("MirrorTexture"));
+const FName ALTTMirror::TextureRightParameterName(TEXT("MirrorTextureRight"));
 const FName ALTTMirror::TintParameterName(TEXT("Tint"));
+
+namespace
+{
+	/** True while a headset renders the game (two eye views). */
+	bool LTTMirrorIsStereo()
+	{
+		return GEngine && GEngine->StereoRenderingDevice.IsValid() && GEngine->StereoRenderingDevice->IsStereoEnabled();
+	}
+}
 
 ALTTMirror::ALTTMirror()
 {
@@ -93,6 +105,14 @@ ALTTMirror::ALTTMirror()
 	// HDR scene colour: the main view's exposure and tonemapper then treat the reflection like the rest of the frame.
 	Capture->CaptureSource = SCS_SceneColorHDRNoAlpha;
 	Capture->ShowFlags.SetMotionBlur(false);
+
+	CaptureRight = CreateDefaultSubobject<USceneCaptureComponent2D>(TEXT("CaptureRight"));
+	CaptureRight->SetupAttachment(Root);
+	CaptureRight->bCaptureEveryFrame = false;
+	CaptureRight->bCaptureOnMovement = false;
+	CaptureRight->bAlwaysPersistRenderingState = true;
+	CaptureRight->CaptureSource = SCS_SceneColorHDRNoAlpha;
+	CaptureRight->ShowFlags.SetMotionBlur(false);
 
 	MirrorMaterial = GlassMat.Object;
 	FrameMaterial = FrameMat.Object;
@@ -140,64 +160,131 @@ void ALTTMirror::BeginPlay()
 #endif
 
 	// The mirror never shows up in its own reflection (its frame sits behind the glass, right in front of the capture).
-	Capture->HiddenActors.AddUnique(this);
-	HideActorsBehindMirror(Capture, this);
-	Capture->MaxViewDistanceOverride = MaxReflectionDistance > 0.f ? MaxReflectionDistance : -1.f;
-	Capture->ShowFlags.SetDynamicShadows(bReflectShadows);
-	// Cuts away everything behind the mirror plane (the wall it hangs on). Needs r.AllowGlobalClipPlane; the custom
-	// near plane set each capture covers the common case without it.
-	Capture->bEnableClipPlane = true;
+	for (USceneCaptureComponent2D* EyeCapture : { Capture.Get(), CaptureRight.Get() })
+	{
+		EyeCapture->HiddenActors.AddUnique(this);
+		HideActorsBehindMirror(EyeCapture, this);
+		EyeCapture->MaxViewDistanceOverride = MaxReflectionDistance > 0.f ? MaxReflectionDistance : -1.f;
+		EyeCapture->ShowFlags.SetDynamicShadows(bReflectShadows);
+		// Cuts away everything behind the mirror plane (the wall it hangs on). Needs r.AllowGlobalClipPlane; the
+		// custom near plane set each capture covers the common case without it.
+		EyeCapture->bEnableClipPlane = true;
+	}
 
 	if (MirrorMaterial)
 	{
 		GlassMID = Glass->CreateAndSetMaterialInstanceDynamicFromMaterial(0, MirrorMaterial);
 		GlassMID->SetVectorParameterValue(TintParameterName, Tint);
 	}
-	EnsureRenderTarget();
+	EnsureRenderTarget(LTTMirrorIsStereo());
 }
 
-void ALTTMirror::EnsureRenderTarget()
+void ALTTMirror::EnsureRenderTarget(bool bStereo)
 {
-	FIntPoint ViewSize(1280, 720);
-	if (GEngine && GEngine->GameViewport)
+	int32 Width = 16;
+	int32 Height = 16;
+	if (bStereo)
 	{
-		FVector2D Size;
-		GEngine->GameViewport->GetViewportSize(Size);
-		if (Size.X > 1.f && Size.Y > 1.f)
+		// Each eye's view is close to square; the capture uses the eye's own projection, so a square target maps
+		// onto it exactly.
+		Width = Height = FMath::Clamp(MaxResolution, 256, 1024);
+	}
+	else
+	{
+		FIntPoint ViewSize(1280, 720);
+		if (GEngine && GEngine->GameViewport)
 		{
-			ViewSize = FIntPoint(FMath::RoundToInt(Size.X), FMath::RoundToInt(Size.Y));
+			FVector2D Size;
+			GEngine->GameViewport->GetViewportSize(Size);
+			if (Size.X > 1.f && Size.Y > 1.f)
+			{
+				ViewSize = FIntPoint(FMath::RoundToInt(Size.X), FMath::RoundToInt(Size.Y));
+			}
 		}
+		float Scale = ResolutionScale;
+		const int32 LongEdge = FMath::Max(ViewSize.X, ViewSize.Y);
+		if (LongEdge * Scale > MaxResolution)
+		{
+			Scale = float(MaxResolution) / float(LongEdge);
+		}
+		Width = FMath::Max(16, FMath::RoundToInt(ViewSize.X * Scale));
+		Height = FMath::Max(16, FMath::RoundToInt(ViewSize.Y * Scale));
 	}
 
-	float Scale = ResolutionScale;
-	const int32 LongEdge = FMath::Max(ViewSize.X, ViewSize.Y);
-	if (LongEdge * Scale > MaxResolution)
+	auto Prepare = [this, Width, Height](TObjectPtr<UTextureRenderTarget2D>& Target, const TCHAR* Name, USceneCaptureComponent2D* EyeCapture, FName Parameter)
 	{
-		Scale = float(MaxResolution) / float(LongEdge);
+		if (Target && Target->SizeX == Width && Target->SizeY == Height)
+		{
+			return;
+		}
+		if (!Target)
+		{
+			Target = NewObject<UTextureRenderTarget2D>(this, Name);
+			Target->RenderTargetFormat = RTF_RGBA16f;
+			Target->ClearColor = FLinearColor::Black;
+			Target->bAutoGenerateMips = false;
+		}
+		Target->InitAutoFormat(Width, Height);
+		Target->UpdateResourceImmediate(true);
+		EyeCapture->TextureTarget = Target;
+		if (GlassMID)
+		{
+			GlassMID->SetTextureParameterValue(Parameter, Target);
+		}
+	};
+	Prepare(RenderTarget, TEXT("MirrorRT"), Capture, TextureParameterName);
+	if (bStereo)
+	{
+		Prepare(RenderTargetRight, TEXT("MirrorRTRight"), CaptureRight, TextureRightParameterName);
 	}
-	const int32 Width = FMath::Max(16, FMath::RoundToInt(ViewSize.X * Scale));
-	const int32 Height = FMath::Max(16, FMath::RoundToInt(ViewSize.Y * Scale));
+}
 
-	if (RenderTarget && RenderTarget->SizeX == Width && RenderTarget->SizeY == Height)
+float ALTTMirror::NearPlaneFor(const FVector& MirroredLocation, const FVector& Forward) const
+{
+	const FVector PlanePoint = Glass->GetComponentLocation();
+	const FVector Right = GetActorRightVector() * (MirrorSize.X * 0.5f);
+	const FVector UpEdge = GetActorUpVector() * (MirrorSize.Y * 0.5f);
+	float MinDepth = TNumericLimits<float>::Max();
+	for (const FVector& Corner : { PlanePoint + Right + UpEdge, PlanePoint + Right - UpEdge, PlanePoint - Right + UpEdge, PlanePoint - Right - UpEdge })
+	{
+		MinDepth = FMath::Min(MinDepth, static_cast<float>(FVector::DotProduct(Corner - MirroredLocation, Forward)));
+	}
+	return FMath::Max(1.f, MinDepth - 1.f);
+}
+
+void ALTTMirror::CaptureEye(USceneCaptureComponent2D* EyeCapture, int32 EyeIndex, const FVector& HeadLocation, const FRotator& HeadRotation)
+{
+	IStereoRendering* Stereo = GEngine->StereoRenderingDevice.Get();
+	FVector EyeLocation = HeadLocation;
+	FRotator EyeRotation = HeadRotation;
+	const float WorldToMeters = GetWorld() && GetWorld()->GetWorldSettings() ? GetWorld()->GetWorldSettings()->WorldToMeters : 100.f;
+	Stereo->CalculateStereoViewOffset(EyeIndex, EyeRotation, WorldToMeters, EyeLocation);
+
+	const FVector PlanePoint = Glass->GetComponentLocation();
+	const FVector Normal = GetActorForwardVector();
+	const float EyeSide = FVector::DotProduct(EyeLocation - PlanePoint, Normal);
+	if (EyeSide <= 0.f)
 	{
 		return;
 	}
+	auto Reflect = [&Normal](const FVector& V) { return V - 2.f * FVector::DotProduct(V, Normal) * Normal; };
+	const FVector MirroredLocation = EyeLocation - 2.f * EyeSide * Normal;
+	const FVector Forward = Reflect(EyeRotation.Vector());
+	const FVector Up = Reflect(FRotationMatrix(EyeRotation).GetScaledAxis(EAxis::Z));
+	EyeCapture->SetWorldLocationAndRotation(MirroredLocation, FRotationMatrix::MakeFromXZ(Forward, Up).Rotator());
 
-	if (!RenderTarget)
-	{
-		RenderTarget = NewObject<UTextureRenderTarget2D>(this, TEXT("MirrorRT"));
-		RenderTarget->RenderTargetFormat = RTF_RGBA16f;
-		RenderTarget->ClearColor = FLinearColor::Black;
-		RenderTarget->bAutoGenerateMips = false;
-	}
-	RenderTarget->InitAutoFormat(Width, Height);
-	RenderTarget->UpdateResourceImmediate(true);
-
-	Capture->TextureTarget = RenderTarget;
-	if (GlassMID)
-	{
-		GlassMID->SetTextureParameterValue(TextureParameterName, RenderTarget);
-	}
+	// The eye's own (off-centre) projection, so the reflection lines up with what that eye sees. The capture image
+	// is mirrored left-right (the glass flips it back), so the frustum's horizontal offset flips too. The near plane
+	// sits at the glass.
+	FMatrix Projection = Stereo->GetStereoProjectionMatrix(EyeIndex);
+	Projection.M[2][0] = -Projection.M[2][0];
+	Projection.M[3][2] = NearPlaneFor(MirroredLocation, Forward);
+	EyeCapture->bUseCustomProjectionMatrix = true;
+	EyeCapture->CustomProjectionMatrix = Projection;
+	EyeCapture->bOverride_CustomNearClippingPlane = false;
+	EyeCapture->ClipPlaneBase = PlanePoint;
+	EyeCapture->ClipPlaneNormal = Normal;
+	EyeCapture->CaptureScene();
 }
 
 bool ALTTMirror::GetViewerCamera(FVector& OutLocation, FRotator& OutRotation, float& OutFOV) const
@@ -239,11 +326,38 @@ void ALTTMirror::Tick(float DeltaSeconds)
 		return; // behind the mirror or too far away
 	}
 
-	EnsureRenderTarget();
+	const bool bStereo = LTTMirrorIsStereo();
+	EnsureRenderTarget(bStereo);
 	if (!RenderTarget)
 	{
 		return;
 	}
+	if (bStereo)
+	{
+		// VR: one reflection per eye (the glass material picks the right one per eye).
+#if PLATFORM_ANDROID
+		// Quest: each reflection is a full extra scene render, so update one eye per frame, alternating (36 Hz per eye
+		// at 72 Hz). The other eye keeps last frame's image, which is hard to notice in a mirror.
+		++StereoCaptureFrame;
+		const bool bLeftThisFrame = (StereoCaptureFrame & 1) == 0 || !RenderTargetRight;
+		if (bLeftThisFrame)
+		{
+			CaptureEye(Capture, 0, CamLoc, CamRot);
+		}
+		else
+		{
+			CaptureEye(CaptureRight, 1, CamLoc, CamRot);
+		}
+#else
+		CaptureEye(Capture, 0, CamLoc, CamRot);
+		if (RenderTargetRight)
+		{
+			CaptureEye(CaptureRight, 1, CamLoc, CamRot);
+		}
+#endif
+		return;
+	}
+	Capture->bUseCustomProjectionMatrix = false;
 
 	// Reflect the camera across the mirror plane. The reflected basis is left-handed, so the camera built from it
 	// sees the scene flipped left-right; the glass material flips the screen U back.
@@ -257,15 +371,8 @@ void ALTTMirror::Tick(float DeltaSeconds)
 	Capture->FOVAngle = FOV;
 
 	// Near plane at the closest corner of the glass, so the wall behind the mirror isn't drawn.
-	const FVector Right = GetActorRightVector() * (MirrorSize.X * 0.5f);
-	const FVector UpEdge = GetActorUpVector() * (MirrorSize.Y * 0.5f);
-	float MinDepth = TNumericLimits<float>::Max();
-	for (const FVector& Corner : { PlanePoint + Right + UpEdge, PlanePoint + Right - UpEdge, PlanePoint - Right + UpEdge, PlanePoint - Right - UpEdge })
-	{
-		MinDepth = FMath::Min(MinDepth, FVector::DotProduct(Corner - MirroredLoc, Forward));
-	}
 	Capture->bOverride_CustomNearClippingPlane = true;
-	Capture->CustomNearClippingPlane = FMath::Max(1.f, MinDepth - 1.f);
+	Capture->CustomNearClippingPlane = NearPlaneFor(MirroredLoc, Forward);
 	Capture->ClipPlaneBase = PlanePoint;
 	Capture->ClipPlaneNormal = Normal;
 

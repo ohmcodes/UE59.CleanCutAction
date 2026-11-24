@@ -4,6 +4,7 @@
 #include "Interaction/LTTInteractableBase.h"
 #include "Interaction/LTTInteractable.h"
 #include "Camera/CameraComponent.h"
+#include "VR/LTTVRComponent.h"
 #include "Components/StaticMeshComponent.h"
 #include "Engine/StaticMesh.h"
 #include "Engine/World.h"
@@ -30,21 +31,19 @@ namespace
 	constexpr float ToolAimSpeed = 10.f;
 
 	/** SwingT: 0..1 during a mop stroke, < 0 otherwise. */
-	void ComputeToolTarget(const USceneComponent* Parent, float DeltaTime, float SwingT, FVector& OutRelLocation, FRotator& OutRelRotation, bool bInHand = false)
+	void ComputeToolTarget(const USceneComponent* Parent, float DeltaTime, float SwingT, FVector& OutRelLocation, FRotator& OutRelRotation)
 	{
 		const FTransform& Cam = Parent->GetComponentTransform();
-		// VR: the parent is the hand itself, so the grip is at its origin.
-		const FVector GripAt = bInHand ? FVector::ZeroVector : ToolGripOffset;
 
 		// Carried: head out in front of the grip.
 		FVector WantDir = ToolIdleAim.Vector();
-		FVector WantHead = GripAt + WantDir * ToolGripHeight;
+		FVector WantHead = ToolGripOffset + WantDir * ToolGripHeight;
 		FVector ScrubAxis = WantDir;
 		if (GToolAimSet)
 		{
 			// Mopping: the head rests on the water, on the way from the player to the aimed spot (no further out
 			// than ToolFloorReach), and the handle runs from there up to the hand, at about 45 degrees.
-			const FVector Grip = Cam.TransformPosition(GripAt);
+			const FVector Grip = Cam.TransformPosition(ToolGripOffset);
 			const FVector Base(Grip.X, Grip.Y, GToolAimPoint.Z);
 			const FVector Along = GToolAimPoint - Base;
 			const float Dist = static_cast<float>(Along.Size());
@@ -135,11 +134,22 @@ bool ULTTCarryComponent::PickUp(ALTTInteractableBase* Item)
 	BlendStartLocation = Item->GetRootComponent()->GetRelativeLocation();
 	BlendStartRotation = Item->GetRootComponent()->GetRelativeRotation().Quaternion();
 	BlendElapsed = 0.f;
+	ActiveBlendTime = PickupBlendTime;
 	SwingElapsed = -1.f;
 	GToolDir = FVector::ZeroVector;
 
 	HeldItem = Item;
 	OnPickedUp.Broadcast(Item);
+	return true;
+}
+
+bool ULTTCarryComponent::PullFromAfar(ALTTInteractableBase* Item, float FlyTime)
+{
+	if (!PickUp(Item))
+	{
+		return false;
+	}
+	ActiveBlendTime = FMath::Max(FlyTime, PickupBlendTime);
 	return true;
 }
 
@@ -162,11 +172,6 @@ void ULTTCarryComponent::Throw()
 	Release(true);
 }
 
-void ULTTCarryComponent::ThrowWithVelocity(const FVector& Velocity)
-{
-	Release(true, &Velocity);
-}
-
 bool ULTTCarryComponent::PlaceHeld()
 {
 	ALTTInteractableBase* Item = HeldItem;
@@ -179,6 +184,11 @@ bool ULTTCarryComponent::PlaceHeld()
 	Item->PlaceAtHome();
 	OnReleased.Broadcast(Item, false);
 	return true;
+}
+
+void ULTTCarryComponent::ThrowWithVelocity(const FVector& Velocity)
+{
+	Release(true, &Velocity);
 }
 
 void ULTTCarryComponent::Release(bool bThrow, const FVector* ThrowVelocity)
@@ -216,7 +226,7 @@ void ULTTCarryComponent::Release(bool bThrow, const FVector* ThrowVelocity)
 	if (bThrow && ThrowVelocity)
 	{
 		LinearVelocity = OwnerVelocity + *ThrowVelocity;
-		AngularVelocity = FMath::VRand() * 120.f;
+		AngularVelocity = FMath::VRand() * 180.f;
 	}
 	else if (bThrow)
 	{
@@ -242,10 +252,7 @@ void ULTTCarryComponent::ComputeHoldTarget(FVector& OutRelLocation, FRotator& Ou
 	const bool bTwoHands = HeldItem->UsesTwoHands();
 
 	const float Dist = HeldItem->HoldDistance > 0.f ? HeldItem->HoldDistance : FMath::Max(BaseHoldDistance, Radius * 1.1f + 18.f);
-	// VR: just past the fingertips of the tracked hand (the per-prop offsets are tuned for the camera hold).
-	const FVector CenterRel = bHoldInHand
-		? FVector(Radius * 0.6f + 6.f, 0.f, 0.f)
-		: FVector(Dist, bTwoHands ? 0.f : OneHandSideOffset, -(HoldDownOffset + Radius * 0.5f)) + HeldItem->HoldOffset;
+	const FVector CenterRel = FVector(Dist, bTwoHands ? 0.f : OneHandSideOffset, -(HoldDownOffset + Radius * 0.5f)) + HeldItem->HoldOffset;
 
 	const float Yaw = HeldItem->bKeepPickupYaw ? HeldRelativeYaw : 0.f;
 	const FQuat RelQuat = FRotator(0.f, Yaw, 0.f).Quaternion() * HeldItem->HoldRotationOffset.Quaternion();
@@ -259,6 +266,15 @@ void ULTTCarryComponent::ComputeHoldTarget(FVector& OutRelLocation, FRotator& Ou
 
 	OutRelLocation = CenterRel - RelQuat.RotateVector(LocalCenter);
 	OutRelRotation = RelQuat.Rotator();
+
+	// VR: the prop sits just past the right hand, along where the hand points, instead of in front of the eyes.
+	FVector HandLoc, HandDir;
+	if (HoldParent && ULTTVRComponent::GetHoldHand(GetOwner(), HandLoc, HandDir))
+	{
+		const FVector WorldCenter = HandLoc + HandDir.GetSafeNormal() * (Radius * 0.3f + 1.f);
+		const FVector CenterInParent = HoldParent->GetComponentTransform().InverseTransformPosition(WorldCenter);
+		OutRelLocation = CenterInParent - RelQuat.RotateVector(LocalCenter);
+	}
 }
 
 void ULTTCarryComponent::TickComponent(float DeltaTime, ELevelTick TickType, FActorComponentTickFunction* ThisTickFunction)
@@ -289,7 +305,7 @@ void ULTTCarryComponent::TickComponent(float DeltaTime, ELevelTick TickType, FAc
 		if (HeldItem->bIsMop && HoldParent)
 		{
 			// The mop is held by its handle and points at the puddle being mopped.
-			ComputeToolTarget(HoldParent, DeltaTime, SwingT, TargetLoc, TargetRot, bHoldInHand);
+			ComputeToolTarget(HoldParent, DeltaTime, SwingT, TargetLoc, TargetRot);
 		}
 		else
 		{
@@ -303,7 +319,7 @@ void ULTTCarryComponent::TickComponent(float DeltaTime, ELevelTick TickType, FAc
 		}
 
 		BlendElapsed += DeltaTime;
-		const float A = PickupBlendTime > 0.f ? FMath::Clamp(BlendElapsed / PickupBlendTime, 0.f, 1.f) : 1.f;
+		const float A = ActiveBlendTime > 0.f ? FMath::Clamp(BlendElapsed / ActiveBlendTime, 0.f, 1.f) : 1.f;
 		const float Ease = 1.f - FMath::Pow(1.f - A, 3.f); // OutCubic
 
 		USceneComponent* Root = HeldItem->GetRootComponent();
@@ -318,7 +334,7 @@ void ULTTCarryComponent::TickComponent(float DeltaTime, ELevelTick TickType, FAc
 void ULTTCarryComponent::UpdateHandIK(float DeltaTime)
 {
 	const float Speed = 1.f / FMath::Max(HandIKBlendTime, 0.01f);
-	const bool bReady = HeldItem && BlendElapsed >= PickupBlendTime * 0.5f;
+	const bool bReady = HeldItem && BlendElapsed >= ActiveBlendTime * 0.5f;
 	const float TargetR = bReady ? 1.f : 0.f;
 	const float TargetL = (bReady && HeldItem->UsesTwoHands()) ? 1.f : 0.f;
 	RightHand.Alpha = FMath::FInterpConstantTo(RightHand.Alpha, TargetR, DeltaTime, Speed);

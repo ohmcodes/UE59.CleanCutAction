@@ -49,6 +49,10 @@ public:
 	UFUNCTION(BlueprintCallable, Category = "Carry")
 	bool PickUp(ALTTInteractableBase* Item);
 
+	/** Gravity pull: picks up a prop from across the room; it flies into the hand over FlyTime seconds instead of
+	 *  PickupBlendTime. */
+	bool PullFromAfar(ALTTInteractableBase* Item, float FlyTime);
+
 	/** Gentle drop in front of the player with physics. */
 	UFUNCTION(BlueprintCallable, Category = "Carry")
 	void Drop();
@@ -57,7 +61,7 @@ public:
 	UFUNCTION(BlueprintCallable, Category = "Carry")
 	void Throw();
 
-	/** Throw with this velocity (VR: the hand's swing), plus the player's own velocity. */
+	/** Throw with a given velocity (VR hand throw: the hand's own speed and direction), cm/s. */
 	UFUNCTION(BlueprintCallable, Category = "Carry")
 	void ThrowWithVelocity(const FVector& Velocity);
 
@@ -91,10 +95,6 @@ public:
 
 	UPROPERTY(BlueprintAssignable, Category = "Carry")
 	FLTTOnReleased OnReleased;
-
-	/** VR: the hold parent is a tracked hand, so props sit in the palm instead of out in front of the camera. */
-	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Carry|Hold")
-	bool bHoldInHand = false;
 
 	// ---- Tuning ----
 
@@ -160,6 +160,8 @@ protected:
 	float SwingDuration = 0.4f;
 
 	float BlendElapsed = 0.f;
+	/** Fly-in time of the current pickup (PickupBlendTime, longer for a gravity pull). */
+	float ActiveBlendTime = 0.18f;
 	FVector BlendStartLocation = FVector::ZeroVector;
 	FQuat BlendStartRotation = FQuat::Identity;
 

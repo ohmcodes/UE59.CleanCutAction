@@ -32,6 +32,7 @@
 #include "Blueprint/WidgetLayoutLibrary.h"
 #include "EngineUtils.h"
 #include "UI/LTTInputDevice.h"
+#include "VR/LTTVRComponent.h"
 
 #define LOCTEXT_NAMESPACE "LTTCleanupHUD"
 
@@ -295,11 +296,80 @@ void ULTTCleanupHUD::SetControlsLegendOpen(bool bOpen)
 	{
 		ControlsToggleText = Cast<UTextBlock>(GetWidgetFromName(TEXT("ControlsToggleText")));
 	}
-	const bool bPad = ULTTInputDeviceSubsystem::IsGamepad();
+	const bool bVR = ULTTVRComponent::IsHeadsetActive();
+	const bool bPad = !bVR && ULTTInputDeviceSubsystem::IsGamepad();
 	bLegendShowsPad = bPad;
+
+	// VR: a third list with the Touch controller bindings (IMC_VR), made the first time it's needed.
+	UWidget* VRList = GetWidgetFromName(TEXT("ControlsListVR"));
+	if (bVR && !VRList && ControlsList && WidgetTree)
+	{
+		if (UVerticalBox* Column = Cast<UVerticalBox>(ControlsList->GetParent()))
+		{
+			UVerticalBox* List = WidgetTree->ConstructWidget<UVerticalBox>(UVerticalBox::StaticClass(), TEXT("ControlsListVR"));
+			AddLegendRow(List, { MakeKeyCap(LOCTEXT("VRKeyLStick", "L Stick")) }, LOCTEXT("LegendMove", "Move"));
+			AddLegendRow(List, { MakeKeyCap(LOCTEXT("VRKeyRStick", "R Stick")) }, LOCTEXT("LegendTurn", "Turn"));
+			AddLegendRow(List, { MakeKeyCap(LOCTEXT("VRKeyTrigger", "Trigger")) }, LOCTEXT("LegendGrabVR", "Pick up / Place (look at it)"));
+			AddLegendRow(List, { MakeKeyCap(LOCTEXT("VRKeyB", "B")) }, LOCTEXT("LegendThrow", "Throw (breaks it!)"));
+			AddLegendRow(List, { MakeKeyCap(LOCTEXT("VRKeyA", "A")) }, LOCTEXT("LegendJump", "Jump"));
+			AddLegendRow(List, { MakeKeyCap(LOCTEXT("VRKeyDuck", "Duck")) }, LOCTEXT("LegendCrouchVR", "Crouch for real"));
+			AddLegendRow(List, { MakeKeyCap(LOCTEXT("VRKeyX", "X")) }, LOCTEXT("LegendHint", "Hint"));
+			AddLegendRow(List, { MakeKeyCap(LOCTEXT("VRKeyY", "Y")) }, LOCTEXT("LegendDance", "Dance"));
+			AddLegendRow(List, { MakeKeyCap(LOCTEXT("VRKeyMenu", "Menu")) }, LOCTEXT("LegendPause", "Pause / Unstuck"));
+			Column->InsertChildAt(Column->GetChildIndex(ControlsList) + 1, List);
+			VRList = List;
+		}
+	}
+	// VR with hand tracking (no controllers): the gestures ULTTVRComponent reads.
+	const bool bHands = bVR && ULTTVRComponent::IsUsingHands();
+	UWidget* HandsList = GetWidgetFromName(TEXT("ControlsListHands"));
+	if (bHands && !HandsList && ControlsList && WidgetTree)
+	{
+		if (UVerticalBox* Column = Cast<UVerticalBox>(ControlsList->GetParent()))
+		{
+			UVerticalBox* List = WidgetTree->ConstructWidget<UVerticalBox>(UVerticalBox::StaticClass(), TEXT("ControlsListHands"));
+			// The wrist menu shows the full list while playing with hands; this card is the same, for reference.
+			AddLegendRow(List, { MakeKeyCap(LOCTEXT("HandKeyLIndex", "L index pinch")) }, LOCTEXT("LegendWalkHands", "Hold to walk where you look"));
+			AddLegendRow(List, { MakeKeyCap(LOCTEXT("HandKeyLRingBack", "L ring pinch")) }, LOCTEXT("LegendBackHands", "Hold to walk backward"));
+			AddLegendRow(List, { MakeKeyCap(LOCTEXT("HandKeyLMiddle", "L middle pinch")), MakeKeyCap(LOCTEXT("HandKeyRMiddle", "R middle pinch")) }, LOCTEXT("LegendTurnHands", "Turn left / right"));
+			AddLegendRow(List, { MakeKeyCap(LOCTEXT("HandKeyRRingJump", "R ring pinch")) }, LOCTEXT("LegendJump", "Jump"));
+			AddLegendRow(List, { MakeKeyCap(LOCTEXT("HandKeyLPinky", "L pinky pinch")) }, LOCTEXT("LegendHint", "Hint"));
+			AddLegendRow(List, { MakeKeyCap(LOCTEXT("HandKeyRIndex", "R index pinch")) }, LOCTEXT("LegendGrabHands", "Pick up / Place, press buttons"));
+			AddLegendRow(List, { MakeKeyCap(LOCTEXT("HandKeyFlick", "Flick R hand")) }, LOCTEXT("LegendThrow", "Throw (breaks it!)"));
+			AddLegendRow(List, { MakeKeyCap(LOCTEXT("HandKeyScrub", "Scrub R hand")) }, LOCTEXT("LegendMopHands", "Mop (holding the mop)"));
+			AddLegendRow(List, { MakeKeyCap(LOCTEXT("HandKeyRPinky", "R pinky pinch")) }, LOCTEXT("LegendDance", "Dance"));
+			AddLegendRow(List, { MakeKeyCap(LOCTEXT("HandKeyPalm", "Left palm up")) }, LOCTEXT("LegendWristMenu", "Menu: score, Hint, Pause"));
+			AddLegendRow(List, { MakeKeyCap(LOCTEXT("HandKeyRPalm", "Right palm up")) }, LOCTEXT("LegendPalmMenu", "Game menu: score, Pause, Unstuck"));
+			AddLegendRow(List, { MakeKeyCap(LOCTEXT("VRKeyDuck", "Duck")) }, LOCTEXT("LegendCrouchVR", "Crouch for real"));
+			Column->InsertChildAt(Column->GetChildIndex(ControlsList) + 1, List);
+			HandsList = List;
+		}
+	}
+	if (HandsList)
+	{
+		HandsList->SetVisibility(bOpen && bHands ? ESlateVisibility::HitTestInvisible : ESlateVisibility::Collapsed);
+	}
+	if (VRList)
+	{
+		VRList->SetVisibility(bOpen && bVR && !bHands ? ESlateVisibility::HitTestInvisible : ESlateVisibility::Collapsed);
+	}
+	// The "[H] Hide controls" footer has no VR button, so it goes in VR.
+	UWidget* Footer = GetWidgetFromName(TEXT("ControlsFooter"));
+	if (!Footer)
+	{
+		// Older baked layouts: the footer is the row holding ControlsToggleText.
+		if (const UWidget* Toggle = GetWidgetFromName(TEXT("ControlsToggleText")))
+		{
+			Footer = Toggle->GetParent();
+		}
+	}
+	if (Footer)
+	{
+		Footer->SetVisibility(bVR ? ESlateVisibility::Collapsed : ESlateVisibility::HitTestInvisible);
+	}
 	if (ControlsList)
 	{
-		ControlsList->SetVisibility(bOpen && !bPad ? ESlateVisibility::HitTestInvisible : ESlateVisibility::Collapsed);
+		ControlsList->SetVisibility(bOpen && !bPad && !bVR ? ESlateVisibility::HitTestInvisible : ESlateVisibility::Collapsed);
 	}
 	if (ControlsListPad)
 	{
@@ -325,11 +395,43 @@ void ULTTCleanupHUD::UpdateControlsLegend()
 	const ACleanCutActionPlayerController* CCPC = Cast<ACleanCutActionPlayerController>(PC);
 	const bool bTouch = CCPC && CCPC->IsShowingTouchControls();
 	const ALTTMessDirector* D = Director.Get();
-	const bool bShow = !bTouch && !(D && (D->IsBriefingOpen() || D->IsSetClean() || D->IsTimeUp()));
+	const bool bVRNow = ULTTVRComponent::IsHeadsetActive();
+	const bool bHandsNow = bVRNow && ULTTVRComponent::IsUsingHands();
+	// With hand tracking the gesture list and the score live on the wrist menu (left palm to face), so the view stays
+	// clear; only the timer stays on screen.
+	const bool bShow = !bTouch && !bVRNow && !(D && (D->IsBriefingOpen() || D->IsSetClean() || D->IsTimeUp()));
 	ControlsLegend->SetVisibility(bShow ? ESlateVisibility::HitTestInvisible : ESlateVisibility::Collapsed);
-	if (bLegendShowsPad != ULTTInputDeviceSubsystem::IsGamepad())
+	if (PlacedText)
 	{
-		SetControlsLegendOpen(bLegendOpen); // swap the keyboard / gamepad lists
+		// The top-left stats card: StatsPanel in the default layout, else the widget under the root holding PlacedText.
+		UWidget* Stats = GetWidgetFromName(TEXT("StatsPanel"));
+		if (!Stats)
+		{
+			Stats = PlacedText;
+			while (Stats && Stats->GetParent() && Stats->GetParent() != WidgetTree->RootWidget)
+			{
+				Stats = Stats->GetParent();
+			}
+		}
+		if (Stats && Stats != WidgetTree->RootWidget)
+		{
+			const ESlateVisibility StatsVis = bVRNow ? ESlateVisibility::Collapsed : ESlateVisibility::HitTestInvisible;
+			if (Stats->GetVisibility() != StatsVis)
+			{
+				Stats->SetVisibility(StatsVis);
+			}
+		}
+	}
+	// Swap the keyboard / gamepad / VR lists when the device changes or the headset comes on.
+	const UWidget* VRList = GetWidgetFromName(TEXT("ControlsListVR"));
+	const UWidget* HandsList = GetWidgetFromName(TEXT("ControlsListHands"));
+	const bool bVRShown = VRList && VRList->GetVisibility() != ESlateVisibility::Collapsed;
+	const bool bHandsShown = HandsList && HandsList->GetVisibility() != ESlateVisibility::Collapsed;
+	if (bLegendShowsPad != (!bVRNow && ULTTInputDeviceSubsystem::IsGamepad())
+		|| (bLegendOpen && (bVRNow && !bHandsNow) != bVRShown)
+		|| (bLegendOpen && bHandsNow != bHandsShown))
+	{
+		SetControlsLegendOpen(bLegendOpen);
 	}
 	const bool bTogglePressed = PC && ((ToggleControlsKey.IsValid() && PC->WasInputKeyJustPressed(ToggleControlsKey))
 		|| (ToggleControlsGamepadKey.IsValid() && PC->WasInputKeyJustPressed(ToggleControlsGamepadKey)));
@@ -488,7 +590,9 @@ void ULTTCleanupHUD::UpdateTexts()
 	if (HintKeyText)
 	{
 		const float Cooldown = D ? D->GetHintCooldownRemaining() : 0.f;
-		const FText Key = D ? ULTTInputDeviceSubsystem::KeyLabelFor(D->HintKey, D->HintGamepadKey) : FText::GetEmpty();
+		const FText Key = ULTTVRComponent::IsUsingHands() ? FText::FromString(TEXT("L pinky"))
+			: ULTTVRComponent::IsHeadsetActive() ? FText::FromString(TEXT("X"))
+			: D ? ULTTInputDeviceSubsystem::KeyLabelFor(D->HintKey, D->HintGamepadKey) : FText::GetEmpty();
 		HintKeyText->SetText(Cooldown > 0.f
 			? FText::Format(LOCTEXT("HintCooldown", "[{0}] Hint ({1}s)"), Key, FText::AsNumber(FMath::CeilToInt(Cooldown)))
 			: FText::Format(LOCTEXT("HintReady", "[{0}] Hint"), Key));

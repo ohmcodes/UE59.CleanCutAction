@@ -1,9 +1,14 @@
-# Clean! Cut! Action! (Epic Mega AI Jam 2026)
+# Clean! Cut! Action! VR (Meta Quest, `vr` branch)
 
-First-person 3D casual game for a 3-day AI game jam. Engine: **UE 5.9.0 Preview** (`F:/UE5 Engines/UE_5.9`).
-C++ for systems, Blueprint subclasses for content and tuning. Target: **Wasm (WebGPU) build uploaded to itch.io**.
+First-person cleaning / directing game, ported to **Meta Quest VR** for the **Meta VR Start Developer Competition 2026** (Gaming track, New Experience division). Deadline: **2026-11-18 12:00 PM PT** (2026-11-19 04:00 Manila).
+Engine: **UE 5.9.0 Preview** at `D:\UE5 Engines\UE_5.9`. C++ for systems, Blueprint subclasses for content and tuning.
+Target: **Quest APK** (Android OpenXR) uploaded to a Meta Developer Dashboard release channel named "Competition". PC VR (Link / Air Link / Meta XR Simulator) is the dev loop.
 
-The design docs live in `Docs/`. The overview below is imported in full; read the other files when a task touches their area.
+This branch is Quest-only. The flat desktop, web (Wasm / itch.io) and Android phone builds live on `main`, `wasm`, `android`, `windows` and `linux`; don't optimise this branch for them.
+
+**Start with `Docs/10_VR_Meta_Quest.md`**: competition rules, every VR change, how the VR systems work, controls, testing with the XR Simulator, known limits. Update it whenever VR code, input or config changes.
+
+The original design docs live in `Docs/` and describe the flat game. The overview below is imported in full; read the other files when a task touches their area.
 
 @Docs/00_README.md
 
@@ -11,37 +16,66 @@ The design docs live in `Docs/`. The overview below is imported in full; read th
 
 | Area | File |
 |---|---|
+| **VR / Quest port, competition rules, XR Simulator** | `Docs/10_VR_Meta_Quest.md` |
 | Game design, story, characters | `Docs/CleanCutAction_Design.md` |
-| What's done / what's next | `Docs/01_Master_Checklist.md` |
+| What's done / what's next | `Docs/01_Master_Checklist.md` (VR tasks in section V) |
 | Classes, save, level flow, input, interaction, carry, tweens, gameplay tags, director barks, pause | `Docs/02_Architecture_and_Systems.md` |
 | Phase 1: messy set, Messifier tool, cleaning mechanics | `Docs/03_Phase1_Cleaning_Implementation.md` |
 | Phase 2: cafe shoot, cue/beat director, effect stations, frame cone, take meter | `Docs/04_Phase2_Directing_Implementation.md` |
 | Marlowe's lines, Phase 2 scene script | `Docs/05_Script_Director_and_Actors.md` |
-| Menus, HUDs, end screens, tween specs | `Docs/06_UI_and_Tweening.md` |
+| Menus, HUDs, end screens, tween specs (and the VR UI panel) | `Docs/06_UI_and_Tweening.md` |
 | SFX and music | `Docs/07_Audio_List.md` |
 | Niagara, materials, post-process | `Docs/08_VFX_and_Shaders.md` |
+| Packaging (Windows, Web, Android, Linux; Quest in the VR doc) | `Docs/PackagingGuide/` |
 
-## Current project state (differs from the docs)
+## Competition rules that shape the code
 
-- Game content folder is `/Game/_CleanCutAction/` (`Blueprints/Interactables`, `Blueprints/Widgets`, `BreakFX/`, `Destruction/` geometry collections, `Input/`, `Materials/`, `MusicFX/`, `UI/`), not `Content/CleanCutAction/` as the docs say.
-- `Source/CleanCutAction/` has the template base classes (`CleanCutAction*` character, game mode, player controller, camera manager) plus `LTT` classes: `Interaction/` (carry, interaction component, interactable base, mess director, cleanup HUD, end screen, first person anim instance), `UI/` (briefing screen, pause menu, UI theme, widget baker), `Audio/` (music player). The Horror/Shooter template variants are gone. Many classes from the docs (save game, tween subsystem, Phase 2 director) aren't written yet.
-- Cooked maps: `L_NYC_Cafe_Michael` (Phase 1, `GameDefaultMap`), `L_NYC_Cafe_Phase2_Michael` (Phase 2, `MapsToCook`) and the `/Game/ParisStreet/Levels/SampleMap` level instance both cafes use. `L_NYC_Cafe` is not cooked, so no level travel may point at it. `MapsToCook` in `Config/DefaultGame.ini` also force-cooks assets loaded only by path (widgets, SFX, materials); add any new one there.
-- Packaging: `NNEDenoiser` is disabled so its 54 MB of path-tracer models are not force-cooked. `AllToolsets` is disabled in the `.uproject` for packaging (its game feature plugins fail the cook); re-enable it locally only for editor/MCP work. Keep `bSkipEditorContent=False`: the Landmass plugin's startup materials reference `/Engine/EditorMaterials`, and skipping editor content fails the cook.
+- **Hands-first is pass/fail**: the whole game must be playable with hand tracking, never pairing a controller. Controllers are allowed as an extra.
+- Design for **seated / 2 ft radius**, a satisfying session in **10 minutes or less**, fast start, clean pause/resume.
+- **60 fps minimum on Quest**, no crashes. Keep essential UI inside a narrow field of view.
+- No real brands, logos or identifiable people in the game. English text.
+- The submitted APK is frozen at the deadline.
+
+## VR implementation (current state)
+
+- XR runs on the engine's **OpenXR** plugin (+ `OpenXRHandTracking`), not the Meta XR plugin (no 5.9 build; it could be compiled from source later for Meta-only features).
+- `Source/CleanCutAction/VR/LTTVRComponent` (`ULTTVRComponent`, on the character): switches the pawn into VR when a headset renders (camera on a VR origin at eye height, controllers, snap turn, laser pointer, capsule and body following the head, Lumen off) and moves every viewport widget onto a head-locked, always-on-top UI panel (`M_VRWidget_OnTop`). HUD legend and prompts show Touch controller labels in VR. Flat play is untouched.
+- **Hand tracking (hands-first):** the same component reads OpenXR hand joints (`GetHandTrackingState`). Each finger pinched to the thumb is a button: left index held = walk (slow), left middle = turn left, left ring held = walk backward, left pinky = hint; right index = trigger (pick up / place / gravity-pull what the right hand points at, mop, click menus via a shoulder-to-knuckle hand ray), right middle = turn right, right ring = jump, right pinky = dance. Interaction aims with the hand ray in VR (`ULTTVRComponent::GetAimViewPoint`), not the head. A forward flick of the right hand throws the held prop with the hand's speed (`ULTTCarryComponent::ThrowWithVelocity`); scrubbing the right hand while holding the mop over a puddle mops (`ULTTInteractionComponent::TryMopStroke`). Right palm toward the face = palm menu (`ULTTVRPalmMenu`: score counter, Pause, Scores, Music, Unstuck, Restart, Quit), clicked by pointing with the left hand's ray and pinching the left index. Every menu works the same way: point a hand ray, pinch the index (in big menus either hand; poke is off, `ltt.VR.Poke`). Left palm toward the face = wrist menu (`ULTTVRHandMenu`: score, gesture list, Hint, Pause, Jump, Throw, Turn, Dance, Recenter); the HUD's top-left score and controls card hide while hands are used. Gestures inject the existing Enhanced Input actions (`InjectInputForAction`), so gameplay code doesn't know about hands. Carried props sit at the right hand in VR (`ULTTVRComponent::GetHoldHand`). Menus (focusable widgets) are placed in front of the head when they open and stay in the room; the HUD stays head-locked; menu `Dim` backdrops are hidden in VR. The focus / hint outline is a glow overlay in VR (`ULTTVRComponent::SetOutline`), since the Quest has no post process. Hands use the VR Template meshes (`/Game/XRMannequins`): posed from the joints when tracked, the template's animated hand on each controller otherwise, with an unlit glow overlay (`M_VRGlow`). Works on a Quest over Link; the per-finger layout and meshes are not yet tested in the headset. Details: `Docs/10_VR_Meta_Quest.md` section 5b; how to remap gestures: section 5c.
+- **Mirror in VR:** `ALTTMirror` renders one reflection per eye with that eye's projection; `M_Mirror` picks it with `ResolvedView.StereoPassIndex`.
+- Real testing in the XR Simulator needs a decent frame rate: use `Scripts\RunVR_Standalone.bat` (after a rebuild) rather than VR Preview.
+- Interaction aims with the right hand / controller ray in VR (`GetAimViewPoint`, `ltt.VR.HandAim`), head view otherwise; carry holds props in front of the camera. The player walks through chairs in VR (`ltt.VR.WalkThroughChairs`).
+- **OpenXR only sees input from Enhanced Input default mapping contexts** (`Config/DefaultInput.ini`, currently `IMC_VR`). New VR controls need an `IA_` asset in `/Game/_CleanCutAction/Input/VR/`, a mapping in `IMC_VR` (`Scripts/Python/create_vr_input.py`) and a `MapsToCook` entry if loaded by path. Runtime-created actions don't reach OpenXR.
+- `bStartInVR=True` in `Config/DefaultGame.ini`.
+- Testing without a headset: Meta XR Simulator (standalone OpenXR runtime) set as the active runtime, then **Play > VR Preview**.
+
+## Build and tools
+
+- **Rebuild routine after C++ changes:** close the editor > Generate Visual Studio project files > build `CleanCutActionEditor` (Development Editor, Win64) > reopen the project. Live Coding only patches the running editor; standalone VR runs (`Scripts\RunVR_Standalone.bat`) load the module from disk and need this real build.
+
+- Build the editor (editor closed or Live Coding off):
+  `"D:\UE5 Engines\UE_5.9\Engine\Build\BatchFiles\Build.bat" CleanCutActionEditor Win64 Development -Project="D:\UE5 Projects\CCA_VR\CleanCutAction.uproject" -WaitMutex`
+- Run an editor Python script headless (use forward slashes in the script path; `\U` in `D:\UE5...` breaks it):
+  `"D:\UE5 Engines\UE_5.9\Engine\Binaries\Win64\UnrealEditor-Cmd.exe" "D:\UE5 Projects\CCA_VR\CleanCutAction.uproject" -run=pythonscript -script="D:/UE5 Projects/CCA_VR/Scripts/Python/<script>.py" -unattended -nop4 -nosplash -NullRHI`
+- `PythonScriptPlugin` and `EditorScriptingUtilities` are enabled for the editor only.
+- The `unreal-mcp` server needs the editor open. `AllToolsets` is enabled with `TargetAllowList: ["Editor"]` (it's an editor-only plugin), so the editor exposes its tools and game targets never compile it.
+
+## Current project state (differs from the design docs)
+
+- Game content folder is `/Game/_CleanCutAction/` (`Blueprints/Interactables`, `Blueprints/Widgets`, `BreakFX/`, `Destruction/` geometry collections, `Input/` (+ `Input/VR/`), `Materials/`, `MusicFX/`, `UI/`), not `Content/CleanCutAction/` as the docs say.
+- `Source/CleanCutAction/` has the template base classes (`CleanCutAction*` character, game mode, player controller, camera manager) plus `LTT` classes: `Interaction/` (carry, interaction component, interactable base, mess director, cleanup HUD, end screen, first person anim instance), `Shoot/` (Phase 2 scene director, effect stations, end screen), `UI/` (briefing screen, pause menu, UI theme, widget baker, input device, leaderboard, virtual keyboard), `Audio/` (music player), `VR/` (VR component). Some classes from the docs (save game, tween subsystem) aren't written.
+- Cooked maps: `L_NYC_Cafe_Michael` (Phase 1, `GameDefaultMap`), `L_NYC_Cafe_Phase2_Michael` (Phase 2, `MapsToCook`) and the `/Game/ParisStreet/Levels/SampleMap` level instance both cafes use. `L_NYC_Cafe` is not cooked, so no level travel may point at it. `MapsToCook` in `Config/DefaultGame.ini` also force-cooks assets loaded only by path (widgets, SFX, materials, VR input); add any new one there.
+- Packaging: `NNEDenoiser` is disabled so its 54 MB of path-tracer models are not force-cooked. `AllToolsets` (editor only) once failed the cook through its game feature plugins; before packaging the Quest APK, run a cook and, if it fails again, set it to `"Enabled": false` for that build. Keep `bSkipEditorContent=False`: the Landmass plugin's startup materials reference `/Engine/EditorMaterials`, and skipping editor content fails the cook.
+- Android package name: `com.ohmcodes.cleancutaction`.
+- **Main working copy is D: (`D:\UE5 Projects\CCA_VR`)**, the developer's choice (2026-11-18). `C:\UE5 Projects\CCA_VR` was a temporary copy while the D: drive dropped out on 2026-11-17; don't work there. D: can still lose fresh writes during a dropout, so verify important copies with a checksum. The Quest build is **Phase 1 only** (`ALTTMessDirector::bOfferPhase2`; the Phase 2 and ParisStreet `MapsToCook` entries are commented out) and the ParisStreet level instance is removed from the cafe. Quest render budget: `ltt.Quest.*` cvars in `LTTVRComponent.cpp` (doc section 9.6).
+- **Quest APK:** `Scripts\Package_Quest.bat` (`dev` = Development, `install` = also install on the headset) into `Builds\Quest\Android_ASTC\`. Quest settings: `bPackageForMetaQuest`, min / target SDK 32 / 34, Vulkan only, multiview, Mobile HDR off, 4x MSAA, Meta release manifest entries (`DefaultEngine.ini`), and `[Android_OpenXR DeviceProfile]` in `Config/Android/AndroidDeviceProfiles.ini` (no 60 fps cap, foveation). Needs the Android SDK from Android Studio + `Engine\Extras\Android\SetupAndroid.bat`. Release signing steps: `Docs/10_VR_Meta_Quest.md` section 9.
 - The editor's default map is `L_NYC_Cafe_Michael` (`Config/DefaultEngine.ini`), a per-dev copy of the cafe level.
 - Set art comes from the StylizedNewYorkCity pack (`/Game/StylizedNewYorkCity`).
 - **VR (`vr` branch):** OpenXR (PC VR + Meta Quest). `ULTTVRComponent` (`Source/CleanCutAction/VR/`) is on the character and only wakes up when a headset is active: headset camera on a floor origin, tracked hands, right-hand laser for interaction, grip-grab / flick-throw, and a floating screen that every viewport widget is moved onto (so use `LTTVR::IsOnScreen()` instead of `IsInViewport()`, and `LTTVR::GetAimViewPoint()` instead of `GetPlayerViewPoint()` for aiming). Controller bindings are in `/Game/_CleanCutAction/Input/VR/IMC_VR`, which must stay a default mapping context in `DefaultInput.ini` (OpenXR only builds actions from those). Tuning is in `[/Script/CleanCutAction.LTTVRComponent]` in `DefaultGame.ini`.
 
 ## Ownership and copyright
 
-- The game is owned by **QLE OPC** (Quality Level Entertainment), Mandaluyong, Metro Manila, PH. The full notice is in `COPYRIGHT.md`, and the project settings in `Config/DefaultGame.ini` (`CopyrightNotice`, `CompanyName`) carry the same notice.
-- Use `Copyright © 2026 QLE OPC. All Rights Reserved.` wherever a copyright line is needed (end screens, credits, the itch.io page).
-- Third-party packs in `Content/` keep their own licenses. Don't put the QLE notice on them.
-- `LICENSE` is a proprietary all-rights-reserved license from QLE OPC. It replaced the original MIT license (© Ohmcodes) on 2026-11-13. Don't add open-source license headers to files.
-
-## Web build / itch.io
-
-- itch.io rejects any file over **200 MB**. Check `Packaged/Wasm/CleanCutAction/Content/Paks/pakchunk0-Wasm.ucas` after each package.
-- List what's in a container: `UnrealPak.exe -ListContainer=<file>.utoc -csv=<out>.csv` (engine `Binaries/Win64`).
-- Textures are capped at 1024 for Wasm only in `Platforms/Wasm/Config/WasmDeviceProfiles.ini`; StylizedNewYorkCity textures are 2K and were the bulk of the size.
-- itch.io page needs **Embed options > SharedArrayBuffer support** turned on.
-- Wasm platform docs: `F:/UE5 Engines/UE_5.9/Engine/Platforms/Wasm/Docs/` (Deploy.md, Performance.md, Troubleshooting.md).
+- The game is owned by **Ohmcodes**. The full notice is in `COPYRIGHT.md`; `Config/DefaultGame.ini` (`CompanyName`, `CopyrightNotice`) carries the same owner.
+- Use `Copyright © 2026 Ohmcodes. All Rights Reserved.` wherever a copyright line is needed (end screens, credits, store pages, file headers).
+- Don't name any other company as owner in code, config, UI or docs.
+- Third-party packs in `Content/` keep their own licenses. Don't put the Ohmcodes notice on them.
+- `LICENSE` is a proprietary all-rights-reserved license from Ohmcodes. Don't add open-source license headers to files.

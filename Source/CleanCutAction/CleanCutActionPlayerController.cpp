@@ -27,6 +27,7 @@
 #include "Components/TextBlock.h"
 #include "Engine/GameInstance.h"
 #include "TimerManager.h"
+#include "VR/LTTVRComponent.h"
 
 ACleanCutActionPlayerController::ACleanCutActionPlayerController()
 {
@@ -153,9 +154,14 @@ void ACleanCutActionPlayerController::ApplyInputDevice()
 		{
 			TouchFlag->SetPropertyValue_InContainer(Prompt, bTouchUI);
 		}
-		const ESlateVisibility MouseVis = bPad ? ESlateVisibility::Collapsed : ESlateVisibility::HitTestInvisible;
+		// VR: Touch controller labels (IMC_VR: trigger picks up / places, B throws).
+		const bool bVR = ULTTVRComponent::IsHeadsetActive();
+		const bool bHands = ULTTVRComponent::IsUsingHands(); // hand tracking: pinch picks up, a flick of the hand throws
+		const bool bPadCaps = bPad || bVR;
+		const ESlateVisibility MouseVis = bPadCaps ? ESlateVisibility::Collapsed : ESlateVisibility::HitTestInvisible;
 		LTTSetTextIfChanged(Cast<UTextBlock>(Prompt->GetWidgetFromName(TEXT("KeyText"))),
-			bPad ? ULTTInputDeviceSubsystem::GamepadKeyLabel(EKeys::Gamepad_FaceButton_Left) : FText::FromString(TEXT("E")));
+			bHands ? FText::FromString(TEXT("Pinch")) : bVR ? FText::FromString(TEXT("Trigger"))
+				: bPad ? ULTTInputDeviceSubsystem::GamepadKeyLabel(EKeys::Gamepad_FaceButton_Left) : FText::FromString(TEXT("E")));
 		LTTSetVisibilityIfChanged(Prompt->GetWidgetFromName(TEXT("OrText")), MouseVis);
 		LTTSetVisibilityIfChanged(Prompt->GetWidgetFromName(TEXT("MouseLeftIcon")), MouseVis);
 		LTTSetVisibilityIfChanged(Prompt->GetWidgetFromName(TEXT("MouseRightIcon")), MouseVis);
@@ -163,7 +169,7 @@ void ACleanCutActionPlayerController::ApplyInputDevice()
 		// Throw row: an "RT" key cap in the same style as the E cap, made here if the WBP doesn't have one.
 		UWidget* ThrowCap = Prompt->GetWidgetFromName(TEXT("ThrowPadCap"));
 		UHorizontalBox* RowThrow = Cast<UHorizontalBox>(Prompt->GetWidgetFromName(TEXT("RowThrow")));
-		if (!ThrowCap && bPad && RowThrow && Prompt->WidgetTree)
+		if (!ThrowCap && bPadCaps && RowThrow && Prompt->WidgetTree)
 		{
 			UBorder* NewCap = Prompt->WidgetTree->ConstructWidget<UBorder>(UBorder::StaticClass(), TEXT("ThrowPadCap"));
 			UTextBlock* CapText = Prompt->WidgetTree->ConstructWidget<UTextBlock>(UTextBlock::StaticClass(), TEXT("ThrowPadText"));
@@ -193,7 +199,9 @@ void ACleanCutActionPlayerController::ApplyInputDevice()
 			}
 			ThrowCap = NewCap;
 		}
-		LTTSetVisibilityIfChanged(ThrowCap, bPad ? ESlateVisibility::HitTestInvisible : ESlateVisibility::Collapsed);
+		LTTSetVisibilityIfChanged(ThrowCap, bPadCaps ? ESlateVisibility::HitTestInvisible : ESlateVisibility::Collapsed);
+		LTTSetTextIfChanged(Cast<UTextBlock>(Prompt->GetWidgetFromName(TEXT("ThrowPadText"))),
+			bHands ? FText::FromString(TEXT("Flick")) : bVR ? FText::FromString(TEXT("B")) : ULTTInputDeviceSubsystem::GamepadKeyLabel(EKeys::Gamepad_RightTrigger));
 	}
 }
 
@@ -241,6 +249,12 @@ void ACleanCutActionPlayerController::SetupInputComponent()
 			if (UEnhancedInputComponent* EIC = Cast<UEnhancedInputComponent>(InputComponent))
 			{
 				EIC->BindAction(Action, ETriggerEvent::Started, this, &ACleanCutActionPlayerController::HandlePauseInput);
+
+				// VR: the left controller's menu button. IMC_VR (an Enhanced Input default context) maps it; loaded by path (in MapsToCook).
+				if (const UInputAction* VRPause = LoadObject<UInputAction>(nullptr, TEXT("/Game/_CleanCutAction/Input/VR/IA_VR_Pause.IA_VR_Pause")))
+				{
+					EIC->BindAction(VRPause, ETriggerEvent::Started, this, &ACleanCutActionPlayerController::HandlePauseInput);
+				}
 			}
 		}
 	}
@@ -277,6 +291,14 @@ void ACleanCutActionPlayerController::OpenPauseMenu()
 	}
 	PauseMenuWidget->AddToViewport(20);
 	UGameplayStatics::SetGamePaused(this, true);
+	if (ULTTVRComponent::IsHeadsetActive())
+	{
+		// VR: the menu is on a world-space panel clicked by the controller laser, which needs game input to keep flowing.
+		FInputModeGameAndUI VRMode;
+		VRMode.SetLockMouseToViewportBehavior(EMouseLockMode::DoNotLock);
+		SetInputMode(VRMode);
+		return;
+	}
 	SetShowMouseCursor(true);
 	FInputModeUIOnly Mode;
 	Mode.SetWidgetToFocus(PauseMenuWidget->TakeWidget());

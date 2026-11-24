@@ -153,6 +153,8 @@ ACleanCutActionCharacter::ACleanCutActionCharacter()
 	GetCharacterMovement()->SetCrouchedHalfHeight(48.f);
 	GetCharacterMovement()->MaxWalkSpeedCrouched = 250.f;
 	GetCharacterMovement()->bCanWalkOffLedgesWhenCrouching = true;
+
+	VRComponent = CreateDefaultSubobject<ULTTVRComponent>(TEXT("VR"));
 }
 
 void ACleanCutActionCharacter::SetupPlayerInputComponent(UInputComponent* PlayerInputComponent)
@@ -291,6 +293,15 @@ void ACleanCutActionCharacter::DoMove(float Right, float Forward)
 {
 	if (GetController())
 	{
+		// VR: the stick moves where the head faces, not where the body (snap turn) faces.
+		if (VRComponent && VRComponent->IsVRActive() && FirstPersonCameraComponent)
+		{
+			const FRotator HeadYaw(0.f, FirstPersonCameraComponent->GetComponentRotation().Yaw, 0.f);
+			const FRotationMatrix Basis(HeadYaw);
+			AddMovementInput(Basis.GetUnitAxis(EAxis::Y), Right);
+			AddMovementInput(Basis.GetUnitAxis(EAxis::X), Forward);
+			return;
+		}
 		// pass the move inputs
 		AddMovementInput(GetActorRightVector(), Right);
 		AddMovementInput(GetActorForwardVector(), Forward);

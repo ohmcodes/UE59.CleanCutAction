@@ -13,7 +13,6 @@ class USkeletalMeshComponent;
 class UCameraComponent;
 class UInputAction;
 class UInputMappingContext;
-class ULTTVRComponent;
 struct FInputActionValue;
 
 DECLARE_LOG_CATEGORY_EXTERN(LogTemplateCharacter, Log, All);
@@ -34,9 +33,9 @@ class ACleanCutActionCharacter : public ACharacter
 	UPROPERTY(VisibleAnywhere, BlueprintReadOnly, Category="Components", meta = (AllowPrivateAccess = "true"))
 	UCameraComponent* FirstPersonCameraComponent;
 
-	/** Switches the character to a VR body (headset camera, tracked hands, floating HUD) when a headset is active. Idle otherwise. */
+	/** Switches the pawn to VR (head-tracked camera, controllers, world-space UI) while a headset is active. */
 	UPROPERTY(VisibleAnywhere, BlueprintReadOnly, Category="Components", meta = (AllowPrivateAccess = "true"))
-	TObjectPtr<ULTTVRComponent> VRComponent;
+	TObjectPtr<class ULTTVRComponent> VRComponent;
 
 protected:
 
@@ -148,9 +147,6 @@ public:
 
 	/** Returns first person camera component **/
 	UCameraComponent* GetFirstPersonCameraComponent() const { return FirstPersonCameraComponent; }
-
-	/** Returns the VR component (always present; active only with a headset) **/
-	ULTTVRComponent* GetVRComponent() const { return VRComponent; }
 
 };
 

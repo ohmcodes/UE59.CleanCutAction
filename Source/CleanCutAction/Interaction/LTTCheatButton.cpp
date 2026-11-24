@@ -12,6 +12,7 @@
 #include "Engine/World.h"
 #include "TimerManager.h"
 #include "UObject/ConstructorHelpers.h"
+#include "VR/LTTVRComponent.h"
 
 #define LOCTEXT_NAMESPACE "LTTCheatButton"
 
@@ -141,13 +142,13 @@ FText ALTTCheatButton::GetPromptText_Implementation(AActor* InstigatorActor) con
 void ALTTCheatButton::OnFocusBegin_Implementation(AActor* InstigatorActor)
 {
 	// Stencil 1 = focus outline, same as the props.
-	Cap->SetRenderCustomDepth(true);
+	ULTTVRComponent::SetOutline(Cap, true);
 	Cap->SetCustomDepthStencilValue(1);
 }
 
 void ALTTCheatButton::OnFocusEnd_Implementation(AActor* InstigatorActor)
 {
-	Cap->SetRenderCustomDepth(false);
+	ULTTVRComponent::SetOutline(Cap, false);
 }
 
 void ALTTCheatButton::OnInteract_Implementation(AActor* InstigatorActor)

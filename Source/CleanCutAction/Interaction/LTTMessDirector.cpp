@@ -1,7 +1,6 @@
 // Clean! Cut! Action!
 
 #include "Interaction/LTTMessDirector.h"
-#include "VR/LTTVR.h"
 #include "UI/LTTUITheme.h"
 #include "CleanCutActionPlayerController.h"
 #include "Interaction/LTTInteractableBase.h"
@@ -37,6 +36,7 @@
 #include "EngineUtils.h"
 #include "Engine/World.h"
 #include "TimerManager.h"
+#include "VR/LTTVRComponent.h"
 
 namespace
 {
@@ -75,17 +75,18 @@ ALTTMessDirector* ALTTMessDirector::Get(const UObject* WorldContext)
 	{
 		return nullptr;
 	}
-	// The first one found (a loop that always returns trips Clang's -Wunreachable-code-loop-increment on Android).
-	if (TActorIterator<ALTTMessDirector> It(World); It)
-	{
-		return *It;
-	}
-	return nullptr;
+	// First (only) mess director in the world. Not a for loop: clang's -Wunreachable-code-loop-increment (Android) fails it.
+	TActorIterator<ALTTMessDirector> It(World);
+	return It ? *It : nullptr;
 }
 
 void ALTTMessDirector::BeginPlay()
 {
 	Super::BeginPlay();
+	if (!bOfferPhase2)
+	{
+		NextLevelName = NAME_None; // hides the end screen's "Shoot the Scene" button (Phase 2 isn't in this build)
+	}
 	CreateHUD();
 	BlackOut();
 	// Every prop records its home in its own BeginPlay; wait one tick so all of them have.
@@ -228,12 +229,28 @@ void ALTTMessDirector::SetupHintInput()
 	}
 
 	EIC->BindAction(Action, ETriggerEvent::Started, this, &ALTTMessDirector::HandleHintInput);
+	// VR: X on the left controller. IMC_VR maps it (OpenXR only sees asset actions in default mapping contexts);
+	// loaded by path, in MapsToCook.
+	if (const UInputAction* VRHint = LoadObject<UInputAction>(nullptr, TEXT("/Game/_CleanCutAction/Input/VR/IA_VR_Hint.IA_VR_Hint")))
+	{
+		EIC->BindAction(VRHint, ETriggerEvent::Started, this, &ALTTMessDirector::HandleVRHintInput);
+	}
 	bHintInputBound = true;
 }
 
 void ALTTMessDirector::HandleHintInput()
 {
 	ShowHint();
+}
+
+void ALTTMessDirector::HandleVRHintInput()
+{
+	// Controllers in VR: X opens the info menu above the left controller (score, Hint button, controls), easier to
+	// read than the HUD's corner. Without a VR pawn to take it, X is the hint as before.
+	if (!ULTTVRComponent::ToggleControllerMenu())
+	{
+		ShowHint();
+	}
 }
 
 bool ALTTMessDirector::IsHintCandidate(const ALTTInteractableBase* Prop) const
@@ -308,7 +325,7 @@ bool ALTTMessDirector::ShowHint()
 	++HintsUsed;
 
 	// Same outline as focus (stencil 1, M_PP_Outline).
-	Best->Mesh->SetRenderCustomDepth(true);
+	ULTTVRComponent::SetOutline(Best->Mesh, true);
 	Best->Mesh->SetCustomDepthStencilValue(1);
 	GetWorldTimerManager().SetTimer(HintTimer, this, &ALTTMessDirector::UpdateHint, 0.1f, true);
 
@@ -329,7 +346,7 @@ void ALTTMessDirector::UpdateHint()
 	// Losing focus turns the outline off; keep it on while the hint lasts.
 	if (!Target->Mesh->bRenderCustomDepth)
 	{
-		Target->Mesh->SetRenderCustomDepth(true);
+		ULTTVRComponent::SetOutline(Target->Mesh, true);
 		Target->Mesh->SetCustomDepthStencilValue(1);
 	}
 }
@@ -352,7 +369,7 @@ void ALTTMessDirector::ClearHint()
 	const ULTTInteractionComponent* Interaction = Pawn ? Pawn->FindComponentByClass<ULTTInteractionComponent>() : nullptr;
 	if (!Interaction || Interaction->GetFocusedActor() != Target)
 	{
-		Target->Mesh->SetRenderCustomDepth(false);
+		ULTTVRComponent::SetOutline(Target->Mesh, false);
 	}
 }
 
@@ -478,7 +495,7 @@ const bool bShouldStartHidden = bFadeInOnStart && !bIntroDone;
 		M->SetPhysicsAngularVelocityInDegrees(Spin);
 	}
 
-	if (EarthquakeShake && !bShouldStartHidden && !LTTVR::IsActive()) // shaking the view in a headset makes people sick
+	if (EarthquakeShake && !bShouldStartHidden)
 	{
 		if (APlayerController* PC = UGameplayStatics::GetPlayerController(this, 0))
 		{
@@ -891,6 +908,16 @@ void ALTTMessDirector::FinishIntro()
 	if (BriefingWidget)
 	{
 		bFinishIntroPending = true; // stay black until the player presses Start
+		// VR: the briefing floats in the world, so a held black screen would hide it too. Fade the set in now;
+		// the clock and movement still wait for Start.
+		if (ULTTVRComponent::IsHeadsetActive())
+		{
+			APlayerController* VRPC = UGameplayStatics::GetPlayerController(this, 0);
+			if (VRPC && VRPC->PlayerCameraManager)
+			{
+				VRPC->PlayerCameraManager->StartCameraFade(1.f, 0.f, FMath::Max(FadeInTime, 0.01f), FadeColor);
+			}
+		}
 		return;
 	}
 	bIntroDone = true;
@@ -899,7 +926,8 @@ void ALTTMessDirector::FinishIntro()
 		RescueStuckProps(); // still black: anything the earthquake pushed through the floor or into furniture comes back unseen
 	}
 	APlayerController* PC = UGameplayStatics::GetPlayerController(this, 0);
-	if (PC && PC->PlayerCameraManager)
+	// Skip the fade if VR already faded the set in behind the briefing.
+	if (PC && PC->PlayerCameraManager && PC->PlayerCameraManager->FadeAmount > KINDA_SMALL_NUMBER)
 	{
 		PC->PlayerCameraManager->StartCameraFade(1.f, 0.f, FMath::Max(FadeInTime, 0.01f), FadeColor);
 	}
@@ -1180,7 +1208,7 @@ void ALTTMessDirector::ShowEndingOverlay(bool bWithSkip)
 	{
 		return;
 	}
-	if (!EndingOverlay || !LTTVR::IsOnScreen(EndingOverlay))
+	if (!EndingOverlay || !EndingOverlay->IsInViewport())
 	{
 		EndingOverlay = CreateWidget<ULTTEndingOverlay>(PC, LTTTheme::PreferWBP<ULTTEndingOverlay>(EndingOverlayClass, TEXT("WBP_EndingOverlay")));
 		if (!EndingOverlay)

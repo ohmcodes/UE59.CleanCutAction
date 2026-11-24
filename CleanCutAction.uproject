@@ -44,49 +44,36 @@
 			"Enabled": false
 		},
 		{
-			"Name": "AllToolsets",
+			"Name": "OpenXR",
 			"Enabled": true
 		},
 		{
-			"Name": "OpenXR",
-			"Enabled": true,
-			"PlatformAllowList": [
-				"Win64",
-				"Android",
-				"Linux"
-			]
-		},
-		{
-			"Name": "OpenXREyeTracker",
-			"Enabled": true,
-			"PlatformAllowList": [
-				"Win64",
-				"Android",
-				"Linux"
-			]
-		},
-		{
 			"Name": "OpenXRHandTracking",
+			"Enabled": true
+		},
+		{
+			"Name": "PythonScriptPlugin",
 			"Enabled": true,
-			"PlatformAllowList": [
-				"Win64",
-				"Android",
-				"Linux"
+			"TargetAllowList": [
+				"Editor"
 			]
 		},
 		{
-			"Name": "OpenXRRenderModel",
+			"Name": "EditorScriptingUtilities",
 			"Enabled": true,
-			"PlatformAllowList": [
-				"Win64",
-				"Android",
-				"Linux"
+			"TargetAllowList": [
+				"Editor"
+			]
+		},
+		{
+			"Name": "AllToolsets",
+			"Enabled": true,
+			"TargetAllowList": [
+				"Editor"
 			]
 		}
 	],
 	"TargetPlatforms": [
-		"Android",
-		"Wasm",
-		"Windows"
+		"Android"
 	]
 }

@@ -406,6 +406,11 @@ public:
 	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "End Screen")
 	FName NextLevelName = TEXT("/Game/StylizedNewYorkCity/Level/L_NYC_Cafe_Phase2_Michael");
 
+	/** Quest competition build: Phase 2 is left out (its map isn't cooked), so the end screen offers no "Shoot the Scene"
+	 *  button. Turn on together with the Phase 2 MapsToCook entry to bring it back. */
+	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "End Screen")
+	bool bOfferPhase2 = false;
+
 	/** Unpauses and opens NextLevelName. Called by the end screen's "Shoot the Scene" button. */
 	UFUNCTION(BlueprintCallable, Category = "End Screen")
 	void LoadNextLevel();
@@ -508,6 +513,7 @@ protected:
 	void MoveStuckProp(ALTTInteractableBase* Prop);
 	void ScheduleEndScreen(bool bSetClean);
 	void HandleHintInput();
+	void HandleVRHintInput();
 	void UpdateHint();
 	bool IsHintCandidate(const ALTTInteractableBase* Prop) const;
 	/** Turns props into set dressing until props + extra jobs fit MaxCleanupTasks. */

@@ -21,6 +21,7 @@
 #include "TimerManager.h"
 #include "UObject/ConstructorHelpers.h"
 #include "UI/LTTInputDevice.h"
+#include "VR/LTTVRComponent.h"
 
 #define LOCTEXT_NAMESPACE "LTTCleanupBarker"
 
@@ -218,7 +219,7 @@ void ALTTCleanupBarker::BuildPools()
 		LOCTEXT("P1_Hint_03", "That {0} is hiding. Props always are."),
 		LOCTEXT("P1_Hint_04", "Go get the {0}. Everyone needs love. Especially the {0}.") });
 
-	// Countdown (not in the doc's table; the jam build has a clock).
+	// Countdown (not in the doc's table; the game has a clock).
 	AddPool("Time.5Min", 2, 1.f, 0.f, { LOCTEXT("P1_Time_5", "Five minutes, Rookie! The actors are in the parking lot. I can hear Dash's car. It sounds nervous.") });
 	AddPool("Time.1Min", 2, 1.f, 0.f, { LOCTEXT("P1_Time_1", "ONE MINUTE! Move like a producer is chasing you!") });
 	AddPool("Time.Up", 3, 1.f, 0.f, { LOCTEXT("P1_Time_Up", "TIME! ...The actors are here. Act natural. Pretend the mess is a choice.") });
@@ -1101,7 +1102,9 @@ void ALTTCleanupBarker::HandleReleased(ALTTInteractableBase* Item, bool bThrown)
 	if (bThrown)
 	{
 		FFormatOrderedArguments ThrowArgs;
-		ThrowArgs.Add(ULTTInputDeviceSubsystem::Pick(LOCTEXT("ThrowKeyKb", "Right-click"), LOCTEXT("ThrowKeyPad", "Right trigger")));
+		ThrowArgs.Add(ULTTVRComponent::IsUsingHands() ? LOCTEXT("ThrowKeyHands", "A flick of the hand")
+			: ULTTVRComponent::IsHeadsetActive() ? LOCTEXT("ThrowKeyVR", "B")
+			: ULTTInputDeviceSubsystem::Pick(LOCTEXT("ThrowKeyKb", "Right-click"), LOCTEXT("ThrowKeyPad", "Right trigger")));
 		if (!Trigger("First.Throw", ThrowArgs))
 		{
 			Trigger("Throw");

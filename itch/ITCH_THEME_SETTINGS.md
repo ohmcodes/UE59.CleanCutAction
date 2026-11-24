@@ -66,4 +66,4 @@ To show the cafe while it loads, copy `embed_bg_plain_1280x720.jpg` next to `ind
 ## Description styling tips
 - Section headers: use the header font through itch's Heading style, e.g. **HOW TO PLAY**, **CONTROLS**, **CREDITS**
 - Put `embed_bg_1280x720.png` or a GIF at the top of the description as a hero image
-- Credit the StylizedNewYorkCity asset pack and the Epic Mega AI Jam 2026
+- Credit the StylizedNewYorkCity asset pack and the Meta VR Start Developer Competition 2026
