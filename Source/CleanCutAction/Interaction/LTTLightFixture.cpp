@@ -4,7 +4,6 @@
 #include "Interaction/LTTLightSwitchComponent.h"
 #include "Components/StaticMeshComponent.h"
 #include "Engine/CollisionProfile.h"
-#include "VR/LTTVRComponent.h"
 
 ALTTLightFixture::ALTTLightFixture()
 {
@@ -32,11 +31,11 @@ FText ALTTLightFixture::GetPromptText_Implementation(AActor* InstigatorActor) co
 void ALTTLightFixture::OnFocusBegin_Implementation(AActor* InstigatorActor)
 {
 	// Stencil 1 = focus outline, same as the props.
-	ULTTVRComponent::SetOutline(LampMesh, true);
+	LampMesh->SetRenderCustomDepth(true);
 	LampMesh->SetCustomDepthStencilValue(1);
 }
 
 void ALTTLightFixture::OnFocusEnd_Implementation(AActor* InstigatorActor)
 {
-	ULTTVRComponent::SetOutline(LampMesh, false);
+	LampMesh->SetRenderCustomDepth(false);
 }

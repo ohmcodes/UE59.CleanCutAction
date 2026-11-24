@@ -330,16 +330,15 @@ void ULTTCleanupHUD::SetControlsLegendOpen(bool bOpen)
 			UVerticalBox* List = WidgetTree->ConstructWidget<UVerticalBox>(UVerticalBox::StaticClass(), TEXT("ControlsListHands"));
 			// The wrist menu shows the full list while playing with hands; this card is the same, for reference.
 			AddLegendRow(List, { MakeKeyCap(LOCTEXT("HandKeyLIndex", "L index pinch")) }, LOCTEXT("LegendWalkHands", "Hold to walk where you look"));
-			AddLegendRow(List, { MakeKeyCap(LOCTEXT("HandKeyLRingBack", "L ring pinch")) }, LOCTEXT("LegendBackHands", "Hold to walk backward"));
 			AddLegendRow(List, { MakeKeyCap(LOCTEXT("HandKeyLMiddle", "L middle pinch")), MakeKeyCap(LOCTEXT("HandKeyRMiddle", "R middle pinch")) }, LOCTEXT("LegendTurnHands", "Turn left / right"));
-			AddLegendRow(List, { MakeKeyCap(LOCTEXT("HandKeyRRingJump", "R ring pinch")) }, LOCTEXT("LegendJump", "Jump"));
+			AddLegendRow(List, { MakeKeyCap(LOCTEXT("HandKeyLRing", "L ring pinch")) }, LOCTEXT("LegendJump", "Jump"));
 			AddLegendRow(List, { MakeKeyCap(LOCTEXT("HandKeyLPinky", "L pinky pinch")) }, LOCTEXT("LegendHint", "Hint"));
 			AddLegendRow(List, { MakeKeyCap(LOCTEXT("HandKeyRIndex", "R index pinch")) }, LOCTEXT("LegendGrabHands", "Pick up / Place, press buttons"));
-			AddLegendRow(List, { MakeKeyCap(LOCTEXT("HandKeyFlick", "Flick R hand")) }, LOCTEXT("LegendThrow", "Throw (breaks it!)"));
+			AddLegendRow(List, { MakeKeyCap(LOCTEXT("HandKeyFlick", "Flick R hand")), MakeKeyCap(LOCTEXT("HandKeyRRing", "R ring pinch")) }, LOCTEXT("LegendThrow", "Throw (breaks it!)"));
 			AddLegendRow(List, { MakeKeyCap(LOCTEXT("HandKeyScrub", "Scrub R hand")) }, LOCTEXT("LegendMopHands", "Mop (holding the mop)"));
 			AddLegendRow(List, { MakeKeyCap(LOCTEXT("HandKeyRPinky", "R pinky pinch")) }, LOCTEXT("LegendDance", "Dance"));
 			AddLegendRow(List, { MakeKeyCap(LOCTEXT("HandKeyPalm", "Left palm up")) }, LOCTEXT("LegendWristMenu", "Menu: score, Hint, Pause"));
-			AddLegendRow(List, { MakeKeyCap(LOCTEXT("HandKeyRPalm", "Right palm up")) }, LOCTEXT("LegendPalmMenu", "Game menu: score, Pause, Unstuck"));
+			AddLegendRow(List, { MakeKeyCap(LOCTEXT("HandKeyRPalm", "Right palm (hold)")) }, LOCTEXT("LegendPause", "Pause / Unstuck"));
 			AddLegendRow(List, { MakeKeyCap(LOCTEXT("VRKeyDuck", "Duck")) }, LOCTEXT("LegendCrouchVR", "Crouch for real"));
 			Column->InsertChildAt(Column->GetChildIndex(ControlsList) + 1, List);
 			HandsList = List;

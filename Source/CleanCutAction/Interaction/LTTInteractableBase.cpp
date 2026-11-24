@@ -19,7 +19,6 @@
 #include "GeometryCollection/GeometryCollectionActor.h"
 #include "GeometryCollection/GeometryCollectionComponent.h"
 #include "GeometryCollection/GeometryCollectionObject.h"
-#include "VR/LTTVRComponent.h"
 
 namespace
 {
@@ -215,7 +214,7 @@ void ALTTInteractableBase::BeginHold(AActor* InHolder)
 
 	// Render like the first person arms: own FOV + depth scale so the prop never clips into walls.
 	Mesh->SetFirstPersonPrimitiveType(EFirstPersonPrimitiveType::FirstPerson);
-	ULTTVRComponent::SetOutline(Mesh, false);
+	Mesh->SetRenderCustomDepth(false);
 
 	UpdateGhost(true, false, IsHomeSupportReady());
 
@@ -876,7 +875,7 @@ void ALTTInteractableBase::StartVanishInto(const FVector& Target)
 	bBreakOnLanding = false;
 	Mesh->SetSimulatePhysics(false);
 	SetActorEnableCollision(false);
-	ULTTVRComponent::SetOutline(Mesh, false);
+	Mesh->SetRenderCustomDepth(false);
 	if (Ghost)
 	{
 		Ghost->SetVisibility(false);
@@ -895,8 +894,7 @@ bool ALTTInteractableBase::ChangeMusic()
 		ALTTMusicPlayer::SetMusicMuted(false); // resumes the music
 		return true;
 	}
-	TActorIterator<ALTTMusicPlayer> It(GetWorld());
-	if (It)
+	for (TActorIterator<ALTTMusicPlayer> It(GetWorld()); It; ++It)
 	{
 		It->Skip(); // crossfades to the next track (starts the music if it wasn't playing)
 		return true;
@@ -1047,7 +1045,7 @@ void ALTTInteractableBase::LockAtHome()
 	Mesh->SetCollisionProfileName(SavedCollisionProfile.IsNone() ? Mesh->GetCollisionProfileName() : SavedCollisionProfile);
 	Mesh->SetCollisionEnabled(ECollisionEnabled::QueryAndPhysics);
 	ApplyPhysicsSettings();
-	ULTTVRComponent::SetOutline(Mesh, false);
+	Mesh->SetRenderCustomDepth(false);
 	SetLifeSpan(0.f);
 
 	if (Ghost)
@@ -1093,14 +1091,14 @@ void ALTTInteractableBase::FellOutOfWorld(const UDamageType& DmgType)
 void ALTTInteractableBase::OnFocusBegin_Implementation(AActor* InstigatorActor)
 {
 	// Stencil 1 = focus white (PP_Outline, Docs/02 §5).
-	ULTTVRComponent::SetOutline(Mesh, true);
+	Mesh->SetRenderCustomDepth(true);
 	Mesh->SetCustomDepthStencilValue(1);
 	ReceiveFocusChanged(true);
 }
 
 void ALTTInteractableBase::OnFocusEnd_Implementation(AActor* InstigatorActor)
 {
-	ULTTVRComponent::SetOutline(Mesh, false);
+	Mesh->SetRenderCustomDepth(false);
 	ReceiveFocusChanged(false);
 }
 

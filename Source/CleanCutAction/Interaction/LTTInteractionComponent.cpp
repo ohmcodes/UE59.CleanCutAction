@@ -91,7 +91,7 @@ void ULTTInteractionComponent::UpdatePlaceHint()
 
 	FVector ViewLoc;
 	FRotator ViewRot;
-	ULTTVRComponent::GetAimViewPoint(Controller, ViewLoc, ViewRot); // VR: the hand's ray
+	Controller->GetPlayerViewPoint(ViewLoc, ViewRot);
 
 	// Trash has no home: it goes in a bin. Aiming at one within reach = "Throw in the bin".
 	if (Held->bIsTrash)
@@ -228,29 +228,9 @@ void ULTTInteractionComponent::UpdateFocus()
 
 	FVector ViewLoc;
 	FRotator ViewRot;
-	ULTTVRComponent::GetAimViewPoint(Controller, ViewLoc, ViewRot); // VR: the hand's ray
-	AActor* NewFocus = TraceForInteractable(ViewLoc, ViewRot.Vector(), TraceDistance, TraceRadius);
-	// Water puddles have no collision (props lying in them stay grabbable): looking at the water focuses it.
-	if (!NewFocus)
-	{
-		FVector At;
-		NewFocus = ALTTWaterPuddle::FindAimed(this, ViewLoc, ViewRot.Vector(), TraceDistance, At, GetOwner());
-	}
-	// Gravity pull: out of reach, only props that can be picked up (a lamp across the room isn't switched from there).
-	if (!NewFocus && bGravityPull && PullDistance > TraceDistance)
-	{
-		AActor* Far = TraceForInteractable(ViewLoc, ViewRot.Vector(), PullDistance, PullTraceRadius);
-		if (Far && Cast<ALTTInteractableBase>(Far) && ILTTInteractable::Execute_GetInteractKind(Far) == ELTTInteractKind::Pickup)
-		{
-			NewFocus = Far;
-		}
-	}
-	SetFocus(NewFocus);
-}
+	Controller->GetPlayerViewPoint(ViewLoc, ViewRot);
+	const FVector End = ViewLoc + ViewRot.Vector() * TraceDistance;
 
-AActor* ULTTInteractionComponent::TraceForInteractable(const FVector& ViewLoc, const FVector& Dir, float Distance, float Radius) const
-{
-	const FVector End = ViewLoc + Dir * Distance;
 	FCollisionQueryParams Params(SCENE_QUERY_STAT(LTTInteractTrace), false, GetOwner());
 	FHitResult Hit;
 	AActor* NewFocus = nullptr;
@@ -258,7 +238,7 @@ AActor* ULTTInteractionComponent::TraceForInteractable(const FVector& ViewLoc, c
 	// grabbing the plate behind it. Set dressing props are see-through too, unless they can be used (a lamp, an appliance). Walls and static set pieces still block.
 	for (int32 Pass = 0; Pass < MaxPlacedPassThrough + 1; ++Pass)
 	{
-		if (!GetWorld()->SweepSingleByChannel(Hit, ViewLoc, End, FQuat::Identity, TraceChannel, FCollisionShape::MakeSphere(Radius), Params))
+		if (!GetWorld()->SweepSingleByChannel(Hit, ViewLoc, End, FQuat::Identity, TraceChannel, FCollisionShape::MakeSphere(TraceRadius), Params))
 		{
 			break;
 		}
@@ -275,7 +255,13 @@ AActor* ULTTInteractionComponent::TraceForInteractable(const FVector& ViewLoc, c
 		}
 		break;
 	}
-	return NewFocus;
+	// Water puddles have no collision (props lying in them stay grabbable): looking at the water focuses it.
+	if (!NewFocus)
+	{
+		FVector At;
+		NewFocus = ALTTWaterPuddle::FindAimed(this, ViewLoc, ViewRot.Vector(), TraceDistance, At, GetOwner());
+	}
+	SetFocus(NewFocus);
 }
 
 void ULTTInteractionComponent::SetFocus(AActor* NewFocus)
@@ -376,24 +362,7 @@ void ULTTInteractionComponent::Interact()
 			SetFocus(nullptr);
 			if (Carry)
 			{
-				// Out of arm's reach: gravity pull, the prop flies across the room into the hand.
-				float Dist = 0.f;
-				const APawn* Pawn = Cast<APawn>(GetOwner());
-				if (AController* Controller = Pawn ? Pawn->GetController() : nullptr)
-				{
-					FVector ViewLoc;
-					FRotator ViewRot;
-					ULTTVRComponent::GetAimViewPoint(Controller, ViewLoc, ViewRot); // VR: the hand's ray
-					Dist = FVector::Dist(ViewLoc, Prop->GetActorLocation());
-				}
-				if (bGravityPull && Dist > TraceDistance + TraceRadius)
-				{
-					Carry->PullFromAfar(Prop, FMath::Clamp(Dist / FMath::Max(PullSpeed, 100.f), 0.25f, 0.9f));
-				}
-				else
-				{
-					Carry->PickUp(Prop);
-				}
+				Carry->PickUp(Prop);
 			}
 			return;
 		}

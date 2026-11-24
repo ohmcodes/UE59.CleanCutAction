@@ -49,10 +49,6 @@ public:
 	UFUNCTION(BlueprintCallable, Category = "Carry")
 	bool PickUp(ALTTInteractableBase* Item);
 
-	/** Gravity pull: picks up a prop from across the room; it flies into the hand over FlyTime seconds instead of
-	 *  PickupBlendTime. */
-	bool PullFromAfar(ALTTInteractableBase* Item, float FlyTime);
-
 	/** Gentle drop in front of the player with physics. */
 	UFUNCTION(BlueprintCallable, Category = "Carry")
 	void Drop();
@@ -160,8 +156,6 @@ protected:
 	float SwingDuration = 0.4f;
 
 	float BlendElapsed = 0.f;
-	/** Fly-in time of the current pickup (PickupBlendTime, longer for a gravity pull). */
-	float ActiveBlendTime = 0.18f;
 	FVector BlendStartLocation = FVector::ZeroVector;
 	FQuat BlendStartRotation = FQuat::Identity;
 
